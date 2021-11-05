@@ -877,6 +877,9 @@ Also note that the 'clipboard' option is temporarily emptied to avoid
 clobbering the `"*` or `"+` registers, if its value contains the item `unnamed`
 or `unnamedplus`.
 
+The `mode()` function will return the state as it will be after applying the
+operator.
+
 ==============================================================================
 2. Abbreviations			*abbreviations* *Abbreviations*
 
@@ -1306,6 +1309,7 @@ completion can be enabled:
 	-complete=highlight	highlight groups
 	-complete=history	:history suboptions
 	-complete=locale	locale names (as output of locale -a)
+	-complete=lua		Lua expression
 	-complete=mapclear	buffer argument
 	-complete=mapping	mapping name
 	-complete=menu		menus

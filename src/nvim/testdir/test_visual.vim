@@ -2,6 +2,7 @@
 
 source shared.vim
 source check.vim
+source screendump.vim
 
 func Test_block_shift_multibyte()
   " Uses double-wide character.
@@ -860,6 +861,15 @@ func Test_visual_block_mode()
   set tabstop& shiftwidth&
 endfunc
 
+func Test_visual_force_motion_feedkeys()
+    onoremap <expr> i- execute('let g:mode = mode(1)')
+    call feedkeys('dvi-', 'x')
+    call assert_equal('nov', g:mode)
+    call feedkeys('di-', 'x')
+    call assert_equal('no', g:mode)
+    ounmap i-
+endfunc
+
 " Test block-insert using cursor keys for movement
 func Test_visual_block_insert_cursor_keys()
   new
@@ -1080,6 +1090,26 @@ func Test_visual_put_blockedit_zy_and_zp()
   call assert_equal(['aa', 'bbbbb', 'ccc', '', 'aaXX', 'bbbbbGGHHJ', 'cccRTZU'], getline(1, 7))
   set ve&vim
   bw!
+endfunc
+
+func Test_visual_block_with_virtualedit()
+  CheckScreendump
+
+  let lines =<< trim END
+    call setline(1, ['aaaaaa', 'bbbb', 'cc'])
+    set virtualedit=block
+    normal G
+  END
+  call writefile(lines, 'XTest_block')
+
+  let buf = RunVimInTerminal('-S XTest_block', {'rows': 8, 'cols': 50})
+  call term_sendkeys(buf, "\<C-V>gg$")
+  call VerifyScreenDump(buf, 'Test_visual_block_with_virtualedit', {})
+
+  " clean up
+  call term_sendkeys(buf, "\<Esc>")
+  call StopVimInTerminal(buf)
+  call delete('XTest_beval')
 endfunc
 
 

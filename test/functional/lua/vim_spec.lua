@@ -18,6 +18,7 @@ local matches = helpers.matches
 local source = helpers.source
 local NIL = helpers.NIL
 local retry = helpers.retry
+local next_msg = helpers.next_msg
 
 before_each(clear)
 
@@ -178,6 +179,37 @@ describe('lua stdlib', function()
     end
   end)
 
+  it("vim.str_utf_start", function()
+    exec_lua([[_G.test_text = "xy åäö ɧ 汉语 ↥ 🤦x🦄 å بِيَّ"]])
+    local expected_positions = {0,0,0,0,-1,0,-1,0,-1,0,0,-1,0,0,-1,-2,0,-1,-2,0,0,-1,-2,0,0,-1,-2,-3,0,0,-1,-2,-3,0,0,0,-1,0,0,-1,0,-1,0,-1,0,-1,0,-1}
+    eq(expected_positions, exec_lua([[
+      local start_codepoint_positions = {}
+      for idx = 1, #_G.test_text do
+        table.insert(start_codepoint_positions, vim.str_utf_start(_G.test_text, idx))
+      end
+      return start_codepoint_positions
+    ]]))
+  end)
+
+  it("vim.str_utf_end", function()
+    exec_lua([[_G.test_text = "xy åäö ɧ 汉语 ↥ 🤦x🦄 å بِيَّ"]])
+    local expected_positions = {0,0,0,1,0,1,0,1,0,0,1,0,0,2,1,0,2,1,0,0,2,1,0,0,3,2,1,0,0,3,2,1,0,0,0,1,0,0,1,0,1,0,1,0,1,0,1,0 }
+    eq(expected_positions, exec_lua([[
+      local end_codepoint_positions = {}
+      for idx = 1, #_G.test_text do
+        table.insert(end_codepoint_positions, vim.str_utf_end(_G.test_text, idx))
+      end
+      return end_codepoint_positions
+    ]]))
+  end)
+
+
+  it("vim.str_utf_pos", function()
+    exec_lua([[_G.test_text = "xy åäö ɧ 汉语 ↥ 🤦x🦄 å بِيَّ"]])
+    local expected_positions = { 1,2,3,4,6,8,10,11,13,14,17,20,21,24,25,29,30,34,35,36,38,39,41,43,45,47 }
+    eq(expected_positions, exec_lua("return vim.str_utf_pos(_G.test_text)"))
+  end)
+
   it("vim.schedule", function()
     exec_lua([[
       test_table = {}
@@ -236,28 +268,33 @@ describe('lua stdlib', function()
   end)
 
   it("vim.split", function()
-    local split = function(str, sep, plain)
-      return exec_lua('return vim.split(...)', str, sep, plain)
+    local split = function(str, sep, kwargs)
+      return exec_lua('return vim.split(...)', str, sep, kwargs)
     end
 
     local tests = {
-      { "a,b", ",", false, { 'a', 'b' } },
-      { ":aa::bb:", ":", false, { '', 'aa', '', 'bb', '' } },
-      { "::ee::ff:", ":", false, { '', '', 'ee', '', 'ff', '' } },
-      { "ab", ".", false, { '', '', '' } },
-      { "a1b2c", "[0-9]", false, { 'a', 'b', 'c' } },
-      { "xy", "", false, { 'x', 'y' } },
-      { "here be dragons", " ", false, { "here", "be", "dragons"} },
-      { "axaby", "ab?", false, { '', 'x', 'y' } },
-      { "f v2v v3v w2w ", "([vw])2%1", false, { 'f ', ' v3v ', ' ' } },
-      { "", "", false, {} },
-      { "", "a", false, { '' } },
-      { "x*yz*oo*l", "*", true, { 'x', 'yz', 'oo', 'l' } },
+      { "a,b", ",", false, false, { 'a', 'b' } },
+      { ":aa::bb:", ":", false, false, { '', 'aa', '', 'bb', '' } },
+      { ":aa::bb:", ":", false, true, { 'aa', '', 'bb' } },
+      { "::ee::ff:", ":", false, false, { '', '', 'ee', '', 'ff', '' } },
+      { "::ee::ff:", ":", false, true, { 'ee', '', 'ff' } },
+      { "ab", ".", false, false, { '', '', '' } },
+      { "a1b2c", "[0-9]", false, false, { 'a', 'b', 'c' } },
+      { "xy", "", false, false, { 'x', 'y' } },
+      { "here be dragons", " ", false, false, { "here", "be", "dragons"} },
+      { "axaby", "ab?", false, false, { '', 'x', 'y' } },
+      { "f v2v v3v w2w ", "([vw])2%1", false, false, { 'f ', ' v3v ', ' ' } },
+      { "", "", false, false, {} },
+      { "", "a", false, false, { '' } },
+      { "x*yz*oo*l", "*", true, false, { 'x', 'yz', 'oo', 'l' } },
     }
 
     for _, t in ipairs(tests) do
-      eq(t[4], split(t[1], t[2], t[3]))
+      eq(t[5], split(t[1], t[2], {plain=t[3], trimempty=t[4]}))
     end
+
+    -- Test old signature
+    eq({'x', 'yz', 'oo', 'l'}, split("x*yz*oo*l", "*", true))
 
     local loops = {
       { "abc", ".-" },
@@ -282,9 +319,8 @@ describe('lua stdlib', function()
             vim/shared.lua:0: in function <vim/shared.lua:0>]]),
       pcall_err(split, 'string', 1))
     eq(dedent([[
-        Error executing lua: vim/shared.lua:0: plain: expected boolean, got number
+        Error executing lua: vim/shared.lua:0: kwargs: expected table, got number
         stack traceback:
-            vim/shared.lua:0: in function 'gsplit'
             vim/shared.lua:0: in function <vim/shared.lua:0>]]),
       pcall_err(split, 'string', 'string', 1))
   end)
@@ -604,6 +640,31 @@ describe('lua stdlib', function()
       return vim.tbl_islist(c) and count == 0
     ]]))
 
+    eq(exec_lua([[
+      local a = { a = { b = 1 } }
+      local b = { a = {} }
+      return vim.tbl_deep_extend("force", a, b)
+    ]]), {a = {b = 1}})
+
+    eq(exec_lua([[
+      local a = { a = 123 }
+      local b = { a = { b = 1} }
+      return vim.tbl_deep_extend("force", a, b)
+    ]]), {a = {b = 1}})
+
+    ok(exec_lua([[
+      local a = { a = {[2] = 3} }
+      local b = { a = {[3] = 3} }
+      local c = vim.tbl_deep_extend("force", a, b)
+      return vim.deep_equal(c, {a = {[3] = 3}})
+    ]]))
+
+    eq(exec_lua([[
+      local a = { a = { b = 1} }
+      local b = { a = 123 }
+      return vim.tbl_deep_extend("force", a, b)
+    ]]), {a = 123 })
+
     eq('Error executing lua: vim/shared.lua:0: invalid "behavior": nil',
       pcall_err(exec_lua, [[
         return vim.tbl_deep_extend()
@@ -713,7 +774,7 @@ describe('lua stdlib', function()
     eq({NIL, NIL}, exec_lua([[return vim.fn.Nilly()]]))
 
     -- error handling
-    eq({false, 'Vim:E714: List required'}, exec_lua([[return {pcall(vim.fn.add, "aa", "bb")}]]))
+    eq({false, 'Vim:E897: List or Blob required'}, exec_lua([[return {pcall(vim.fn.add, "aa", "bb")}]]))
   end)
 
   it('vim.fn should error when calling API function', function()
@@ -966,6 +1027,9 @@ describe('lua stdlib', function()
     vim.g.to_delete = nil
     ]]
     eq(NIL, funcs.luaeval "vim.g.to_delete")
+
+    matches([[^Error executing lua: .*: attempt to index .* nil value]],
+       pcall_err(exec_lua, 'return vim.g[0].testing'))
   end)
 
   it('vim.b', function()
@@ -975,17 +1039,24 @@ describe('lua stdlib', function()
     vim.api.nvim_buf_set_var(0, "floaty", 5120.1)
     vim.api.nvim_buf_set_var(0, "nullvar", vim.NIL)
     vim.api.nvim_buf_set_var(0, "to_delete", {hello="world"})
+    BUF = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_var(BUF, "testing", "bye")
     ]]
 
     eq('hi', funcs.luaeval "vim.b.testing")
+    eq('bye', funcs.luaeval "vim.b[BUF].testing")
     eq(123, funcs.luaeval "vim.b.other")
     eq(5120.1, funcs.luaeval "vim.b.floaty")
     eq(NIL, funcs.luaeval "vim.b.nonexistant")
+    eq(NIL, funcs.luaeval "vim.b[BUF].nonexistant")
     eq(NIL, funcs.luaeval "vim.b.nullvar")
     -- lost over RPC, so test locally:
     eq({false, true}, exec_lua [[
       return {vim.b.nonexistant == vim.NIL, vim.b.nullvar == vim.NIL}
     ]])
+
+    matches([[^Error executing lua: .*: attempt to index .* nil value]],
+       pcall_err(exec_lua, 'return vim.b[BUF][0].testing'))
 
     eq({hello="world"}, funcs.luaeval "vim.b.to_delete")
     exec_lua [[
@@ -1007,11 +1078,22 @@ describe('lua stdlib', function()
     vim.api.nvim_win_set_var(0, "testing", "hi")
     vim.api.nvim_win_set_var(0, "other", 123)
     vim.api.nvim_win_set_var(0, "to_delete", {hello="world"})
+    BUF = vim.api.nvim_create_buf(false, true)
+    WIN = vim.api.nvim_open_win(BUF, false, {
+      width=10, height=10,
+      relative='win', row=0, col=0
+    })
+    vim.api.nvim_win_set_var(WIN, "testing", "bye")
     ]]
 
     eq('hi', funcs.luaeval "vim.w.testing")
+    eq('bye', funcs.luaeval "vim.w[WIN].testing")
     eq(123, funcs.luaeval "vim.w.other")
     eq(NIL, funcs.luaeval "vim.w.nonexistant")
+    eq(NIL, funcs.luaeval "vim.w[WIN].nonexistant")
+
+    matches([[^Error executing lua: .*: attempt to index .* nil value]],
+       pcall_err(exec_lua, 'return vim.w[WIN][0].testing'))
 
     eq({hello="world"}, funcs.luaeval "vim.w.to_delete")
     exec_lua [[
@@ -1038,6 +1120,12 @@ describe('lua stdlib', function()
     eq('hi', funcs.luaeval "vim.t.testing")
     eq(123, funcs.luaeval "vim.t.other")
     eq(NIL, funcs.luaeval "vim.t.nonexistant")
+    eq('hi', funcs.luaeval "vim.t[0].testing")
+    eq(123, funcs.luaeval "vim.t[0].other")
+    eq(NIL, funcs.luaeval "vim.t[0].nonexistant")
+
+    matches([[^Error executing lua: .*: attempt to index .* nil value]],
+       pcall_err(exec_lua, 'return vim.t[0][0].testing'))
 
     eq({hello="world"}, funcs.luaeval "vim.t.to_delete")
     exec_lua [[
@@ -1066,6 +1154,8 @@ describe('lua stdlib', function()
     eq(funcs.luaeval "vim.api.nvim_get_vvar('progpath')", funcs.luaeval "vim.v.progpath")
     eq(false, funcs.luaeval "vim.v['false']")
     eq(NIL, funcs.luaeval "vim.v.null")
+    matches([[^Error executing lua: .*: attempt to index .* nil value]],
+       pcall_err(exec_lua, 'return vim.v[0].progpath'))
   end)
 
   it('vim.bo', function()
@@ -2000,6 +2090,8 @@ describe('lua stdlib', function()
         -- Would wait ten seconds if results blocked.
         wait_result = vim.wait(10000, function() return vim.g.timer_result end)
 
+        timer:close()
+
         return {
           time = (start_time + 5) > get_time(),
           wait_result = wait_result,
@@ -2018,6 +2110,8 @@ describe('lua stdlib', function()
         end))
 
         wait_result = vim.wait(300, function() return vim.g.timer_result end, nil, true)
+
+        timer:close()
 
         return {
           wait_result = wait_result,
@@ -2151,6 +2245,24 @@ describe('lua stdlib', function()
     end)
   end)
 
+  describe('vim.schedule_wrap', function()
+    it('preserves argument lists', function()
+      exec_lua [[
+        local fun = vim.schedule_wrap(function(kling, klang, klonk)
+          vim.rpcnotify(1, 'mayday_mayday', {a=kling, b=klang, c=klonk})
+        end)
+        fun("BOB", nil, "MIKE")
+      ]]
+      eq({'notification', 'mayday_mayday', {{a='BOB', c='MIKE'}}}, next_msg())
+
+      -- let's gooooo
+      exec_lua [[
+        vim.schedule_wrap(function(...) vim.rpcnotify(1, 'boogalo', select('#', ...)) end)(nil,nil,nil,nil)
+      ]]
+      eq({'notification', 'boogalo', {4}}, next_msg())
+    end)
+  end)
+
   describe('vim.api.nvim_buf_call', function()
     it('can access buf options', function()
       local buf1 = meths.get_current_buf()
@@ -2207,7 +2319,7 @@ end)
 
 describe('lua: require("mod") from packages', function()
   before_each(function()
-    command('set rtp+=test/functional/fixtures')
+    command('set rtp+=test/functional/fixtures pp+=test/functional/fixtures')
   end)
 
   it('propagates syntax error', function()
@@ -2217,5 +2329,14 @@ describe('lua: require("mod") from packages', function()
     ]]
 
     matches("unexpected symbol", syntax_error_msg)
+  end)
+
+  it('uses the right order of mod.lua vs mod/init.lua', function()
+    -- lua/fancy_x.lua takes precedence over lua/fancy_x/init.lua
+    eq('I am fancy_x.lua', exec_lua [[ return require'fancy_x' ]])
+    -- but lua/fancy_y/init.lua takes precedence over after/lua/fancy_y.lua
+    eq('I am init.lua of fancy_y!', exec_lua [[ return require'fancy_y' ]])
+    -- safety check: after/lua/fancy_z.lua is still loaded
+    eq('I am fancy_z.lua', exec_lua [[ return require'fancy_z' ]])
   end)
 end)

@@ -42,9 +42,7 @@ if has('timers')
   endfunc
 
   func Test_cursorhold_insert_with_timer_interrupt()
-    if !has('job')
-      return
-    endif
+    CheckFeature job
     " Need to move the cursor.
     call feedkeys("ggG", "xt")
 
@@ -551,9 +549,7 @@ endfunc
 
 func Test_OptionSet()
   CheckFunction test_override
-  if !has("eval") || !exists("+autochdir")
-    return
-  endif
+  CheckOption autochdir
 
   call test_override('starting', 1)
   set nocp
@@ -998,6 +994,7 @@ func Test_bufunload_all()
     endfunc
     au BufUnload * call UnloadAllBufs()
     au VimLeave * call writefile(['Test Finished'], 'Xout')
+    set nohidden
     edit Xxx1
     split Xxx2
     q
@@ -1325,6 +1322,71 @@ endfunc
 func Test_autocommand_all_events()
   call assert_fails('au * * bwipe', 'E1155:')
   call assert_fails('au * x bwipe', 'E1155:')
+endfunc
+
+function s:Before_test_dirchanged()
+  augroup test_dirchanged
+    autocmd!
+  augroup END
+  let s:li = []
+  let s:dir_this = getcwd()
+  let s:dir_foo = s:dir_this . '/Xfoo'
+  call mkdir(s:dir_foo)
+  let s:dir_bar = s:dir_this . '/Xbar'
+  call mkdir(s:dir_bar)
+endfunc
+
+function s:After_test_dirchanged()
+  call chdir(s:dir_this)
+  call delete(s:dir_foo, 'd')
+  call delete(s:dir_bar, 'd')
+  augroup test_dirchanged
+    autocmd!
+  augroup END
+endfunc
+
+function Test_dirchanged_global()
+  call s:Before_test_dirchanged()
+  autocmd test_dirchanged DirChanged global call add(s:li, "cd:")
+  autocmd test_dirchanged DirChanged global call add(s:li, expand("<afile>"))
+  call chdir(s:dir_foo)
+  call assert_equal(["cd:", s:dir_foo], s:li)
+  call chdir(s:dir_foo)
+  call assert_equal(["cd:", s:dir_foo], s:li)
+  exe 'lcd ' .. fnameescape(s:dir_bar)
+  call assert_equal(["cd:", s:dir_foo], s:li)
+  call s:After_test_dirchanged()
+endfunc
+
+function Test_dirchanged_local()
+  call s:Before_test_dirchanged()
+  autocmd test_dirchanged DirChanged window call add(s:li, "lcd:")
+  autocmd test_dirchanged DirChanged window call add(s:li, expand("<afile>"))
+  call chdir(s:dir_foo)
+  call assert_equal([], s:li)
+  exe 'lcd ' .. fnameescape(s:dir_bar)
+  call assert_equal(["lcd:", s:dir_bar], s:li)
+  exe 'lcd ' .. fnameescape(s:dir_bar)
+  call assert_equal(["lcd:", s:dir_bar], s:li)
+  call s:After_test_dirchanged()
+endfunc
+
+function Test_dirchanged_auto()
+  CheckFunction test_autochdir
+  CheckOption autochdir
+  call s:Before_test_dirchanged()
+  call test_autochdir()
+  autocmd test_dirchanged DirChanged auto call add(s:li, "auto:")
+  autocmd test_dirchanged DirChanged auto call add(s:li, expand("<afile>"))
+  set acd
+  cd ..
+  call assert_equal([], s:li)
+  exe 'edit ' . s:dir_foo . '/Xfile'
+  call assert_equal(s:dir_foo, getcwd())
+  call assert_equal(["auto:", s:dir_foo], s:li)
+  set noacd
+  bwipe!
+  call s:After_test_dirchanged()
 endfunc
 
 " Test TextChangedI and TextChangedP
@@ -1955,7 +2017,7 @@ func Test_autocmd_sigusr1()
 
   let g:sigusr1_passed = 0
   au Signal SIGUSR1 let g:sigusr1_passed = 1
-  call system('/bin/kill -s usr1 ' . getpid())
+  call system('kill -s usr1 ' . getpid())
   call WaitForAssert({-> assert_true(g:sigusr1_passed)})
 
   au! Signal

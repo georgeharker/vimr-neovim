@@ -57,28 +57,29 @@ end
 function vim._load_package(name)
   local basename = name:gsub('%.', '/')
   local paths = {"lua/"..basename..".lua", "lua/"..basename.."/init.lua"}
-  for _,path in ipairs(paths) do
-    local found = vim.api.nvim_get_runtime_file(path, false)
-    if #found > 0 then
-      local f, err = loadfile(found[1])
-      return f or error(err)
-    end
+  local found = vim.api.nvim__get_runtime(paths, false, {is_lua=true})
+  if #found > 0 then
+    local f, err = loadfile(found[1])
+    return f or error(err)
   end
 
+  local so_paths = {}
   for _,trail in ipairs(vim._so_trails) do
     local path = "lua"..trail:gsub('?', basename) -- so_trails contains a leading slash
-    local found = vim.api.nvim_get_runtime_file(path, false)
-    if #found > 0 then
-      -- Making function name in Lua 5.1 (see src/loadlib.c:mkfuncname) is
-      -- a) strip prefix up to and including the first dash, if any
-      -- b) replace all dots by underscores
-      -- c) prepend "luaopen_"
-      -- So "foo-bar.baz" should result in "luaopen_bar_baz"
-      local dash = name:find("-", 1, true)
-      local modname = dash and name:sub(dash + 1) or name
-      local f, err = package.loadlib(found[1], "luaopen_"..modname:gsub("%.", "_"))
-      return f or error(err)
-    end
+    table.insert(so_paths, path)
+  end
+
+  found = vim.api.nvim__get_runtime(so_paths, false, {is_lua=true})
+  if #found > 0 then
+    -- Making function name in Lua 5.1 (see src/loadlib.c:mkfuncname) is
+    -- a) strip prefix up to and including the first dash, if any
+    -- b) replace all dots by underscores
+    -- c) prepend "luaopen_"
+    -- So "foo-bar.baz" should result in "luaopen_bar_baz"
+    local dash = name:find("-", 1, true)
+    local modname = dash and name:sub(dash + 1) or name
+    local f, err = package.loadlib(found[1], "luaopen_"..modname:gsub("%.", "_"))
+    return f or error(err)
   end
   return nil
 end
@@ -105,6 +106,12 @@ setmetatable(vim, {
     elseif key == 'highlight' then
       t.highlight = require('vim.highlight')
       return t.highlight
+    elseif key == 'diagnostic' then
+      t.diagnostic = require('vim.diagnostic')
+      return t.diagnostic
+    elseif key == 'ui' then
+      t.ui = require('vim.ui')
+      return t.ui
     end
   end
 })
@@ -179,8 +186,8 @@ end
 
 --- Return a human-readable representation of the given object.
 ---
---@see https://github.com/kikito/inspect.lua
---@see https://github.com/mpeterv/vinspect
+---@see https://github.com/kikito/inspect.lua
+---@see https://github.com/mpeterv/vinspect
 local function inspect(object, options)  -- luacheck: no unused
   error(object, options)  -- Stub for gen_vimdoc.py
 end
@@ -204,15 +211,15 @@ do
   --- end)(vim.paste)
   --- </pre>
   ---
-  --@see |paste|
+  ---@see |paste|
   ---
-  --@param lines  |readfile()|-style list of lines to paste. |channel-lines|
-  --@param phase  -1: "non-streaming" paste: the call contains all lines.
+  ---@param lines  |readfile()|-style list of lines to paste. |channel-lines|
+  ---@param phase  -1: "non-streaming" paste: the call contains all lines.
   ---              If paste is "streamed", `phase` indicates the stream state:
   ---                - 1: starts the paste (exactly once)
   ---                - 2: continues the paste (zero or more times)
   ---                - 3: ends the paste (exactly once)
-  --@returns false if client should cancel the paste.
+  ---@returns false if client should cancel the paste.
   function vim.paste(lines, phase)
     local call = vim.api.nvim_call_function
     local now = vim.loop.now()
@@ -274,13 +281,13 @@ end
 ---@see |vim.in_fast_event()|
 function vim.schedule_wrap(cb)
   return (function (...)
-    local args = {...}
-    vim.schedule(function() cb(unpack(args)) end)
+    local args = vim.F.pack_len(...)
+    vim.schedule(function() cb(vim.F.unpack_len(args)) end)
   end)
 end
 
 --- <Docs described in |vim.empty_dict()| >
---@private
+---@private
 function vim.empty_dict()
   return setmetatable({}, vim._empty_dict_mt)
 end
@@ -316,22 +323,25 @@ end
 do
   local validate = vim.validate
 
-  local function make_dict_accessor(scope)
+  local function make_dict_accessor(scope, handle)
     validate {
       scope = {scope, 's'};
     }
     local mt = {}
     function mt:__newindex(k, v)
-      return vim._setvar(scope, 0, k, v)
+      return vim._setvar(scope, handle or 0, k, v)
     end
     function mt:__index(k)
-      return vim._getvar(scope, 0, k)
+      if handle == nil and type(k) == 'number' then
+        return make_dict_accessor(scope, k)
+      end
+      return vim._getvar(scope, handle or 0, k)
     end
     return setmetatable({}, mt)
   end
 
-  vim.g = make_dict_accessor('g')
-  vim.v = make_dict_accessor('v')
+  vim.g = make_dict_accessor('g', false)
+  vim.v = make_dict_accessor('v', false)
   vim.b = make_dict_accessor('b')
   vim.w = make_dict_accessor('w')
   vim.t = make_dict_accessor('t')
@@ -339,12 +349,12 @@ end
 
 --- Get a table of lines with start, end columns for a region marked by two points
 ---
---@param bufnr number of buffer
---@param pos1 (line, column) tuple marking beginning of region
---@param pos2 (line, column) tuple marking end of region
---@param regtype type of selection (:help setreg)
---@param inclusive boolean indicating whether the selection is end-inclusive
---@return region lua table of the form {linenr = {startcol,endcol}}
+---@param bufnr number of buffer
+---@param pos1 (line, column) tuple marking beginning of region
+---@param pos2 (line, column) tuple marking end of region
+---@param regtype type of selection (:help setreg)
+---@param inclusive boolean indicating whether the selection is end-inclusive
+---@return region lua table of the form {linenr = {startcol,endcol}}
 function vim.region(bufnr, pos1, pos2, regtype, inclusive)
   if not vim.api.nvim_buf_is_loaded(bufnr) then
     vim.fn.bufload(bufnr)
@@ -391,9 +401,9 @@ end
 --- Use to do a one-shot timer that calls `fn`
 --- Note: The {fn} is |schedule_wrap|ped automatically, so API functions are
 --- safe to call.
---@param fn Callback to call once `timeout` expires
---@param timeout Number of milliseconds to wait before calling `fn`
---@return timer luv timer object
+---@param fn Callback to call once `timeout` expires
+---@param timeout Number of milliseconds to wait before calling `fn`
+---@return timer luv timer object
 function vim.defer_fn(fn, timeout)
   vim.validate { fn = { fn, 'c', true}; }
   local timer = vim.loop.new_timer()
@@ -409,11 +419,12 @@ end
 
 
 --- Notification provider
---- without a runtime, writes to :Messages
---  see :help nvim_notify
---@param msg Content of the notification to show to the user
---@param log_level Optional log level
---@param opts Dictionary with optional options (timeout, etc)
+---
+--- Without a runtime, writes to :Messages
+---@see :help nvim_notify
+---@param msg Content of the notification to show to the user
+---@param log_level Optional log level
+---@param opts Dictionary with optional options (timeout, etc)
 function vim.notify(msg, log_level, _opts)
 
   if log_level == vim.log.levels.ERROR then
@@ -426,6 +437,7 @@ function vim.notify(msg, log_level, _opts)
 end
 
 
+---@private
 function vim.register_keystroke_callback()
   error('vim.register_keystroke_callback is deprecated, instead use: vim.on_key')
 end
@@ -649,7 +661,5 @@ vim._expand_pat_get_parts = function(lua_string)
 
   return parts, search_index
 end
-
-pcall(require, 'vim._meta')
 
 return module

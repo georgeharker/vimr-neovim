@@ -3,9 +3,12 @@ local helpers = require('test.functional.helpers')(after_each)
 local assert_log = helpers.assert_log
 local clear = helpers.clear
 local buf_lines = helpers.buf_lines
+local command = helpers.command
 local dedent = helpers.dedent
 local exec_lua = helpers.exec_lua
 local eq = helpers.eq
+local eval = helpers.eval
+local matches = helpers.matches
 local pcall_err = helpers.pcall_err
 local pesc = helpers.pesc
 local insert = helpers.insert
@@ -14,6 +17,7 @@ local retry = helpers.retry
 local NIL = helpers.NIL
 local read_file = require('test.helpers').read_file
 local write_file = require('test.helpers').write_file
+local isCI = helpers.isCI
 
 -- Use these to get access to a coroutine so that I can run async tests and use
 -- yield.
@@ -132,38 +136,36 @@ end
 describe('LSP', function()
   before_each(function()
     clear_notrace()
+
+    -- Run an instance of nvim on the file which contains our "scripts".
+    -- Pass TEST_NAME to pick the script.
+    local test_name = "basic_init"
+    exec_lua([=[
+      lsp = require('vim.lsp')
+      local test_name, fixture_filename, logfile = ...
+      function test__start_client()
+        return lsp.start_client {
+          cmd_env = {
+            NVIM_LOG_FILE = logfile;
+          };
+          cmd = {
+            vim.v.progpath, '-Es', '-u', 'NONE', '--headless',
+            "-c", string.format("lua TEST_NAME = %q", test_name),
+            "-c", "luafile "..fixture_filename;
+          };
+          root_dir = vim.loop.cwd();
+        }
+      end
+      TEST_CLIENT1 = test__start_client()
+    ]=], test_name, fake_lsp_code, fake_lsp_logfile)
+  end)
+
+  after_each(function()
+    exec_lua("lsp._vim_exit_handler()")
+   -- exec_lua("lsp.stop_all_clients(true)")
   end)
 
   describe('server_name specified', function()
-    before_each(function()
-      -- Run an instance of nvim on the file which contains our "scripts".
-      -- Pass TEST_NAME to pick the script.
-      local test_name = "basic_init"
-      exec_lua([=[
-        lsp = require('vim.lsp')
-        local test_name, fixture_filename, logfile = ...
-        function test__start_client()
-          return lsp.start_client {
-            cmd_env = {
-              NVIM_LOG_FILE = logfile;
-            };
-            cmd = {
-              vim.v.progpath, '-Es', '-u', 'NONE', '--headless',
-              "-c", string.format("lua TEST_NAME = %q", test_name),
-              "-c", "luafile "..fixture_filename;
-            };
-            root_dir = vim.loop.cwd();
-          }
-        end
-        TEST_CLIENT1 = test__start_client()
-      ]=], test_name, fake_lsp_code, fake_lsp_logfile)
-    end)
-
-    after_each(function()
-      exec_lua("lsp._vim_exit_handler()")
-     -- exec_lua("lsp.stop_all_clients(true)")
-    end)
-
     it('start_client(), stop_client()', function()
       retry(nil, 4000, function()
         eq(1, exec_lua('return #lsp.get_active_clients()'))
@@ -265,14 +267,14 @@ describe('LSP', function()
     end)
 
     it('should succeed with manual shutdown', function()
-      if 'openbsd' == helpers.uname() then
-        pending('hangs the build on openbsd #14028, re-enable with freeze timeout #14204')
+      if isCI() then
+        pending('hangs the build on CI #14028, re-enable with freeze timeout #14204')
         return
       elseif helpers.skip_fragile(pending) then
         return
       end
       local expected_handlers = {
-        {NIL, {}, {method="shutdown", client_id=1}};
+        {NIL, {}, {method="shutdown", bufnr=1, client_id=1}};
         {NIL, {}, {method="test", client_id=1}};
       }
       test_rpc_server {
@@ -405,7 +407,7 @@ describe('LSP', function()
       }
     end)
 
-    it('should call unsupported_method when trying to call an unsupported method', function()
+    it('should not call unsupported_method when trying to call an unsupported method', function()
       local expected_handlers = {
         {NIL, {}, {method="shutdown", client_id=1}};
       }
@@ -415,24 +417,12 @@ describe('LSP', function()
             exec_lua([=[
               BUFFER = vim.api.nvim_get_current_buf()
               lsp.buf_attach_client(BUFFER, TEST_RPC_CLIENT_ID)
-              vim.lsp.handlers['textDocument/typeDefinition'] = function(err, result, ctx)
-                local method = ctx.method
-                vim.lsp._last_lsp_handler = { err = err; method = method }
-              end
-              vim.lsp._unsupported_method = function(method)
-                vim.lsp._last_unsupported_method = method
-                return 'fake-error'
-              end
-              vim.lsp.buf.type_definition()
+              vim.lsp.handlers['textDocument/typeDefinition'] = function() end
             ]=])
         end;
         on_init = function(client)
           client.stop()
-          local method = exec_lua("return vim.lsp._last_unsupported_method")
-          eq("textDocument/typeDefinition", method)
-          local lsp_cb_call = exec_lua("return vim.lsp._last_lsp_handler")
-          eq("fake-error", lsp_cb_call.err)
-          eq("textDocument/typeDefinition", lsp_cb_call.method)
+          exec_lua("vim.lsp.buf.type_definition()")
           exec_lua [[
             vim.api.nvim_command(BUFFER.."bwipeout")
           ]]
@@ -447,7 +437,7 @@ describe('LSP', function()
       }
     end)
 
-    it('shouldn\'t call unsupported_method when no client and trying to call an unsupported method', function()
+    it('should not call unsupported_method when no client and trying to call an unsupported method', function()
       local expected_handlers = {
         {NIL, {}, {method="shutdown", client_id=1}};
       }
@@ -455,20 +445,12 @@ describe('LSP', function()
         test_name = "capabilities_for_client_supports_method";
         on_setup = function()
             exec_lua([=[
-              vim.lsp.handlers['textDocument/typeDefinition'] = function(err, method)
-                vim.lsp._last_lsp_handler = { err = err; method = method }
-              end
-              vim.lsp._unsupported_method = function(method)
-                vim.lsp._last_unsupported_method = method
-                return 'fake-error'
-              end
-              vim.lsp.buf.type_definition()
+              vim.lsp.handlers['textDocument/typeDefinition'] = function() end
             ]=])
         end;
         on_init = function(client)
           client.stop()
-          eq(NIL, exec_lua("return vim.lsp._last_unsupported_method"))
-          eq(NIL, exec_lua("return vim.lsp._last_lsp_handler"))
+          exec_lua("vim.lsp.buf.type_definition()")
         end;
         on_exit = function(code, signal)
           eq(0, code, "exit code", fake_lsp_logfile)
@@ -476,6 +458,189 @@ describe('LSP', function()
         end;
         on_handler = function(...)
           eq(table.remove(expected_handlers), {...}, "expected handler")
+        end;
+      }
+    end)
+
+    it('should not forward RequestCancelled to callback', function()
+      local expected_handlers = {
+        {NIL, {}, {method="finish", client_id=1}};
+      }
+      local client
+      test_rpc_server {
+        test_name = "check_forward_request_cancelled";
+        on_init = function(_client)
+          _client.request("error_code_test")
+          client = _client
+        end;
+        on_exit = function(code, signal)
+          eq(0, code, "exit code", fake_lsp_logfile)
+          eq(0, signal, "exit signal", fake_lsp_logfile)
+          eq(0, #expected_handlers, "did not call expected handler")
+        end;
+        on_handler = function(err, _, ctx)
+          eq(table.remove(expected_handlers), {err, {}, ctx}, "expected handler")
+          if ctx.method == 'finish' then client.stop() end
+        end;
+      }
+    end)
+
+    it('should forward ContentModified to callback', function()
+      local expected_handlers = {
+        {NIL, {}, {method="finish", client_id=1}};
+        {{code = -32801}, NIL, {method = "error_code_test", bufnr=1, client_id=1}};
+      }
+      local client
+      test_rpc_server {
+        test_name = "check_forward_content_modified";
+        on_init = function(_client)
+          _client.request("error_code_test")
+          client = _client
+        end;
+        on_exit = function(code, signal)
+          eq(0, code, "exit code", fake_lsp_logfile)
+          eq(0, signal, "exit signal", fake_lsp_logfile)
+          eq(0, #expected_handlers, "did not call expected handler")
+        end;
+        on_handler = function(err, _, ctx)
+          eq(table.remove(expected_handlers), {err, _, ctx}, "expected handler")
+          -- if ctx.method == 'error_code_test' then client.notify("finish") end
+          if ctx.method ~= 'finish' then client.notify('finish') end
+          if ctx.method == 'finish' then client.stop() end
+        end;
+      }
+    end)
+
+    it('should track pending requests to the language server', function()
+      local expected_handlers = {
+        {NIL, {}, {method="finish", client_id=1}};
+        {NIL, {}, {method="slow_request", bufnr=1, client_id=1}};
+      }
+      local client
+      test_rpc_server {
+        test_name = "check_pending_request_tracked";
+        on_init = function(_client)
+          client = _client
+          client.request("slow_request")
+          local request = exec_lua([=[ return TEST_RPC_CLIENT.requests[2] ]=])
+          eq("slow_request", request.method)
+          eq("pending", request.type)
+          client.notify("release")
+        end;
+        on_exit = function(code, signal)
+          eq(0, code, "exit code", fake_lsp_logfile)
+          eq(0, signal, "exit signal", fake_lsp_logfile)
+          eq(0, #expected_handlers, "did not call expected handler")
+        end;
+        on_handler = function(err, _, ctx)
+          eq(table.remove(expected_handlers), {err, {}, ctx}, "expected handler")
+          if ctx.method == 'slow_request' then
+            local request = exec_lua([=[ return TEST_RPC_CLIENT.requests[2] ]=])
+            eq(NIL, request)
+            client.notify("finish")
+          end
+          if ctx.method == 'finish' then client.stop() end
+        end;
+      }
+    end)
+
+    it('should track cancel requests to the language server', function()
+      local expected_handlers = {
+        {NIL, {}, {method="finish", client_id=1}};
+      }
+      local client
+      test_rpc_server {
+        test_name = "check_cancel_request_tracked";
+        on_init = function(_client)
+          client = _client
+          client.request("slow_request")
+          client.cancel_request(2)
+          local request = exec_lua([=[ return TEST_RPC_CLIENT.requests[2] ]=])
+          eq("slow_request", request.method)
+          eq("cancel", request.type)
+          client.notify("release")
+        end;
+        on_exit = function(code, signal)
+          eq(0, code, "exit code", fake_lsp_logfile)
+          eq(0, signal, "exit signal", fake_lsp_logfile)
+          eq(0, #expected_handlers, "did not call expected handler")
+        end;
+        on_handler = function(err, _, ctx)
+          eq(table.remove(expected_handlers), {err, {}, ctx}, "expected handler")
+          local request = exec_lua([=[ return TEST_RPC_CLIENT.requests[2] ]=])
+          eq(NIL, request)
+          if ctx.method == 'finish' then client.stop() end
+        end;
+      }
+    end)
+
+    it('should clear pending and cancel requests on reply', function()
+      local expected_handlers = {
+        {NIL, {}, {method="finish", client_id=1}};
+        {NIL, {}, {method="slow_request", bufnr=1, client_id=1}};
+      }
+      local client
+      test_rpc_server {
+        test_name = "check_tracked_requests_cleared";
+        on_init = function(_client)
+          client = _client
+          client.request("slow_request")
+          local request = exec_lua([=[ return TEST_RPC_CLIENT.requests[2] ]=])
+          eq("slow_request", request.method)
+          eq("pending", request.type)
+          client.cancel_request(2)
+          request = exec_lua([=[ return TEST_RPC_CLIENT.requests[2] ]=])
+          eq("slow_request", request.method)
+          eq("cancel", request.type)
+          client.notify("release")
+        end;
+        on_exit = function(code, signal)
+          eq(0, code, "exit code", fake_lsp_logfile)
+          eq(0, signal, "exit signal", fake_lsp_logfile)
+          eq(0, #expected_handlers, "did not call expected handler")
+        end;
+        on_handler = function(err, _, ctx)
+          eq(table.remove(expected_handlers), {err, {}, ctx}, "expected handler")
+          if ctx.method == 'slow_request' then
+            local request = exec_lua([=[ return TEST_RPC_CLIENT.requests[2] ]=])
+            eq(NIL, request)
+            client.notify("finish")
+          end
+          if ctx.method == 'finish' then client.stop() end
+        end;
+      }
+    end)
+
+    it('should trigger LspRequest autocmd when requests table changes', function()
+      local expected_handlers = {
+        {NIL, {}, {method="finish", client_id=1}};
+        {NIL, {}, {method="slow_request", bufnr=1, client_id=1}};
+      }
+      local client
+      test_rpc_server {
+        test_name = "check_tracked_requests_cleared";
+        on_init = function(_client)
+          command('let g:requests = 0')
+          command('autocmd User LspRequest let g:requests+=1')
+          client = _client
+          client.request("slow_request")
+          eq(1, eval('g:requests'))
+          client.cancel_request(2)
+          eq(2, eval('g:requests'))
+          client.notify("release")
+        end;
+        on_exit = function(code, signal)
+          eq(0, code, "exit code", fake_lsp_logfile)
+          eq(0, signal, "exit signal", fake_lsp_logfile)
+          eq(0, #expected_handlers, "did not call expected handler")
+          eq(3, eval('g:requests'))
+        end;
+        on_handler = function(err, _, ctx)
+          eq(table.remove(expected_handlers), {err, {}, ctx}, "expected handler")
+          if ctx.method == 'slow_request' then
+            client.notify("finish")
+          end
+          if ctx.method == 'finish' then client.stop() end
         end;
       }
     end)
@@ -761,7 +926,7 @@ describe('LSP', function()
     -- TODO(askhan) we don't support full for now, so we can disable these tests.
     pending('should check the body and didChange incremental normal mode editing', function()
       local expected_handlers = {
-        {NIL, {}, {method="shutdown", client_id=1}};
+        {NIL, {}, {method="shutdown", bufnr=1, client_id=1}};
         {NIL, {}, {method="finish", client_id=1}};
         {NIL, {}, {method="start", client_id=1}};
       }
@@ -1017,31 +1182,6 @@ describe('LSP', function()
     }
   end
 
-  it('highlight groups', function()
-    eq({
-      'LspDiagnosticsDefaultError',
-      'LspDiagnosticsDefaultHint',
-      'LspDiagnosticsDefaultInformation',
-      'LspDiagnosticsDefaultWarning',
-      'LspDiagnosticsFloatingError',
-      'LspDiagnosticsFloatingHint',
-      'LspDiagnosticsFloatingInformation',
-      'LspDiagnosticsFloatingWarning',
-      'LspDiagnosticsSignError',
-      'LspDiagnosticsSignHint',
-      'LspDiagnosticsSignInformation',
-      'LspDiagnosticsSignWarning',
-      'LspDiagnosticsUnderlineError',
-      'LspDiagnosticsUnderlineHint',
-      'LspDiagnosticsUnderlineInformation',
-      'LspDiagnosticsUnderlineWarning',
-      'LspDiagnosticsVirtualTextError',
-      'LspDiagnosticsVirtualTextHint',
-      'LspDiagnosticsVirtualTextInformation',
-      'LspDiagnosticsVirtualTextWarning',
-    }, exec_lua([[require'vim.lsp'; return vim.fn.getcompletion('Lsp', 'highlight')]]))
-  end)
-
   describe('apply_text_edits', function()
     before_each(function()
       insert(dedent([[
@@ -1160,10 +1300,11 @@ describe('LSP', function()
         eq({ 2, 6 }, funcs.nvim_win_get_cursor(0))
       end)
 
-      it('fix the cursor to the valid column if the content was removed', function()
+      it('fix the cursor to the valid col if the content was removed', function()
         funcs.nvim_win_set_cursor(0, { 2, 6 })
         local edits = {
-          make_edit(1, 0, 1, 19, '')
+          make_edit(1, 0, 1, 6, ''),
+          make_edit(1, 6, 1, 19, '')
         }
         exec_lua('vim.lsp.util.apply_text_edits(...)', edits, 1)
         eq({
@@ -1174,6 +1315,19 @@ describe('LSP', function()
           'å å ɧ 汉语 ↥ 🤦 🦄';
         }, buf_lines(1))
         eq({ 2, 0 }, funcs.nvim_win_get_cursor(0))
+      end)
+
+      it('fix the cursor to the valid row if the content was removed', function()
+        funcs.nvim_win_set_cursor(0, { 2, 6 })
+        local edits = {
+          make_edit(1, 0, 1, 6, ''),
+          make_edit(0, 18, 5, 0, '')
+        }
+        exec_lua('vim.lsp.util.apply_text_edits(...)', edits, 1)
+        eq({
+          'First line of text';
+        }, buf_lines(1))
+        eq({ 1, 6 }, funcs.nvim_win_get_cursor(0))
       end)
 
       it('fix the cursor row', function()
@@ -1256,14 +1410,14 @@ describe('LSP', function()
           make_edit(0, 0, 0, 3, "First ↥ 🤦 🦄")
         },
         textDocument = {
-          uri = "file://fake/uri";
+          uri = "file:///fake/uri";
           version = editVersion
         }
       }
     end
     before_each(function()
       target_bufnr = exec_lua [[
-        local bufnr = vim.uri_to_bufnr("file://fake/uri")
+        local bufnr = vim.uri_to_bufnr("file:///fake/uri")
         local lines = {"1st line of text", "2nd line of 语text"}
         vim.api.nvim_buf_set_lines(bufnr, 0, 1, false, lines)
         return bufnr
@@ -1343,7 +1497,7 @@ describe('LSP', function()
           make_edit(row, 0, row, 1000, new_line)
         },
         textDocument = {
-          uri = "file://fake/uri";
+          uri = "file:///fake/uri";
           version = editVersion
         }
       }
@@ -1361,7 +1515,7 @@ describe('LSP', function()
 
     before_each(function()
       local ret = exec_lua [[
-        local bufnr = vim.uri_to_bufnr("file://fake/uri")
+        local bufnr = vim.uri_to_bufnr("file:///fake/uri")
         local lines = {
           "Original Line #1",
           "Original Line #2"
@@ -1644,19 +1798,19 @@ describe('LSP', function()
     it('Convert Location[] to items', function()
       local expected = {
         {
-          filename = 'fake/uri',
+          filename = '/fake/uri',
           lnum = 1,
           col = 3,
           text = 'testing'
         },
       }
       local actual = exec_lua [[
-        local bufnr = vim.uri_to_bufnr("file://fake/uri")
+        local bufnr = vim.uri_to_bufnr("file:///fake/uri")
         local lines = {"testing", "123"}
         vim.api.nvim_buf_set_lines(bufnr, 0, 1, false, lines)
         local locations = {
           {
-            uri = 'file://fake/uri',
+            uri = 'file:///fake/uri',
             range = {
               start = { line = 0, character = 2 },
               ['end'] = { line = 0, character = 3 },
@@ -1670,14 +1824,14 @@ describe('LSP', function()
     it('Convert LocationLink[] to items', function()
       local expected = {
         {
-          filename = 'fake/uri',
+          filename = '/fake/uri',
           lnum = 1,
           col = 3,
           text = 'testing'
         },
       }
       local actual = exec_lua [[
-        local bufnr = vim.uri_to_bufnr("file://fake/uri")
+        local bufnr = vim.uri_to_bufnr("file:///fake/uri")
         local lines = {"testing", "123"}
         vim.api.nvim_buf_set_lines(bufnr, 0, 1, false, lines)
         local locations = {
@@ -1891,14 +2045,14 @@ describe('LSP', function()
         local expected = {
           {
             col = 1,
-            filename = 'test_a',
+            filename = '/test_a',
             kind = 'File',
             lnum = 2,
             text = '[File] TestA'
           },
           {
             col = 1,
-            filename = 'test_b',
+            filename = '/test_b',
             kind = 'Module',
             lnum = 4,
             text = '[Module] TestB'
@@ -1921,7 +2075,7 @@ describe('LSP', function()
                     line = 2
                   }
                 },
-                uri = "file://test_a"
+                uri = "file:///test_a"
               },
               contanerName = "TestAContainer"
             },
@@ -1940,7 +2094,7 @@ describe('LSP', function()
                     line = 4
                   }
                 },
-                uri = "file://test_b"
+                uri = "file:///test_b"
               },
               contanerName = "TestBContainer"
             }
@@ -1979,7 +2133,7 @@ describe('LSP', function()
 
     before_each(function()
       target_bufnr = exec_lua [[
-        local bufnr = vim.uri_to_bufnr("file://fake/uri")
+        local bufnr = vim.uri_to_bufnr("file:///fake/uri")
         local lines = {"1st line of text", "å å ɧ 汉语 ↥ 🤦 🦄"}
         vim.api.nvim_buf_set_lines(bufnr, 0, 1, false, lines)
         return bufnr
@@ -1988,7 +2142,7 @@ describe('LSP', function()
 
     local location = function(start_line, start_char, end_line, end_char)
       return {
-        uri = "file://fake/uri",
+        uri = "file:///fake/uri",
         range = {
           start = { line = start_line, character = start_char },
           ["end"] = { line = end_line, character = end_char },
@@ -2013,7 +2167,7 @@ describe('LSP', function()
 
     it('jumps to a LocationLink', function()
       local pos = jump({
-          targetUri = "file://fake/uri",
+          targetUri = "file:///fake/uri",
           targetSelectionRange = {
             start = { line = 0, character = 4 },
             ["end"] = { line = 0, character = 4 },
@@ -2062,6 +2216,12 @@ describe('LSP', function()
 
     it('calculates size correctly with wrapping', function()
       eq({15,5}, exec_lua[[ return {vim.lsp.util._make_floating_popup_size(contents,{width = 15, wrap_at = 14})} ]])
+    end)
+  end)
+
+  describe('lsp.util.trim.trim_empty_lines', function()
+    it('properly trims empty lines', function()
+      eq({{"foo", "bar"}}, exec_lua[[ return vim.lsp.util.trim_empty_lines({{ "foo", "bar" },  nil}) ]])
     end)
   end)
 
@@ -2137,7 +2297,9 @@ describe('LSP', function()
       local expected = { {
         bufnr = 2,
         col = 5,
+        end_col = 0,
         lnum = 4,
+        end_lnum = 0,
         module = "",
         nr = 0,
         pattern = "",
@@ -2209,7 +2371,9 @@ describe('LSP', function()
       local expected = { {
         bufnr = 2,
         col = 5,
+        end_col = 0,
         lnum = 4,
+        end_lnum = 0,
         module = "",
         nr = 0,
         pattern = "",
@@ -2220,6 +2384,204 @@ describe('LSP', function()
       } }
 
       eq(expected, qflist)
+    end)
+  end)
+
+  describe('vim.lsp.buf.rename', function()
+    for _, test in ipairs({
+      {
+        it = "does not attempt to rename on nil response",
+        name = "prepare_rename_nil",
+        expected_handlers = {
+          {NIL, {}, {method="shutdown", client_id=1}};
+          {NIL, {}, {method="start", client_id=1}};
+        },
+      },
+      {
+        it = "handles prepareRename placeholder response",
+        name = "prepare_rename_placeholder",
+        expected_handlers = {
+          {NIL, {}, {method="shutdown", client_id=1}};
+          {NIL, NIL, {method="textDocument/rename", client_id=1, bufnr=1}};
+          {NIL, {}, {method="start", client_id=1}};
+        },
+        expected_text = "placeholder", -- see fake lsp response
+      },
+      {
+        it = "handles range response",
+        name = "prepare_rename_range",
+        expected_handlers = {
+          {NIL, {}, {method="shutdown", client_id=1}};
+          {NIL, NIL, {method="textDocument/rename", client_id=1, bufnr=1}};
+          {NIL, {}, {method="start", client_id=1}};
+        },
+        expected_text = "line", -- see test case and fake lsp response
+      },
+      {
+        it = "handles error",
+        name = "prepare_rename_error",
+        expected_handlers = {
+          {NIL, {}, {method="shutdown", client_id=1}};
+          {NIL, NIL, {method="textDocument/rename", client_id=1, bufnr=1}};
+          {NIL, {}, {method="start", client_id=1}};
+        },
+        expected_text = "two", -- see test case
+      },
+    }) do
+    it(test.it, function()
+      local client
+      test_rpc_server {
+        test_name = test.name;
+        on_init = function(_client)
+          client = _client
+          eq(true, client.resolved_capabilities().rename)
+        end;
+        on_setup = function()
+          exec_lua([=[
+            local bufnr = vim.api.nvim_get_current_buf()
+            lsp.buf_attach_client(bufnr, TEST_RPC_CLIENT_ID)
+            vim.lsp._stubs = {}
+            vim.fn.input = function(prompt, text)
+              vim.lsp._stubs.input_prompt = prompt
+              vim.lsp._stubs.input_text = text
+              return 'renameto' -- expect this value in fake lsp
+            end
+            vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {'', 'this is line two'})
+            vim.fn.cursor(2, 13) -- the space between "line" and "two"
+          ]=])
+        end;
+        on_exit = function(code, signal)
+          eq(0, code, "exit code", fake_lsp_logfile)
+          eq(0, signal, "exit signal", fake_lsp_logfile)
+        end;
+        on_handler = function(err, result, ctx)
+          -- Don't compare & assert params, they're not relevant for the testcase
+          -- This allows us to be lazy and avoid declaring them
+          ctx.params = nil
+
+          eq(table.remove(test.expected_handlers), {err, result, ctx}, "expected handler")
+          if ctx.method == 'start' then
+            exec_lua("vim.lsp.buf.rename()")
+          end
+          if ctx.method == 'shutdown' then
+            if test.expected_text then
+              eq("New Name: ", exec_lua("return vim.lsp._stubs.input_prompt"))
+              eq(test.expected_text, exec_lua("return vim.lsp._stubs.input_text"))
+            end
+            client.stop()
+          end
+        end;
+      }
+    end)
+    end
+  end)
+
+  describe('vim.lsp.buf.code_action', function()
+    it('Calls client side command if available', function()
+      local client
+      local expected_handlers = {
+        {NIL, {}, {method="shutdown", client_id=1}};
+        {NIL, {}, {method="start", client_id=1}};
+      }
+      test_rpc_server {
+        test_name = 'code_action_with_resolve',
+        on_init = function(client_)
+          client = client_
+        end,
+        on_setup = function()
+        end,
+        on_exit = function(code, signal)
+          eq(0, code, "exit code", fake_lsp_logfile)
+          eq(0, signal, "exit signal", fake_lsp_logfile)
+        end,
+        on_handler = function(err, result, ctx)
+          eq(table.remove(expected_handlers), {err, result, ctx})
+          if ctx.method == 'start' then
+            exec_lua([[
+              vim.lsp.commands['dummy1'] = function(cmd)
+                vim.lsp.commands['dummy2'] = function()
+                end
+              end
+              local bufnr = vim.api.nvim_get_current_buf()
+              vim.lsp.buf_attach_client(bufnr, TEST_RPC_CLIENT_ID)
+              vim.fn.inputlist = function()
+                return 1
+              end
+              vim.lsp.buf.code_action()
+            ]])
+          elseif ctx.method == 'shutdown' then
+            eq('function', exec_lua[[return type(vim.lsp.commands['dummy2'])]])
+            client.stop()
+          end
+        end
+      }
+    end)
+  end)
+  describe('vim.lsp.commands', function()
+    it('Accepts only string keys', function()
+      matches(
+        '.*The key for commands in `vim.lsp.commands` must be a string',
+        pcall_err(exec_lua, 'vim.lsp.commands[1] = function() end')
+      )
+    end)
+    it('Accepts only function values', function()
+      matches(
+        '.*Command added to `vim.lsp.commands` must be a function',
+        pcall_err(exec_lua, 'vim.lsp.commands.dummy = 10')
+      )
+    end)
+  end)
+  describe('vim.lsp.codelens', function()
+    it('uses client commands', function()
+      local client
+      local expected_handlers = {
+        {NIL, {}, {method="shutdown", client_id=1}};
+        {NIL, {}, {method="start", client_id=1}};
+      }
+      test_rpc_server {
+        test_name = 'clientside_commands',
+        on_init = function(client_)
+          client = client_
+        end,
+        on_setup = function()
+        end,
+        on_exit = function(code, signal)
+          eq(0, code, "exit code", fake_lsp_logfile)
+          eq(0, signal, "exit signal", fake_lsp_logfile)
+        end,
+        on_handler = function(err, result, ctx)
+          eq(table.remove(expected_handlers), {err, result, ctx})
+          if ctx.method == 'start' then
+            local fake_uri = "file:///fake/uri"
+            local cmd = exec_lua([[
+              fake_uri = ...
+              local bufnr = vim.uri_to_bufnr(fake_uri)
+              vim.fn.bufload(bufnr)
+              vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {'One line'})
+              local lenses = {
+                {
+                  range = {
+                    start = { line = 0, character = 0, },
+                    ['end'] = { line = 0, character = 8 }
+                  },
+                  command = { title = 'Lens1', command = 'Dummy' }
+                },
+              }
+              vim.lsp.codelens.on_codelens(nil, lenses, {method='textDocument/codeLens', client_id=1, bufnr=bufnr})
+              local cmd_called = nil
+              vim.lsp.commands['Dummy'] = function(command)
+                cmd_called = command
+              end
+              vim.api.nvim_set_current_buf(bufnr)
+              vim.lsp.codelens.run()
+              return cmd_called
+            ]], fake_uri)
+         eq({ command = 'Dummy', title = 'Lens1' }, cmd)
+         elseif ctx.method == 'shutdown' then
+           client.stop()
+          end
+        end
+      }
     end)
   end)
 end)
