@@ -1,1 +1,1 @@
-dev-nvimserver-universal
+nvimserver-deps-2021-11-05
