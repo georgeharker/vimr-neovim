@@ -766,6 +766,7 @@ struct file_buffer {
   unsigned b_tc_flags;          ///< flags for 'tagcase'
   char_u *b_p_dict;             ///< 'dictionary' local value
   char_u *b_p_tsr;              ///< 'thesaurus' local value
+  char_u *b_p_tsrfu;            ///< 'thesaurusfunc' local value
   long b_p_ul;                  ///< 'undolevels' local value
   int b_p_udf;                  ///< 'undofile'
   char_u *b_p_lw;               ///< 'lispwords' local value
@@ -1120,14 +1121,14 @@ typedef struct {
 /// @{
 enum {
   MENU_INDEX_INVALID      = -1,
-  MENU_INDEX_NORMAL       =  0,
-  MENU_INDEX_VISUAL       =  1,
-  MENU_INDEX_SELECT       =  2,
-  MENU_INDEX_OP_PENDING   =  3,
-  MENU_INDEX_INSERT       =  4,
-  MENU_INDEX_CMDLINE      =  5,
-  MENU_INDEX_TIP          =  6,
-  MENU_MODES              =  7,
+  MENU_INDEX_NORMAL       = 0,
+  MENU_INDEX_VISUAL       = 1,
+  MENU_INDEX_SELECT       = 2,
+  MENU_INDEX_OP_PENDING   = 3,
+  MENU_INDEX_INSERT       = 4,
+  MENU_INDEX_CMDLINE      = 5,
+  MENU_INDEX_TIP          = 6,
+  MENU_MODES              = 7,
 };
 
 typedef struct VimMenu vimmenu_T;

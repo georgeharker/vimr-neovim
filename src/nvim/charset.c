@@ -281,7 +281,7 @@ void trans_characters(char_u *buf, int bufsize)
 
   while (*buf != 0) {
     // Assume a multi-byte character doesn't need translation.
-    if ((trs_len = (*mb_ptr2len)(buf)) > 1) {
+    if ((trs_len = utfc_ptr2len(buf)) > 1) {
       len -= trs_len;
     } else {
       trs = transchar_byte(*buf);
@@ -498,7 +498,7 @@ char_u *str_foldcase(char_u *str, int orglen, char_u *buf, int buflen)
     }
 
     // skip to next multi-byte char
-    i += (*mb_ptr2len)(STR_PTR(i));
+    i += utfc_ptr2len(STR_PTR(i));
   }
 
 
@@ -732,7 +732,7 @@ int vim_strnsize(char_u *s, int len)
   assert(s != NULL);
   int size = 0;
   while (*s != NUL && --len >= 0) {
-    int l = (*mb_ptr2len)(s);
+    int l = utfc_ptr2len(s);
     size += ptr2cells(s);
     s += l;
     len -= l - 1;
@@ -1640,6 +1640,16 @@ int hex2nr(int c)
     return c - 'A' + 10;
   }
   return c - '0';
+}
+
+/// Convert two hex characters to a byte.
+/// Return -1 if one of the characters is not hex.
+int hexhex2nr(char_u *p)
+{
+  if (!ascii_isxdigit(p[0]) || !ascii_isxdigit(p[1])) {
+    return -1;
+  }
+  return (hex2nr(p[0]) << 4) + hex2nr(p[1]);
 }
 
 /// Check that "str" starts with a backslash that should be removed.

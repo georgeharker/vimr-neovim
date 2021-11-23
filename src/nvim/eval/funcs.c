@@ -1180,7 +1180,7 @@ static void f_col(typval_T *argvars, typval_T *rettv, FunPtr fptr)
                                          - curwin->w_cursor.coladd))) {
           int l;
 
-          if (*p != NUL && p[(l = (*mb_ptr2len)(p))] == NUL) {
+          if (*p != NUL && p[(l = utfc_ptr2len(p))] == NUL) {
             col += l;
           }
         }
@@ -2663,12 +2663,12 @@ static void f_fnamemodify(typval_T *argvars, typval_T *rettv, FunPtr fptr)
   char buf[NUMBUFLEN];
   const char *fname = tv_get_string_chk(&argvars[0]);
   const char *const mods = tv_get_string_buf_chk(&argvars[1], buf);
-  if (fname == NULL) {
+  if (mods == NULL || fname == NULL) {
     fname = NULL;
-  } else if (mods != NULL && *mods != NUL) {
+  } else {
     len = strlen(fname);
-    size_t usedlen = 0;
     if (*mods != NUL) {
+      size_t usedlen = 0;
       (void)modify_fname((char_u *)mods, false, &usedlen,
                          (char_u **)&fname, &fbuf, &len);
     }
@@ -3174,7 +3174,7 @@ static void getchar_common(typval_T *argvars, typval_T *rettv)
   bool error = false;
 
   no_mapping++;
-  for (;; ) {
+  for (;;) {
     // Position the cursor.  Needed after a message that ends in a space,
     // or if event processing caused a redraw.
     ui_cursor_goto(msg_row, msg_col);
@@ -3386,15 +3386,17 @@ static void f_getcompletion(typval_T *argvars, typval_T *rettv, FunPtr fptr)
     emsg(_(e_invarg));
     return;
   }
+  const char *pattern = tv_get_string(&argvars[0]);
 
   if (strcmp(type, "cmdline") == 0) {
-    set_one_cmd_context(&xpc, tv_get_string(&argvars[0]));
+    set_one_cmd_context(&xpc, pattern);
     xpc.xp_pattern_len = STRLEN(xpc.xp_pattern);
+    xpc.xp_col = STRLEN(pattern);
     goto theend;
   }
 
   ExpandInit(&xpc);
-  xpc.xp_pattern = (char_u *)tv_get_string(&argvars[0]);
+  xpc.xp_pattern = (char_u *)pattern;
   xpc.xp_pattern_len = STRLEN(xpc.xp_pattern);
   xpc.xp_context = cmdcomplete_str_to_type(type);
   if (xpc.xp_context == EXPAND_NOTHING) {
@@ -3447,7 +3449,7 @@ static void f_getcwd(typval_T *argvars, typval_T *rettv, FunPtr fptr)
   // Numbers of the scope objects (window, tab) we want the working directory
   // of. A `-1` means to skip this scope, a `0` means the current object.
   int scope_number[] = {
-    [kCdScopeWindow ] = 0,  // Number of window to look at.
+    [kCdScopeWindow] = 0,  // Number of window to look at.
     [kCdScopeTabpage] = 0,  // Number of tab to look at.
   };
 
@@ -3483,11 +3485,6 @@ static void f_getcwd(typval_T *argvars, typval_T *rettv, FunPtr fptr)
     } else if (scope_number[i] < 0) {
       scope = i + 1;
     }
-  }
-
-  // If the user didn't specify anything, default to window scope
-  if (scope == kCdScopeInvalid) {
-    scope = MIN_CD_SCOPE;
   }
 
   // Find the tabpage by number
@@ -3535,16 +3532,17 @@ static void f_getcwd(typval_T *argvars, typval_T *rettv, FunPtr fptr)
   case kCdScopeGlobal:
     if (globaldir) {        // `globaldir` is not always set.
       from = globaldir;
-    } else if (os_dirname(cwd, MAXPATHL) == FAIL) {  // Get the OS CWD.
+      break;
+    }
+    FALLTHROUGH;            // In global directory, just need to get OS CWD.
+  case kCdScopeInvalid:     // If called without any arguments, get OS CWD.
+    if (os_dirname(cwd, MAXPATHL) == FAIL) {
       from = (char_u *)"";  // Return empty string on failure.
     }
-    break;
-  case kCdScopeInvalid:     // We should never get here
-    abort();
   }
 
   if (from) {
-    xstrlcpy((char *)cwd, (char *)from, MAXPATHL);
+    STRLCPY(cwd, from, MAXPATHL);
   }
 
   rettv->vval.v_string = vim_strsave(cwd);
@@ -4671,7 +4669,7 @@ static void f_haslocaldir(typval_T *argvars, typval_T *rettv, FunPtr fptr)
   // Numbers of the scope objects (window, tab) we want the working directory
   // of. A `-1` means to skip this scope, a `0` means the current object.
   int scope_number[] = {
-    [kCdScopeWindow ] = 0,  // Number of window to look at.
+    [kCdScopeWindow] = 0,  // Number of window to look at.
     [kCdScopeTabpage] = 0,  // Number of tab to look at.
   };
 
@@ -4871,7 +4869,7 @@ static void f_histnr(typval_T *argvars, typval_T *rettv, FunPtr fptr)
  */
 static void f_hlID(typval_T *argvars, typval_T *rettv, FunPtr fptr)
 {
-  rettv->vval.v_number = syn_name2id((const char_u *)tv_get_string(&argvars[0]));
+  rettv->vval.v_number = syn_name2id(tv_get_string(&argvars[0]));
 }
 
 /*
@@ -4879,7 +4877,7 @@ static void f_hlID(typval_T *argvars, typval_T *rettv, FunPtr fptr)
  */
 static void f_hlexists(typval_T *argvars, typval_T *rettv, FunPtr fptr)
 {
-  rettv->vval.v_number = highlight_exists((const char_u *)tv_get_string(&argvars[0]));
+  rettv->vval.v_number = highlight_exists(tv_get_string(&argvars[0]));
 }
 
 /*
@@ -6186,7 +6184,7 @@ static void find_some_match(typval_T *const argvars, typval_T *const rettv,
   if (regmatch.regprog != NULL) {
     regmatch.rm_ic = p_ic;
 
-    for (;; ) {
+    for (;;) {
       if (l != NULL) {
         if (li == NULL) {
           match = false;
@@ -6215,7 +6213,7 @@ static void find_some_match(typval_T *const argvars, typval_T *const rettv,
         idx++;
       } else {
         startcol = (colnr_T)(regmatch.startp[0]
-                             + (*mb_ptr2len)(regmatch.startp[0]) - str);
+                             + utfc_ptr2len(regmatch.startp[0]) - str);
         if (startcol > (colnr_T)len || str + startcol <= regmatch.startp[0]) {
           match = false;
           break;
@@ -7731,8 +7729,8 @@ static void f_resolve(typval_T *argvars, typval_T *rettv, FunPtr fptr)
     char *const buf = xmallocz(MAXPATHL);
 
     char *cpy;
-    for (;; ) {
-      for (;; ) {
+    for (;;) {
+      for (;;) {
         len = readlink(p, buf, MAXPATHL);
         if (len <= 0) {
           break;
@@ -8607,7 +8605,7 @@ long do_searchpair(const char *spat, const char *mpat, const char *epat, int dir
   clearpos(&firstpos);
   clearpos(&foundpos);
   pat = pat3;
-  for (;; ) {
+  for (;;) {
     searchit_arg_T sia;
     memset(&sia, 0, sizeof(sia));
     sia.sa_stop_lnum = lnum_stop;
@@ -10444,7 +10442,7 @@ static void f_split(typval_T *argvars, typval_T *rettv, FunPtr fptr)
         col = 0;
       } else {
         // Don't get stuck at the same match.
-        col = (*mb_ptr2len)(regmatch.endp[0]);
+        col = utfc_ptr2len(regmatch.endp[0]);
       }
       str = (const char *)regmatch.endp[0];
     }
@@ -10632,7 +10630,7 @@ static void f_strgetchar(typval_T *argvars, typval_T *rettv, FunPtr fptr)
       break;
     }
     charidx--;
-    byteidx += MB_CPTR2LEN((const char_u *)str + byteidx);
+    byteidx += utf_ptr2len((const char_u *)str + byteidx);
   }
 }
 
@@ -10749,7 +10747,7 @@ static void f_strcharpart(typval_T *argvars, typval_T *rettv, FunPtr fptr)
   if (!error) {
     if (nchar > 0) {
       while (nchar > 0 && (size_t)nbyte < slen) {
-        nbyte += MB_CPTR2LEN((const char_u *)p + nbyte);
+        nbyte += utf_ptr2len((const char_u *)p + nbyte);
         nchar--;
       }
     } else {
@@ -10765,7 +10763,7 @@ static void f_strcharpart(typval_T *argvars, typval_T *rettv, FunPtr fptr)
       if (off < 0) {
         len += 1;
       } else {
-        len += (size_t)MB_CPTR2LEN((const char_u *)p + off);
+        len += utf_ptr2len((const char_u *)p + off);
       }
       charlen--;
     }
@@ -11743,14 +11741,14 @@ static void f_trim(typval_T *argvars, typval_T *rettv, FunPtr fptr)
   if (dir == 0 || dir == 1) {
     // Trim leading characters
     while (*head != NUL) {
-      c1 = PTR2CHAR(head);
+      c1 = utf_ptr2char(head);
       if (mask == NULL) {
         if (c1 > ' ' && c1 != 0xa0) {
           break;
         }
       } else {
         for (p = mask; *p != NUL; MB_PTR_ADV(p)) {
-          if (c1 == PTR2CHAR(p)) {
+          if (c1 == utf_ptr2char(p)) {
             break;
           }
         }
@@ -11768,14 +11766,14 @@ static void f_trim(typval_T *argvars, typval_T *rettv, FunPtr fptr)
     for (; tail > head; tail = prev) {
       prev = tail;
       MB_PTR_BACK(head, prev);
-      c1 = PTR2CHAR(prev);
+      c1 = utf_ptr2char(prev);
       if (mask == NULL) {
         if (c1 > ' ' && c1 != 0xa0) {
           break;
         }
       } else {
         for (p = mask; *p != NUL; MB_PTR_ADV(p)) {
-          if (c1 == PTR2CHAR(p)) {
+          if (c1 == utf_ptr2char(p)) {
             break;
           }
         }

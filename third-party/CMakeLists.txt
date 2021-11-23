@@ -157,8 +157,8 @@ set(LUAJIT_SHA256 6c9e46877db2df16ca0fa76db4043ed30a1ae60c89d9ba2c3e4d35eb2360cd
 set(LUA_URL https://www.lua.org/ftp/lua-5.1.5.tar.gz)
 set(LUA_SHA256 2640fc56a795f29d28ef15e13c34a47e223960b0240e8cb0a82d9b0738695333)
 
-set(LUAROCKS_URL https://github.com/luarocks/luarocks/archive/v3.7.0.tar.gz)
-set(LUAROCKS_SHA256 968c98ae894cea2c850f077133e3feb9f8ce94df7a33a5611bd4d25e07c94925)
+set(LUAROCKS_URL https://github.com/luarocks/luarocks/archive/v3.8.0.tar.gz)
+set(LUAROCKS_SHA256 ab6612ca9ab87c6984871d2712d05525775e8b50172701a0a1cabddf76de2be7)
 
 set(UNIBILIUM_URL https://github.com/neovim/unibilium/archive/92d929f.tar.gz)
 set(UNIBILIUM_SHA256 29815283c654277ef77a3adcc8840db79ddbb20a0f0b0c8f648bd8cd49a02e4b)
@@ -200,11 +200,11 @@ set(GETTEXT_SHA256 66415634c6e8c3fa8b71362879ec7575e27da43da562c798a8a2f223e6e47
 set(LIBICONV_URL https://ftp.gnu.org/pub/gnu/libiconv/libiconv-1.15.tar.gz)
 set(LIBICONV_SHA256 ccf536620a45458d26ba83887a983b96827001e92a13847b45e4925cc8913178)
 
-set(TREESITTER_C_URL https://github.com/tree-sitter/tree-sitter-c/archive/5aa0bbb.tar.gz)
-set(TREESITTER_C_SHA256 a5dcb37460d83002dfae7f9a208170ddbc9a047f231b9d6b75da7d36d707db2f)
+set(TREESITTER_C_URL https://github.com/tree-sitter/tree-sitter-c/archive/v0.20.1.tar.gz)
+set(TREESITTER_C_SHA256 ffcc2ef0eded59ad1acec9aec4f9b0c7dd209fc1a85d85f8b0e81298e3dddcc2)
 
-set(TREESITTER_URL https://github.com/tree-sitter/tree-sitter/archive/7890a29db0b186b7b21a0a95d99fa6c562b8316b.tar.gz)
-set(TREESITTER_SHA256 634006b0336a5eef1b07d2f80a4d4f8ac1522bf15759ec3e5dda0032a734fb19)
+set(TREESITTER_URL https://github.com/tree-sitter/tree-sitter/archive/v0.20.1.tar.gz)
+set(TREESITTER_SHA256 12a3f7206af3028dbe8a0de50d8ebd6d7010bf762db918acae76fc7585f1258d)
 
 if(USE_BUNDLED_UNIBILIUM)
   include(BuildUnibilium)

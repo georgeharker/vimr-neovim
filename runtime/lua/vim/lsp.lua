@@ -5,6 +5,7 @@ local log = require 'vim.lsp.log'
 local lsp_rpc = require 'vim.lsp.rpc'
 local protocol = require 'vim.lsp.protocol'
 local util = require 'vim.lsp.util'
+local sync = require 'vim.lsp.sync'
 
 local vim = vim
 local nvim_err_writeln, nvim_buf_get_lines, nvim_command, nvim_buf_get_option
@@ -107,6 +108,19 @@ local valid_encodings = {
   ["utf8"]  = 'utf-8'; ["utf16"]  = 'utf-16'; ["utf32"]  = 'utf-32';
   UTF8      = 'utf-8'; UTF16      = 'utf-16'; UTF32      = 'utf-32';
 }
+
+local format_line_ending = {
+  ["unix"] = '\n',
+  ["dos"] = '\r\n',
+  ["mac"] = '\r',
+}
+
+---@private
+---@param bufnr (number)
+---@returns (string)
+local function buf_get_line_ending(bufnr)
+  return format_line_ending[nvim_buf_get_option(bufnr, 'fileformat')] or '\n'
+end
 
 local client_index = 0
 ---@private
@@ -229,7 +243,6 @@ local function validate_client_config(config)
     config = { config, 't' };
   }
   validate {
-    root_dir        = { config.root_dir, optional_validator(is_dir), "directory" };
     handlers        = { config.handlers, "t", true };
     capabilities    = { config.capabilities, "t", true };
     cmd_cwd         = { config.cmd_cwd, optional_validator(is_dir), "directory" };
@@ -271,9 +284,10 @@ end
 ---@param bufnr (number) Buffer handle, or 0 for current.
 ---@returns Buffer text as string.
 local function buf_get_full_text(bufnr)
-  local text = table.concat(nvim_buf_get_lines(bufnr, 0, -1, true), '\n')
+  local line_ending = buf_get_line_ending(bufnr)
+  local text = table.concat(nvim_buf_get_lines(bufnr, 0, -1, true), line_ending)
   if nvim_buf_get_option(bufnr, 'eol') then
-    text = text .. '\n'
+    text = text .. line_ending
   end
   return text
 end
@@ -351,15 +365,14 @@ do
     end
   end
 
-  function changetracking.prepare(bufnr, firstline, new_lastline, changedtick)
+  function changetracking.prepare(bufnr, firstline, lastline, new_lastline, changedtick)
     local incremental_changes = function(client)
       local cached_buffers = state_by_client[client.id].buffers
-      local lines = nvim_buf_get_lines(bufnr, 0, -1, true)
-      local startline =  math.min(firstline + 1, math.min(#cached_buffers[bufnr], #lines))
-      local endline =  math.min(-(#lines - new_lastline), -1)
-      local incremental_change = vim.lsp.util.compute_diff(
-        cached_buffers[bufnr], lines, startline, endline, client.offset_encoding or 'utf-16')
-      cached_buffers[bufnr] = lines
+      local curr_lines = nvim_buf_get_lines(bufnr, 0, -1, true)
+      local line_ending = buf_get_line_ending(bufnr)
+      local incremental_change = sync.compute_diff(
+        cached_buffers[bufnr], curr_lines, firstline, lastline, new_lastline, client.offset_encoding or 'utf-16', line_ending)
+      cached_buffers[bufnr] = curr_lines
       return incremental_change
     end
     local full_changes = once(function()
@@ -466,7 +479,11 @@ local function text_document_did_open_handler(bufnr, client)
 
   -- Next chance we get, we should re-do the diagnostics
   vim.schedule(function()
-    vim.lsp.diagnostic.redraw(bufnr, client.id)
+    -- Protect against a race where the buffer disappears
+    -- between `did_open_handler` and the scheduled function firing.
+    if vim.api.nvim_buf_is_valid(bufnr) then
+      vim.lsp.diagnostic.redraw(bufnr, client.id)
+    end
   end)
 end
 
@@ -556,12 +573,10 @@ end
 --
 --- Starts and initializes a client with the given configuration.
 ---
---- Parameters `cmd` and `root_dir` are required.
+--- Parameter `cmd` is required.
 ---
 --- The following parameters describe fields in the {config} table.
 ---
----@param root_dir: (string) Directory where the LSP server will base
---- its rootUri on initialization.
 ---
 ---@param cmd: (required, string or list treated like |jobstart()|) Base command
 --- that initiates the LSP client.
@@ -576,6 +591,11 @@ end
 --- <pre>
 --- { "PRODUCTION=true"; "TEST=123"; PORT = 8080; HOST = "0.0.0.0"; }
 --- </pre>
+---
+---@param workspace_folders (table) List of workspace folders passed to the
+--- language server. For backwards compatibility rootUri and rootPath will be
+--- derived from the first workspace folder in this list. See `workspaceFolders` in
+--- the LSP spec.
 ---
 ---@param capabilities Map overriding the default capabilities defined by
 --- |vim.lsp.protocol.make_client_capabilities()|, passed to the language
@@ -600,10 +620,6 @@ end
 --- as `initializationOptions`. See `initialize` in the LSP spec.
 ---
 ---@param name (string, default=client-id) Name in log messages.
---
----@param workspace_folders (table) List of workspace folders passed to the
---- language server. Defaults to root_dir if not set. See `workspaceFolders` in
---- the LSP spec
 ---
 ---@param get_language_id function(bufnr, filetype) -> language ID as string.
 --- Defaults to the filetype.
@@ -653,6 +669,11 @@ end
 --- - exit_timeout (number, default 500): Milliseconds to wait for server to
 --        exit cleanly after sending the 'shutdown' request before sending kill -15.
 --        If set to false, nvim exits immediately after sending the 'shutdown' request to the server.
+---
+---@param root_dir string Directory where the LSP
+--- server will base its workspaceFolders, rootUri, and rootPath
+--- on initialization.
+---
 ---@returns Client id. |vim.lsp.get_client_by_id()| Note: client may not be
 --- fully initialized. Use `on_init` to do any actions once
 --- the client has been initialized.
@@ -795,11 +816,24 @@ function lsp.start_client(config)
     }
     local version = vim.version()
 
-    if config.root_dir and not config.workspace_folders then
-      config.workspace_folders = {{
-        uri = vim.uri_from_fname(config.root_dir);
-        name = string.format("%s", config.root_dir);
-      }};
+    local workspace_folders
+    local root_uri
+    local root_path
+    if config.workspace_folders or config.root_dir then
+      if config.root_dir and not config.workspace_folders then
+        workspace_folders = {{
+          uri = vim.uri_from_fname(config.root_dir);
+          name = string.format("%s", config.root_dir);
+        }};
+      else
+        workspace_folders = config.workspace_folders
+      end
+      root_uri = workspace_folders[1].uri
+      root_path = vim.uri_to_fname(root_uri)
+    else
+      workspace_folders = nil
+      root_uri = nil
+      root_path = nil
     end
 
     local initialize_params = {
@@ -817,10 +851,15 @@ function lsp.start_client(config)
       -- The rootPath of the workspace. Is null if no folder is open.
       --
       -- @deprecated in favour of rootUri.
-      rootPath = config.root_dir;
+      rootPath = root_path or vim.NIL;
       -- The rootUri of the workspace. Is null if no folder is open. If both
       -- `rootPath` and `rootUri` are set `rootUri` wins.
-      rootUri = config.root_dir and vim.uri_from_fname(config.root_dir);
+      rootUri = root_uri or vim.NIL;
+      -- The workspace folders configured in the client when the server starts.
+      -- This property is only available if the client supports workspace folders.
+      -- It can be `null` if the client supports workspace folders but none are
+      -- configured.
+      workspaceFolders = workspace_folders or vim.NIL;
       -- User provided initialization options.
       initializationOptions = config.init_options;
       -- The capabilities provided by the client (editor or tool)
@@ -828,21 +867,6 @@ function lsp.start_client(config)
       -- The initial trace setting. If omitted trace is disabled ("off").
       -- trace = "off" | "messages" | "verbose";
       trace = valid_traces[config.trace] or 'off';
-      -- The workspace folders configured in the client when the server starts.
-      -- This property is only available if the client supports workspace folders.
-      -- It can be `null` if the client supports workspace folders but none are
-      -- configured.
-      --
-      -- Since 3.6.0
-      -- workspaceFolders?: WorkspaceFolder[] | null;
-      -- export interface WorkspaceFolder {
-      --  -- The associated URI for this workspace folder.
-      --  uri
-      --  -- The name of the workspace folder. Used to refer to this
-      --  -- workspace folder in the user interface.
-      --  name
-      -- }
-      workspaceFolders = config.workspace_folders,
     }
     if config.before_init then
       -- TODO(ashkan) handle errors here.
@@ -855,7 +879,9 @@ function lsp.start_client(config)
       rpc.notify('initialized', vim.empty_dict())
       client.initialized = true
       uninitialized_clients[client_id] = nil
-      client.workspaceFolders = initialize_params.workspaceFolders
+      client.workspace_folders = workspace_folders
+      -- TODO(mjlbach): Backwards compatbility, to be removed in 0.7
+      client.workspaceFolders = client.workspace_folders
       client.server_capabilities = assert(result.capabilities, "initialize result doesn't contain capabilities")
       -- These are the cleaned up capabilities we use for dynamically deciding
       -- when to send certain events to clients.
@@ -1067,22 +1093,14 @@ end
 --- Notify all attached clients that a buffer has changed.
 local text_document_did_change_handler
 do
-  text_document_did_change_handler = function(_, bufnr, changedtick,
-      firstline, lastline, new_lastline, old_byte_size, old_utf32_size,
-      old_utf16_size)
-
-    local _ = log.debug() and log.debug(
-      string.format("on_lines bufnr: %s, changedtick: %s, firstline: %s, lastline: %s, new_lastline: %s, old_byte_size: %s, old_utf32_size: %s, old_utf16_size: %s",
-      bufnr, changedtick, firstline, lastline, new_lastline, old_byte_size, old_utf32_size, old_utf16_size),
-      nvim_buf_get_lines(bufnr, firstline, new_lastline, true)
-    )
+  text_document_did_change_handler = function(_, bufnr, changedtick, firstline, lastline, new_lastline)
 
     -- Don't do anything if there are no clients attached.
     if tbl_isempty(all_buffer_active_clients[bufnr] or {}) then
       return
     end
     util.buf_versions[bufnr] = changedtick
-    local compute_change_and_notify = changetracking.prepare(bufnr, firstline, new_lastline, changedtick)
+    local compute_change_and_notify = changetracking.prepare(bufnr, firstline, lastline, new_lastline, changedtick)
     for_each_buffer_client(bufnr, compute_change_and_notify)
   end
 end
@@ -1583,6 +1601,21 @@ function lsp.formatexpr(opts)
 
   -- do not run builtin formatter.
   return 0
+end
+
+--- Provides an interface between the built-in client and 'tagfunc'.
+---
+--- When used with normal mode commands (e.g. |CTRL-]|) this will invoke
+--- the "textDocument/definition" LSP method to find the tag under the cursor.
+--- Otherwise, uses "workspace/symbol". If no results are returned from
+--- any LSP servers, falls back to using built-in tags.
+---
+---@param pattern Pattern used to find a workspace symbol
+---@param flags See |tag-function|
+---
+---@returns A list of matching tags
+function lsp.tagfunc(...)
+  return require('vim.lsp.tagfunc')(...)
 end
 
 ---Checks whether a client is stopped.

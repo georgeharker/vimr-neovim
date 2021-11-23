@@ -570,8 +570,8 @@ static bool normal_need_additional_char(NormalState *s)
                             //
                             // TODO(tarruda): Visual state needs to be refactored into a
                             // separate state that "inherits" from normal state.
-                            || ((cmdchar == 'a' || cmdchar == 'i') &&
-                                (pending_op || VIsual_active)));
+                            || ((cmdchar == 'a' || cmdchar == 'i')
+                                && (pending_op || VIsual_active)));
 }
 
 static bool normal_need_redraw_mode_message(NormalState *s)
@@ -2283,7 +2283,7 @@ bool do_mouse(oparg_T *oap, int c, int dir, long count, bool fixindent)
 
   save_cursor = curwin->w_cursor;
 
-  for (;; ) {
+  for (;;) {
     which_button = get_mouse_button(KEY2TERMCAP1(c), &is_click, &is_drag);
     if (is_drag) {
       /* If the next character is the same mouse event then use that
@@ -2931,7 +2931,7 @@ bool do_mouse(oparg_T *oap, int c, int dir, long count, bool fixindent)
           find_start_of_word(&VIsual);
           if (*p_sel == 'e' && *get_cursor_pos_ptr() != NUL) {
             curwin->w_cursor.col +=
-              (*mb_ptr2len)(get_cursor_pos_ptr());
+              utfc_ptr2len(get_cursor_pos_ptr());
           }
           find_end_of_word(&curwin->w_cursor);
         }
@@ -2998,7 +2998,7 @@ static void find_end_of_word(pos_T *pos)
   }
   cclass = get_mouse_class(line + pos->col);
   while (line[pos->col] != NUL) {
-    col = pos->col + (*mb_ptr2len)(line + pos->col);
+    col = pos->col + utfc_ptr2len(line + pos->col);
     if (get_mouse_class(line + col) != cclass) {
       if (*p_sel == 'e') {
         pos->col = col;
@@ -3437,7 +3437,7 @@ void clear_showcmd(void)
         e = ml_get_pos(&VIsual);
       }
       while ((*p_sel != 'e') ? s <= e : s < e) {
-        l = (*mb_ptr2len)(s);
+        l = utfc_ptr2len(s);
         if (l == 0) {
           ++bytes;
           ++chars;
@@ -3928,7 +3928,7 @@ bool find_decl(char_u *ptr, size_t len, bool locally, bool thisblock, int flags_
 
   // Search forward for the identifier, ignore comment lines.
   clearpos(&found_pos);
-  for (;; ) {
+  for (;;) {
     t = searchit(curwin, curbuf, &curwin->w_cursor, NULL, FORWARD,
                  pat, 1L, searchflags, RE_LAST, NULL);
     if (curwin->w_cursor.lnum >= old_pos.lnum) {
@@ -4307,7 +4307,7 @@ static void nv_zet(cmdarg_T *cap)
       return;
     }
     n = nchar - '0';
-    for (;; ) {
+    for (;;) {
       no_mapping++;
       nchar = plain_vgetc();
       LANGMAP_ADJUST(nchar, true);
@@ -5341,8 +5341,8 @@ static void nv_right(cmdarg_T *cap)
 
   for (n = cap->count1; n > 0; --n) {
     if ((!PAST_LINE && oneright() == false)
-        || (PAST_LINE &&
-            *get_cursor_pos_ptr() == NUL)) {
+        || (PAST_LINE
+            && *get_cursor_pos_ptr() == NUL)) {
       //          <Space> wraps to next line if 'whichwrap' has 's'.
       //              'l' wraps to next line if 'whichwrap' has 'l'.
       // CURS_RIGHT wraps to next line if 'whichwrap' has '>'.
@@ -5382,7 +5382,7 @@ static void nv_right(cmdarg_T *cap)
       if (virtual_active()) {
         oneright();
       } else {
-        curwin->w_cursor.col += (*mb_ptr2len)(get_cursor_pos_ptr());
+        curwin->w_cursor.col += utfc_ptr2len(get_cursor_pos_ptr());
       }
     }
   }
@@ -5838,7 +5838,7 @@ static void nv_brackets(cmdarg_T *cap)
         pos = NULL;
       }
       while (n > 0) {
-        for (;; ) {
+        for (;;) {
           if ((findc == '{' ? dec_cursor() : inc_cursor()) < 0) {
             // if not found anything, that's an error
             if (pos == NULL) {
@@ -7692,8 +7692,8 @@ static void adjust_cursor(oparg_T *oap)
   // - 'virtualedit' is not "all" and not "onemore".
   if (curwin->w_cursor.col > 0 && gchar_cursor() == NUL
       && (!VIsual_active || *p_sel == 'o')
-      && !virtual_active() &&
-      (ve_flags & VE_ONEMORE) == 0) {
+      && !virtual_active()
+      && (ve_flags & VE_ONEMORE) == 0) {
     curwin->w_cursor.col--;
     // prevent cursor from moving on the trail byte
     mb_adjust_cursor();

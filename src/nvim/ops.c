@@ -378,7 +378,7 @@ static void shift_block(oparg_T *oap, int amount)
         bd.startspaces = 0;
       }
     }
-    for (; ascii_iswhite(*bd.textstart); ) {
+    for (; ascii_iswhite(*bd.textstart);) {
       // TODO: is passing bd.textstart for start of the line OK?
       incr = lbr_chartabsize_adv(bd.textstart, &bd.textstart, (bd.start_vcol));
       total += incr;
@@ -1837,7 +1837,7 @@ int op_replace(oparg_T *oap, int c)
 
       // A double-wide character can be replaced only up to half the
       // times.
-      if ((*mb_char2cells)(c) > 1) {
+      if (utf_char2cells(c) > 1) {
         if ((numc & 1) && !bd.is_short) {
           ++bd.endspaces;
           ++n;
@@ -1847,7 +1847,7 @@ int op_replace(oparg_T *oap, int c)
 
       // Compute bytes needed, move character count to num_chars.
       num_chars = numc;
-      numc *= (*mb_char2len)(c);
+      numc *= utf_char2len(c);
 
       oldp = get_cursor_line_ptr();
       oldlen = (int)STRLEN(oldp);
@@ -1926,11 +1926,11 @@ int op_replace(oparg_T *oap, int c)
     while (ltoreq(curwin->w_cursor, oap->end)) {
       n = gchar_cursor();
       if (n != NUL) {
-        if ((*mb_char2len)(c) > 1 || (*mb_char2len)(n) > 1) {
+        if (utf_char2len(c) > 1 || utf_char2len(n) > 1) {
           // This is slow, but it handles replacing a single-byte
           // with a multi-byte and the other way around.
           if (curwin->w_cursor.lnum == oap->end.lnum) {
-            oap->end.col += (*mb_char2len)(c) - (*mb_char2len)(n);
+            oap->end.col += utf_char2len(c) - utf_char2len(n);
           }
           replace_character(c);
         } else {
@@ -2037,7 +2037,7 @@ void op_tilde(oparg_T *oap)
       did_change = swapchars(oap->op_type, &pos,
                              oap->end.col - pos.col + 1);
     } else {
-      for (;; ) {
+      for (;;) {
         did_change |= swapchars(oap->op_type, &pos,
                                 pos.lnum == oap->end.lnum ? oap->end.col + 1 :
                                 (int)STRLEN(ml_get_pos(&pos)));
@@ -2939,7 +2939,7 @@ void do_put(int regname, yankreg_T *reg, int dir, long count, int flags)
         bool one_past_line = (*cursor_pos == NUL);
         bool eol = false;
         if (!one_past_line) {
-          eol = (*(cursor_pos + mb_ptr2len(cursor_pos)) == NUL);
+          eol = (*(cursor_pos + utfc_ptr2len(cursor_pos)) == NUL);
         }
 
         bool ve_allows = (ve_flags == VE_ALL || ve_flags == VE_ONEMORE);
@@ -2987,7 +2987,7 @@ void do_put(int regname, yankreg_T *reg, int dir, long count, int flags)
       /* For the = register we need to split the string at NL
        * characters.
        * Loop twice: count the number of lines and save them. */
-      for (;; ) {
+      for (;;) {
         y_size = 0;
         ptr = insert_string;
         while (ptr != NULL) {
@@ -3204,7 +3204,7 @@ void do_put(int regname, yankreg_T *reg, int dir, long count, int flags)
       // get the old line and advance to the position to insert at
       oldp = get_cursor_line_ptr();
       oldlen = STRLEN(oldp);
-      for (ptr = oldp; vcol < col && *ptr; ) {
+      for (ptr = oldp; vcol < col && *ptr;) {
         // Count a tab for what it's worth (if list mode not on)
         incr = lbr_chartabsize_adv(oldp, &ptr, vcol);
         vcol += incr;
@@ -3317,7 +3317,7 @@ void do_put(int regname, yankreg_T *reg, int dir, long count, int flags)
       // if type is kMTCharWise, FORWARD is the same as BACKWARD on the next
       // char
       if (dir == FORWARD && gchar_cursor() != NUL) {
-        int bytelen = (*mb_ptr2len)(get_cursor_pos_ptr());
+        int bytelen = utfc_ptr2len(get_cursor_pos_ptr());
 
         // put it on the next of the multi-byte character.
         col += bytelen;
@@ -3703,7 +3703,7 @@ void ex_display(exarg_T *eap)
           n -= 2;
         }
         for (p = yb->y_array[j]; *p && (n -= ptr2cells(p)) >= 0; p++) {  // -V1019 NOLINT(whitespace/line_length)
-          clen = (*mb_ptr2len)(p);
+          clen = utfc_ptr2len(p);
           msg_outtrans_len(p, clen);
           p += clen - 1;
         }
@@ -3936,8 +3936,8 @@ int do_join(size_t count, int insert_space, int save_undo, int use_formatoptions
               || (utf_ptr2char(curr) < 0x100 && endcurr1 < 0x100))
           && (!has_format_option(FO_MBYTE_JOIN2)
               || (utf_ptr2char(curr) < 0x100 && !utf_eat_space(endcurr1))
-              || (endcurr1 < 0x100 &&
-                  !utf_eat_space(utf_ptr2char(curr))))) {
+              || (endcurr1 < 0x100
+                  && !utf_eat_space(utf_ptr2char(curr))))) {
         // don't add a space if the line is ending in a space
         if (endcurr1 == ' ') {
           endcurr1 = endcurr2;
@@ -5631,7 +5631,7 @@ static varnumber_T line_count_info(char_u *line, varnumber_T *wc, varnumber_T *c
   varnumber_T chars = 0;
   int is_word = 0;
 
-  for (i = 0; i < limit && line[i] != NUL; ) {
+  for (i = 0; i < limit && line[i] != NUL;) {
     if (is_word) {
       if (ascii_isspace(line[i])) {
         words++;
@@ -5640,8 +5640,8 @@ static varnumber_T line_count_info(char_u *line, varnumber_T *wc, varnumber_T *c
     } else if (!ascii_isspace(line[i])) {
       is_word = 1;
     }
-    ++chars;
-    i += (*mb_ptr2len)(line + i);
+    chars++;
+    i += utfc_ptr2len(line + i);
   }
 
   if (is_word) {

@@ -370,8 +370,8 @@ int ignorecase_opt(char_u *pat, int ic_in, int scs)
 {
   int ic = ic_in;
   if (ic && !no_smartcase && scs
-      && !(ctrl_x_mode_not_default() &&
-           curbuf->b_p_inf)) {
+      && !(ctrl_x_mode_not_default()
+           && curbuf->b_p_inf)) {
     ic = !pat_has_uppercase(pat);
   }
   no_smartcase = false;
@@ -386,7 +386,7 @@ bool pat_has_uppercase(char_u *pat)
   char_u *p = pat;
 
   while (*p != NUL) {
-    const int l = mb_ptr2len(p);
+    const int l = utfc_ptr2len(p);
 
     if (l > 1) {
       if (mb_isupper(utf_ptr2char(p))) {
@@ -757,7 +757,7 @@ int searchit(win_T *win, buf_T *buf, pos_T *pos, pos_T *end_pos, Direction dir, 
              * relative to the end of the match.
              */
             match_ok = false;
-            for (;; ) {
+            for (;;) {
               // Remember a position that is before the start
               // position, we use it if it's the last match in
               // the line.  Always accept a position after
@@ -797,7 +797,7 @@ int searchit(win_T *win, buf_T *buf, pos_T *pos, pos_T *end_pos, Direction dir, 
                 // for empty match: advance one char
                 if (matchcol == matchpos.col
                     && ptr[matchcol] != NUL) {
-                  matchcol += mb_ptr2len(ptr + matchcol);
+                  matchcol += utfc_ptr2len(ptr + matchcol);
                 }
               } else {
                 // Stop when the match is in a next line.
@@ -806,7 +806,7 @@ int searchit(win_T *win, buf_T *buf, pos_T *pos, pos_T *end_pos, Direction dir, 
                 }
                 matchcol = matchpos.col;
                 if (ptr[matchcol] != NUL) {
-                  matchcol += mb_ptr2len(ptr + matchcol);
+                  matchcol += utfc_ptr2len(ptr + matchcol);
                 }
               }
               if (ptr[matchcol] == NUL
@@ -1105,7 +1105,7 @@ int do_search(oparg_T *oap, int dirc, int search_delim, char_u *pat, long count,
   /*
    * Repeat the search when pattern followed by ';', e.g. "/foo/;?bar".
    */
-  for (;; ) {
+  for (;;) {
     bool show_top_bot_msg = false;
 
     searchstr = pat;
@@ -1465,7 +1465,7 @@ int search_for_exact_line(buf_T *buf, pos_T *pos, Direction dir, char_u *pat)
   if (buf->b_ml.ml_line_count == 0) {
     return FAIL;
   }
-  for (;; ) {
+  for (;;) {
     pos->lnum += dir;
     if (pos->lnum < 1) {
       if (p_ws) {
@@ -1585,7 +1585,7 @@ int searchc(cmdarg_T *cap, int t_cmd)
   len = (int)STRLEN(p);
 
   while (count--) {
-    for (;; ) {
+    for (;;) {
       if (dir > 0) {
         col += utfc_ptr2len(p + col);
         if (col >= len) {
@@ -1808,6 +1808,9 @@ pos_T *findmatchlimit(oparg_T *oap, int initc, int flags, int64_t maxtravel)
     initc = NUL;
   } else if (initc != '#' && initc != NUL) {
     find_mps_values(&initc, &findc, &backwards, true);
+    if (dir) {
+      backwards = (dir == FORWARD) ? false : true;
+    }
     if (findc == NUL) {
       return NULL;
     }
@@ -1870,8 +1873,8 @@ pos_T *findmatchlimit(oparg_T *oap, int initc, int flags, int64_t maxtravel)
         if (linep[pos.col] == NUL && pos.col) {
           --pos.col;
         }
-        for (;; ) {
-          initc = PTR2CHAR(linep + pos.col);
+        for (;;) {
+          initc = utf_ptr2char(linep + pos.col);
           if (initc == NUL) {
             break;
           }
@@ -1894,7 +1897,7 @@ pos_T *findmatchlimit(oparg_T *oap, int initc, int flags, int64_t maxtravel)
 
           // Set "match_escaped" if there are an odd number of
           // backslashes.
-          for (col = pos.col; check_prevcol(linep, col, '\\', &col); ) {
+          for (col = pos.col; check_prevcol(linep, col, '\\', &col);) {
             bslcnt++;
           }
           match_escaped = (bslcnt & 1);
@@ -2197,7 +2200,7 @@ pos_T *findmatchlimit(oparg_T *oap, int initc, int flags, int64_t maxtravel)
      *   inquote if the number of quotes in a line is even, unless this
      *   line or the previous one ends in a '\'.  Complicated, isn't it?
      */
-    const int c = PTR2CHAR(linep + pos.col);
+    const int c = utf_ptr2char(linep + pos.col);
     switch (c) {
     case NUL:
       // at end of line without trailing backslash, reset inquote
@@ -2278,7 +2281,7 @@ pos_T *findmatchlimit(oparg_T *oap, int initc, int flags, int64_t maxtravel)
         int col, bslcnt = 0;
 
         if (!cpo_bsl) {
-          for (col = pos.col; check_prevcol(linep, col, '\\', &col); ) {
+          for (col = pos.col; check_prevcol(linep, col, '\\', &col);) {
             bslcnt++;
           }
         }
@@ -2378,12 +2381,12 @@ void showmatch(int c)
    * Only show match for chars in the 'matchpairs' option.
    */
   // 'matchpairs' is "x:y,x:y"
-  for (p = curbuf->b_p_mps; *p != NUL; ++p) {
-    if (PTR2CHAR(p) == c && (curwin->w_p_rl ^ p_ri)) {
+  for (p = curbuf->b_p_mps; *p != NUL; p++) {
+    if (utf_ptr2char(p) == c && (curwin->w_p_rl ^ p_ri)) {
       break;
     }
     p += utfc_ptr2len(p) + 1;
-    if (PTR2CHAR(p) == c && !(curwin->w_p_rl ^ p_ri)) {
+    if (utf_ptr2char(p) == c && !(curwin->w_p_rl ^ p_ri)) {
       break;
     }
     p += utfc_ptr2len(p);
@@ -2520,7 +2523,7 @@ int findsent(Direction dir, long count)
     const int startlnum = pos.lnum;
     const bool cpo_J = vim_strchr(p_cpo, CPO_ENDOFSENT) != NULL;
 
-    for (;; ) {                 // find end of sentence
+    for (;;) {                 // find end of sentence
       c = gchar_pos(&pos);
       if (c == NUL || (pos.col == 0 && startPS(pos.lnum, NUL, FALSE))) {
         if (dir == BACKWARD && pos.lnum != startlnum) {
@@ -2530,7 +2533,7 @@ int findsent(Direction dir, long count)
       }
       if (c == '.' || c == '!' || c == '?') {
         tpos = pos;
-        do{
+        do {
           if ((c = inc(&tpos)) == -1) {
             break;
           }
@@ -3004,7 +3007,7 @@ static void back_in_line(void)
   int sclass;                       // starting class
 
   sclass = cls();
-  for (;; ) {
+  for (;;) {
     if (curwin->w_cursor.col == 0) {        // stop at start of line
       break;
     }
@@ -3427,12 +3430,22 @@ int current_block(oparg_T *oap, long count, int include, int what, int other)
   // user wants.
   save_cpo = p_cpo;
   p_cpo = (char_u *)(vim_strchr(p_cpo, CPO_MATCHBSL) != NULL ? "%M" : "%");
-  while (count-- > 0) {
-    if ((pos = findmatch(NULL, what)) == NULL) {
-      break;
+  if ((pos = findmatch(NULL, what)) != NULL) {
+    while (count-- > 0) {
+      if ((pos = findmatch(NULL, what)) == NULL) {
+        break;
+      }
+      curwin->w_cursor = *pos;
+      start_pos = *pos;   // the findmatch for end_pos will overwrite *pos
     }
-    curwin->w_cursor = *pos;
-    start_pos = *pos;  // the findmatch for end_pos will overwrite *pos
+  } else {
+    while (count-- > 0) {
+      if ((pos = findmatchlimit(NULL, what, FM_FORWARD, 0)) == NULL) {
+        break;
+      }
+      curwin->w_cursor = *pos;
+      start_pos = *pos;   // the findmatch for end_pos will overwrite *pos
+    }
   }
   p_cpo = save_cpo;
 
@@ -3527,7 +3540,7 @@ static bool in_html_tag(bool end_tag)
   int lc = NUL;
   pos_T pos;
 
-  for (p = line + curwin->w_cursor.col; p > line; ) {
+  for (p = line + curwin->w_cursor.col; p > line;) {
     if (*p == '<') {           // find '<' under/before cursor
       break;
     }
@@ -3555,7 +3568,7 @@ static bool in_html_tag(bool end_tag)
   }
 
   // check that the matching '>' is not preceded by '/'
-  for (;; ) {
+  for (;;) {
     if (inc(&pos) < 0) {
       return false;
     }
@@ -3791,7 +3804,7 @@ extend:
     } else {
       dir = FORWARD;
     }
-    for (i = count; --i >= 0; ) {
+    for (i = count; --i >= 0;) {
       if (start_lnum ==
           (dir == BACKWARD ? 1 : curbuf->b_ml.ml_line_count)) {
         retval = FAIL;
@@ -3806,7 +3819,7 @@ extend:
           start_lnum -= dir;
           break;
         }
-        for (;; ) {
+        for (;;) {
           if (start_lnum == (dir == BACKWARD
                              ? 1 : curbuf->b_ml.ml_line_count)) {
             break;
@@ -3946,7 +3959,7 @@ static int find_next_quote(char_u *line, int col, int quotechar, char_u *escape)
 {
   int c;
 
-  for (;; ) {
+  for (;;) {
     c = line[col];
     if (c == NUL) {
       return -1;
@@ -3955,7 +3968,7 @@ static int find_next_quote(char_u *line, int col, int quotechar, char_u *escape)
     } else if (c == quotechar) {
       break;
     }
-    col += mb_ptr2len(line + col);
+    col += utfc_ptr2len(line + col);
   }
   return col;
 }
@@ -4118,7 +4131,7 @@ bool current_quote(oparg_T *oap, long count, bool include, int quotechar)
     // Also do this when there is a Visual area, a' may leave the cursor
     // in between two strings.
     col_start = 0;
-    for (;; ) {
+    for (;;) {
       // Find open quote character.
       col_start = find_next_quote(line, col_start, quotechar, NULL);
       if (col_start < 0 || col_start > first_col) {
@@ -4842,7 +4855,7 @@ void find_pattern_in_path(char_u *ptr, Direction dir, size_t len, bool whole, bo
   }
   line = ml_get(lnum);
 
-  for (;; ) {
+  for (;;) {
     if (incl_regmatch.regprog != NULL
         && vim_regexec(&incl_regmatch, line, (colnr_T)0)) {
       char_u *p_fname = (curr_fname == curbuf->b_fname)
@@ -5379,7 +5392,7 @@ static void show_pat_in_path(char_u *line, int type, bool did_show, int action, 
   if (got_int) {                // 'q' typed at "--more--" message
     return;
   }
-  for (;; ) {
+  for (;;) {
     p = line + STRLEN(line) - 1;
     if (fp != NULL) {
       // We used fgets(), so get rid of newline at end

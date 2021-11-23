@@ -708,7 +708,7 @@ static int insert_execute(VimState *state, int key)
 
         if (str != NULL) {
           for (p = str; *p != NUL; MB_PTR_ADV(p)) {
-            ins_compl_addleader(PTR2CHAR(p));
+            ins_compl_addleader(utf_ptr2char(p));
           }
           xfree(str);
         } else {
@@ -1285,7 +1285,7 @@ normalchar:
         if (*str != NUL && stop_arrow() != FAIL) {
           // Insert the new value of v:char literally.
           for (p = str; *p != NUL; MB_PTR_ADV(p)) {
-            s->c = PTR2CHAR(p);
+            s->c = utf_ptr2char(p);
             if (s->c == CAR || s->c == K_KENTER || s->c == NL) {
               ins_eol(s->c);
             } else {
@@ -2073,7 +2073,8 @@ static bool check_compl_option(bool dict_opt)
 {
   if (dict_opt
       ? (*curbuf->b_p_dict == NUL && *p_dict == NUL && !curwin->w_p_spell)
-      : (*curbuf->b_p_tsr == NUL && *p_tsr == NUL)) {
+      : (*curbuf->b_p_tsr == NUL && *p_tsr == NUL
+         && *curbuf->b_p_tsrfu == NUL && *p_tsrfu == NUL)) {
     ctrl_x_mode = CTRL_X_NORMAL;
     edit_submode = NULL;
     msg_attr((dict_opt
@@ -3293,16 +3294,11 @@ void get_complete_info(list_T *what_list, dict_T *retdict)
           dict_T *di = tv_dict_alloc();
 
           tv_list_append_dict(li, di);
-          tv_dict_add_str(di, S_LEN("word"),
-                          (char *)EMPTY_IF_NULL(match->cp_str));
-          tv_dict_add_str(di, S_LEN("abbr"),
-                          (char *)EMPTY_IF_NULL(match->cp_text[CPT_ABBR]));
-          tv_dict_add_str(di, S_LEN("menu"),
-                          (char *)EMPTY_IF_NULL(match->cp_text[CPT_MENU]));
-          tv_dict_add_str(di, S_LEN("kind"),
-                          (char *)EMPTY_IF_NULL(match->cp_text[CPT_KIND]));
-          tv_dict_add_str(di, S_LEN("info"),
-                          (char *)EMPTY_IF_NULL(match->cp_text[CPT_INFO]));
+          tv_dict_add_str(di, S_LEN("word"), EMPTY_IF_NULL(match->cp_str));
+          tv_dict_add_str(di, S_LEN("abbr"), EMPTY_IF_NULL(match->cp_text[CPT_ABBR]));
+          tv_dict_add_str(di, S_LEN("menu"), EMPTY_IF_NULL(match->cp_text[CPT_MENU]));
+          tv_dict_add_str(di, S_LEN("kind"), EMPTY_IF_NULL(match->cp_text[CPT_KIND]));
+          tv_dict_add_str(di, S_LEN("info"), EMPTY_IF_NULL(match->cp_text[CPT_INFO]));
           if (match->cp_user_data.v_type == VAR_UNKNOWN) {
             tv_dict_add_str(di, S_LEN("user_data"), "");
           } else {
@@ -3549,7 +3545,7 @@ static void ins_compl_addfrommatch(void)
     }
   }
   p += len;
-  c = PTR2CHAR(p);
+  c = utf_ptr2char(p);
   ins_compl_addleader(c);
 }
 
@@ -3924,6 +3920,20 @@ static buf_T *ins_compl_next_buf(buf_T *buf, int flag)
 }
 
 
+/// Get the user-defined completion function name for completion 'type'
+static char_u *get_complete_funcname(int type) {
+  switch (type) {
+  case CTRL_X_FUNCTION:
+    return curbuf->b_p_cfu;
+  case CTRL_X_OMNI:
+    return curbuf->b_p_ofu;
+  case CTRL_X_THESAURUS:
+    return *curbuf->b_p_tsrfu == NUL ? p_tsrfu : curbuf->b_p_tsrfu;
+  default:
+    return (char_u *)"";
+  }
+}
+
 /// Execute user defined complete function 'completefunc' or 'omnifunc', and
 /// get matches in "matches".
 ///
@@ -3940,7 +3950,7 @@ static void expand_by_function(int type, char_u *base)
   const int save_State = State;
 
   assert(curbuf != NULL);
-  funcname = (type == CTRL_X_FUNCTION) ? curbuf->b_p_cfu : curbuf->b_p_ofu;
+  funcname = get_complete_funcname(type);
   if (*funcname == NUL) {
     return;
   }
@@ -4099,6 +4109,13 @@ int ins_compl_add_tv(typval_T *const tv, const Direction dir, bool fast)
                        (char_u **)cptext, true, &user_data, dir, flags, dup);
 }
 
+/// Returns true when using a user-defined function for thesaurus completion.
+static bool thesaurus_func_complete(int type)
+{
+  return type == CTRL_X_THESAURUS
+         && (*curbuf->b_p_tsrfu != NUL || *p_tsrfu != NUL);
+}
+
 // Get the next expansion(s), using "compl_pattern".
 // The search starts at position "ini" in curbuf and in the direction
 // compl_direction.
@@ -4151,7 +4168,7 @@ static int ins_compl_get_exp(pos_T *ini)
   pos = (compl_direction == FORWARD) ? &last_match_pos : &first_match_pos;
 
   // For ^N/^P loop over all the flags/windows/buffers in 'complete'
-  for (;; ) {
+  for (;;) {
     found_new_match = FAIL;
     set_match_pos = false;
 
@@ -4272,17 +4289,17 @@ static int ins_compl_get_exp(pos_T *ini)
 
     case CTRL_X_DICTIONARY:
     case CTRL_X_THESAURUS:
-      ins_compl_dictionaries(dict != NULL ? dict
-                                          : (type == CTRL_X_THESAURUS
-             ? (*curbuf->b_p_tsr == NUL
-                ? p_tsr
-                : curbuf->b_p_tsr)
-                : (*curbuf->b_p_dict == NUL
-                ? p_dict
-                : curbuf->b_p_dict)),
-                             compl_pattern,
-                             dict != NULL ? dict_f
-                                          : 0, type == CTRL_X_THESAURUS);
+      if (thesaurus_func_complete(type)) {
+        expand_by_function(type, compl_pattern);
+      } else {
+        ins_compl_dictionaries(dict != NULL ? dict
+                               : (type == CTRL_X_THESAURUS
+                                  ? (*curbuf->b_p_tsr == NUL ? p_tsr : curbuf->b_p_tsr)
+                                  : (*curbuf->b_p_dict ==
+                                     NUL ? p_dict : curbuf->b_p_dict)),
+                               compl_pattern,
+                               dict != NULL ? dict_f : 0, type == CTRL_X_THESAURUS);
+      }
       dict = NULL;
       break;
 
@@ -4369,7 +4386,7 @@ static int ins_compl_get_exp(pos_T *ini)
         p_ws = true;
       }
       bool looped_around = false;
-      for (;; ) {
+      for (;;) {
         bool cont_s_ipos = false;
 
         msg_silent++;          // Don't want messages for wrapscan.
@@ -4615,16 +4632,11 @@ static dict_T *ins_compl_dict_alloc(compl_T *match)
 {
   // { word, abbr, menu, kind, info }
   dict_T *dict = tv_dict_alloc_lock(VAR_FIXED);
-  tv_dict_add_str(dict, S_LEN("word"),
-                  (const char *)EMPTY_IF_NULL(match->cp_str));
-  tv_dict_add_str(dict, S_LEN("abbr"),
-                  (const char *)EMPTY_IF_NULL(match->cp_text[CPT_ABBR]));
-  tv_dict_add_str(dict, S_LEN("menu"),
-                  (const char *)EMPTY_IF_NULL(match->cp_text[CPT_MENU]));
-  tv_dict_add_str(dict, S_LEN("kind"),
-                  (const char *)EMPTY_IF_NULL(match->cp_text[CPT_KIND]));
-  tv_dict_add_str(dict, S_LEN("info"),
-                  (const char *)EMPTY_IF_NULL(match->cp_text[CPT_INFO]));
+  tv_dict_add_str(dict, S_LEN("word"), EMPTY_IF_NULL(match->cp_str));
+  tv_dict_add_str(dict, S_LEN("abbr"), EMPTY_IF_NULL(match->cp_text[CPT_ABBR]));
+  tv_dict_add_str(dict, S_LEN("menu"), EMPTY_IF_NULL(match->cp_text[CPT_MENU]));
+  tv_dict_add_str(dict, S_LEN("kind"), EMPTY_IF_NULL(match->cp_text[CPT_KIND]));
+  tv_dict_add_str(dict, S_LEN("info"), EMPTY_IF_NULL(match->cp_text[CPT_INFO]));
   if (match->cp_user_data.v_type == VAR_UNKNOWN) {
     tv_dict_add_str(dict, S_LEN("user_data"), "");
   } else {
@@ -5095,7 +5107,9 @@ static int ins_complete(int c, bool enable_pum)
     }
 
     // Work out completion pattern and original text -- webb
-    if (ctrl_x_mode == CTRL_X_NORMAL || (ctrl_x_mode & CTRL_X_WANT_IDENT)) {
+    if (ctrl_x_mode == CTRL_X_NORMAL
+        || (ctrl_x_mode & CTRL_X_WANT_IDENT
+            && !thesaurus_func_complete(ctrl_x_mode))) {
       if ((compl_cont_status & CONT_SOL)
           || ctrl_x_mode == CTRL_X_PATH_DEFINES) {
         if (!(compl_cont_status & CONT_ADDING)) {
@@ -5179,10 +5193,10 @@ static int ins_complete(int c, bool enable_pum)
         char_u *p = line + startcol;
 
         MB_PTR_BACK(line, p);
-        while (p > line && vim_isfilec(PTR2CHAR(p))) {
+        while (p > line && vim_isfilec(utf_ptr2char(p))) {
           MB_PTR_BACK(line, p);
         }
-        if (p == line && vim_isfilec(PTR2CHAR(p))) {
+        if (p == line && vim_isfilec(utf_ptr2char(p))) {
           startcol = 0;
         } else {
           startcol = (int)(p - line) + 1;
@@ -5205,22 +5219,18 @@ static int ins_complete(int c, bool enable_pum)
         compl_col = (int)(compl_xp.xp_pattern - compl_pattern);
       }
       compl_length = curs_col - compl_col;
-    } else if (ctrl_x_mode == CTRL_X_FUNCTION || ctrl_x_mode ==
-               CTRL_X_OMNI) {
-      /*
-       * Call user defined function 'completefunc' with "a:findstart"
-       * set to 1 to obtain the length of text to use for completion.
-       */
+    } else if (ctrl_x_mode == CTRL_X_FUNCTION || ctrl_x_mode == CTRL_X_OMNI
+               || thesaurus_func_complete(ctrl_x_mode)) {
+      // Call user defined function 'completefunc' with "a:findstart"
+      // set to 1 to obtain the length of text to use for completion.
       char_u *funcname;
       pos_T pos;
       win_T *curwin_save;
       buf_T *curbuf_save;
       const int save_State = State;
 
-      /* Call 'completefunc' or 'omnifunc' and get pattern length as a
-       * string */
-      funcname = ctrl_x_mode == CTRL_X_FUNCTION
-                 ? curbuf->b_p_cfu : curbuf->b_p_ofu;
+      // Call 'completefunc' or 'omnifunc' and get pattern length as a string
+      funcname = get_complete_funcname(ctrl_x_mode);
       if (*funcname == NUL) {
         semsg(_(e_notset), ctrl_x_mode == CTRL_X_FUNCTION
             ? "completefunc" : "omnifunc");
@@ -5562,7 +5572,7 @@ int get_literal(void)
   no_mapping++;                 // don't map the next key hits
   cc = 0;
   i = 0;
-  for (;; ) {
+  for (;;) {
     nc = plain_vgetc();
     if (!(State & CMDLINE)
         && MB_BYTE2LEN_CHECK(nc) == 1) {
@@ -6669,7 +6679,7 @@ static void stop_insert(pos_T *end_insert_pos, int esc, int nomove)
 
       curwin->w_cursor = *end_insert_pos;
       check_cursor_col();        // make sure it is not past the line
-      for (;; ) {
+      for (;;) {
         if (gchar_cursor() == NUL && curwin->w_cursor.col > 0) {
           --curwin->w_cursor.col;
         }
@@ -6860,7 +6870,7 @@ int oneleft(void)
 
     // We might get stuck on 'showbreak', skip over it.
     width = 1;
-    for (;; ) {
+    for (;;) {
       coladvance(v - width);
       // getviscol() is slow, skip it when 'showbreak' is empty,
       // 'breakindent' is not set and there are no multi-byte
@@ -7169,7 +7179,7 @@ void replace_push(int c)
  */
 int replace_push_mb(char_u *p)
 {
-  int l = (*mb_ptr2len)(p);
+  int l = utfc_ptr2len(p);
   int j;
 
   for (j = l - 1; j >= 0; --j) {
@@ -7194,7 +7204,7 @@ static void replace_join(int off)
 {
   int i;
 
-  for (i = replace_stack_nr; --i >= 0; ) {
+  for (i = replace_stack_nr; --i >= 0;) {
     if (replace_stack[i] == NUL && off-- <= 0) {
       --replace_stack_nr;
       memmove(replace_stack + i, replace_stack + i + 1,
@@ -7243,7 +7253,7 @@ static void mb_replace_pop_ins(int cc)
   }
 
   // Handle composing chars.
-  for (;; ) {
+  for (;;) {
     c = replace_pop();
     if (c == -1) {                // stack empty
       break;
@@ -7325,7 +7335,7 @@ static void replace_do_bs(int limit_col)
       vcol = start_vcol;
       for (i = 0; i < ins_len; i++) {
         vcol += win_chartabsize(curwin, p + i, vcol);
-        i += (*mb_ptr2len)(p) - 1;
+        i += utfc_ptr2len(p) - 1;
       }
       vcol -= start_vcol;
 
@@ -9013,7 +9023,7 @@ static bool ins_tab(void)
         // correct replace stack.
         if ((State & REPLACE_FLAG)
             && !(State & VREPLACE_FLAG)) {
-          for (temp = i; --temp >= 0; ) {
+          for (temp = i; --temp >= 0;) {
             replace_join(repl_off);
           }
         }

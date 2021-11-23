@@ -1115,6 +1115,8 @@ A jump table for the options with a short description can be found at |Q_op|.
 	Also see |win_gettype()|, which returns the type of the window.
 
 	Be careful with changing this option, it can have many side effects!
+	One such effect is that Vim will not check the timestamp of the file,
+	if the file is changed by another program this will not be noticed.
 
 	A "quickfix" buffer is only used for the error list and the location
 	list.  This value is set by the |:cwindow| and |:lwindow| commands and
@@ -3703,9 +3705,10 @@ A jump table for the options with a short description can be found at |Q_op|.
 						*'list'* *'nolist'*
 'list'			boolean	(default off)
 			local to window
-	List mode: Show tabs as CTRL-I is displayed, display $ after end of
-	line.  Useful to see the difference between tabs and spaces and for
-	trailing blanks.  Further changed by the 'listchars' option.
+	List mode: By default, show tabs as ">", trailing spaces as "-", and
+	non-breakable space characters as "+". Useful to see the difference
+	between tabs and spaces and for trailing blanks. Further changed by
+	the 'listchars' option.
 
 	The cursor is displayed at the start of the space a Tab character
 	occupies, not at the end as usual in Normal mode.  To get this cursor
@@ -3788,6 +3791,13 @@ A jump table for the options with a short description can be found at |Q_op|.
 
 	The characters ':' and ',' should not be used.  UTF-8 characters can
 	be used.  All characters must be single width.
+
+	Each character can be specified as hex: >
+		set listchars=eol:\\x24
+		set listchars=eol:\\u21b5
+		set listchars=eol:\\U000021b5
+<	Note that a double backslash is used.  The number of hex characters
+	must be exactly 2 for \\x, 4 for \\u and 8 for \\U.
 
 	Examples: >
 	    :set lcs=tab:>-,trail:-
@@ -6445,19 +6455,28 @@ A jump table for the options with a short description can be found at |Q_op|.
 'thesaurus' 'tsr'	string	(default "")
 			global or local to buffer |global-local|
 	List of file names, separated by commas, that are used to lookup words
-	for thesaurus completion commands |i_CTRL-X_CTRL-T|.
+	for thesaurus completion commands |i_CTRL-X_CTRL-T|.  See
+	|compl-thesaurus|.
 
-	Each line in the file should contain words with similar meaning,
-	separated by non-keyword characters (white space is preferred).
-	Maximum line length is 510 bytes.
+	This option is not used if 'thesaurusfunc' is set, either for the
+	buffer or globally.
 
 	To include a comma in a file name precede it with a backslash.  Spaces
 	after a comma are ignored, otherwise spaces are included in the file
-	name.  See |option-backslash| about using backslashes.
-	The use of |:set+=| and |:set-=| is preferred when adding or removing
-	directories from the list.  This avoids problems when a future version
-	uses another default.
-	Backticks cannot be used in this option for security reasons.
+	name.  See |option-backslash| about using backslashes.  The use of
+	|:set+=| and |:set-=| is preferred when adding or removing directories
+	from the list.  This avoids problems when a future version uses
+	another default.  Backticks cannot be used in this option for security
+	reasons.
+
+						*'thesaurusfunc'* *'tsrfu'*
+'thesaurusfunc' 'tsrfu'	string	(default: empty)
+			global or local to buffer |global-local|
+	This option specifies a function to be used for thesaurus completion
+	with CTRL-X CTRL-T. |i_CTRL-X_CTRL-T| See |compl-thesaurusfunc|.
+
+	This option cannot be set from a |modeline| or in the |sandbox|, for
+	security reasons.
 
 			     *'tildeop'* *'top'* *'notildeop'* *'notop'*
 'tildeop' 'top'		boolean	(default off)

@@ -28,6 +28,7 @@ local function progress_handler(_, result, ctx, _)
   local client_name = client and client.name or string.format("id=%d", client_id)
   if not client then
     err_message("LSP[", client_name, "] client has shut down after sending the message")
+    return
   end
   local val = result.value    -- unspecified yet
   local token = result.token  -- string or number
@@ -349,7 +350,10 @@ M['textDocument/signatureHelp'] = M.signature_help
 --see: https://microsoft.github.io/language-server-protocol/specifications/specification-current/#textDocument_documentHighlight
 M['textDocument/documentHighlight'] = function(_, result, ctx, _)
   if not result then return end
-  util.buf_highlight_references(ctx.bufnr, result)
+  local client_id = ctx.client_id
+  local client = vim.lsp.get_client_by_id(client_id)
+  if not client then return end
+  util.buf_highlight_references(ctx.bufnr, result, client.offset_encoding)
 end
 
 ---@private

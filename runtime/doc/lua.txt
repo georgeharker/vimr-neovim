@@ -1200,7 +1200,7 @@ inspect({object}, {options})                                   *vim.inspect()*
                     https://github.com/kikito/inspect.lua
                     https://github.com/mpeterv/vinspect
 
-make_dict_accessor({scope})                         *vim.make_dict_accessor()*
+make_dict_accessor({scope}, {handle})               *vim.make_dict_accessor()*
                 TODO: Documentation
 
 notify({msg}, {log_level}, {_opts})                             *vim.notify()*
@@ -1656,44 +1656,64 @@ uri_from_bufnr({bufnr})                                 *vim.uri_from_bufnr()*
                 Get a URI from a bufnr
 
                 Parameters: ~
-                    {bufnr}  (number): Buffer number
+                    {bufnr}  number
 
                 Return: ~
-                    URI
+                    string URI
 
 uri_from_fname({path})                                  *vim.uri_from_fname()*
                 Get a URI from a file path.
 
                 Parameters: ~
-                    {path}  (string): Path to file
+                    {path}  string Path to file
 
                 Return: ~
-                    URI
+                    string URI
 
 uri_to_bufnr({uri})                                       *vim.uri_to_bufnr()*
-                Return or create a buffer for a uri.
+                Get the buffer for a uri. Creates a new unloaded buffer if no
+                buffer for the uri already exists.
 
                 Parameters: ~
-                    {uri}  (string): The URI
+                    {uri}  string
 
                 Return: ~
-                    bufnr.
-
-                Note:
-                    Creates buffer but does not load it
+                    number bufnr
 
 uri_to_fname({uri})                                       *vim.uri_to_fname()*
                 Get a filename from a URI
 
                 Parameters: ~
-                    {uri}  (string): The URI
+                    {uri}  string
 
                 Return: ~
-                    Filename
+                    string filename or unchanged URI for non-file URIs
 
 
 ==============================================================================
 Lua module: ui                                                        *lua-ui*
+
+input({opts}, {on_confirm})                                   *vim.ui.input()*
+                Prompts the user for input
+
+                Parameters: ~
+                    {opts}        table Additional options. See |input()|
+                                  • prompt (string|nil) Text of the prompt.
+                                    Defaults to `Input:` .
+                                  • default (string|nil) Default reply to the
+                                    input
+                                  • completion (string|nil) Specifies type of
+                                    completion supported for input. Supported
+                                    types are the same that can be supplied to
+                                    a user-defined command using the
+                                    "-complete=" argument. See
+                                    |:command-completion|
+                                  • highlight (function) Function that will be
+                                    used for highlighting user inputs.
+                    {on_confirm}  function ((input|nil) -> ()) Called once the
+                                  user confirms or abort the input. `input` is
+                                  what the user typed. `nil` if the user
+                                  aborted the dialog.
 
 select({items}, {opts}, {on_choice})                         *vim.ui.select()*
                 Prompts the user to pick a single item from a collection of
@@ -1707,6 +1727,12 @@ select({items}, {opts}, {on_choice})                         *vim.ui.select()*
                                  • format_item (function item -> text)
                                    Function to format an individual item from
                                    `items` . Defaults to `tostring` .
+                                 • kind (string|nil) Arbitrary hint string
+                                   indicating the item shape. Plugins
+                                   reimplementing `vim.ui.select` may wish to
+                                   use this to infer the structure or
+                                   semantics of `items` , or the context in
+                                   which select() was called.
                     {on_choice}  function ((item|nil, idx|nil) -> ()) Called
                                  once the user made a choice. `idx` is the
                                  1-based index of `item` within `item` . `nil`

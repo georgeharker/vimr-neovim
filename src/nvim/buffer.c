@@ -1305,7 +1305,7 @@ int do_buffer(int action, int start, int dir, int count, int forceit)
     if (buf == NULL) {          // No previous buffer, Try 2'nd approach
       forward = true;
       buf = curbuf->b_next;
-      for (;; ) {
+      for (;;) {
         if (buf == NULL) {
           if (!forward) {               // tried both directions
             break;
@@ -1587,7 +1587,7 @@ void do_autochdir(void)
     if (starting == 0
         && curbuf->b_ffname != NULL
         && vim_chdirfile(curbuf->b_ffname, kCdCauseAuto) == OK) {
-      post_chdir(kCdScopeGlobal, false);
+      last_chdir_reason = "autochdir";
       shorten_fnames(true);
     }
   }
@@ -1925,6 +1925,7 @@ void free_buf_options(buf_T *buf, int free_p_ff)
   clear_string_option(&buf->b_p_cpt);
   clear_string_option(&buf->b_p_cfu);
   clear_string_option(&buf->b_p_ofu);
+  clear_string_option(&buf->b_p_tsrfu);
   clear_string_option(&buf->b_p_gp);
   clear_string_option(&buf->b_p_mp);
   clear_string_option(&buf->b_p_efm);
@@ -2162,7 +2163,7 @@ int buflist_findpat(const char_u *pattern, const char_u *pattern_end, bool unlis
     // First try finding a listed buffer.  If not found and "unlisted"
     // is true, try finding an unlisted buffer.
     find_listed = true;
-    for (;; ) {
+    for (;;) {
       for (attempt = 0; attempt <= 3; attempt++) {
         // may add '^' and '$'
         if (toggledollar) {
@@ -3129,7 +3130,7 @@ void fileinfo(int fullname, int shorthelp, int dont_truncate)
       //   before redrawing).
       // - When the screen was scrolled but there is no wait-return
       //   prompt.
-      set_keep_msg((char_u *)p, 0);
+      set_keep_msg(p, 0);
     }
   }
 
@@ -3428,7 +3429,7 @@ int build_stl_str_hl(win_T *wp, char_u *out, size_t outlen, char_u *fmt, int use
   static int *stl_separator_locations = NULL;
 
 #define TMPLEN 70
-  char_u buf_tmp[TMPLEN];
+  char buf_tmp[TMPLEN];
   char_u win_tmp[TMPLEN];
   char_u *usefmt = fmt;
   const int save_must_redraw = must_redraw;
@@ -3461,7 +3462,7 @@ int build_stl_str_hl(win_T *wp, char_u *out, size_t outlen, char_u *fmt, int use
 
   if (fillchar == 0) {
     fillchar = ' ';
-  } else if (mb_char2len(fillchar) > 1) {
+  } else if (utf_char2len(fillchar) > 1) {
     // Can't handle a multi-byte fill character yet.
     fillchar = '-';
   }
@@ -3510,7 +3511,7 @@ int build_stl_str_hl(win_T *wp, char_u *out, size_t outlen, char_u *fmt, int use
 
   // Proceed character by character through the statusline format string
   // fmt_p is the current position in the input buffer
-  for (char_u *fmt_p = usefmt; *fmt_p; ) {
+  for (char_u *fmt_p = usefmt; *fmt_p;) {
     if (curitem == (int)stl_items_len) {
       size_t new_len = stl_items_len * 3 / 2;
 
@@ -3649,7 +3650,7 @@ int build_stl_str_hl(win_T *wp, char_u *out, size_t outlen, char_u *fmt, int use
         long n = 0;
         while (group_len >= stl_items[stl_groupitems[groupdepth]].maxwid) {
           group_len -= ptr2cells(t + n);
-          n += (*mb_ptr2len)(t + n);
+          n += utfc_ptr2len(t + n);
         }
         // }
 
@@ -3855,7 +3856,7 @@ int build_stl_str_hl(win_T *wp, char_u *out, size_t outlen, char_u *fmt, int use
     bool itemisflag = false;
     bool fillable = true;
     long num = -1;
-    char_u *str = NULL;
+    char *str = NULL;
     switch (opt) {
     case STL_FILEPATH:
     case STL_FULLPATH:
@@ -3872,9 +3873,9 @@ int build_stl_str_hl(win_T *wp, char_u *out, size_t outlen, char_u *fmt, int use
       }
       trans_characters(NameBuff, MAXPATHL);
       if (opt != STL_FILENAME) {
-        str = NameBuff;
+        str = (char *)NameBuff;
       } else {
-        str = path_tail(NameBuff);
+        str = (char *)path_tail(NameBuff);
       }
       break;
     case STL_VIM_EXPR:     // '{'
@@ -3911,8 +3912,8 @@ int build_stl_str_hl(win_T *wp, char_u *out, size_t outlen, char_u *fmt, int use
       // { Evaluate the expression
 
       // Store the current buffer number as a string variable
-      vim_snprintf((char *)buf_tmp, sizeof(buf_tmp), "%d", curbuf->b_fnum);
-      set_internal_string_var("g:actual_curbuf", buf_tmp);
+      vim_snprintf(buf_tmp, sizeof(buf_tmp), "%d", curbuf->b_fnum);
+      set_internal_string_var("g:actual_curbuf", (char_u *)buf_tmp);
       vim_snprintf((char *)win_tmp, sizeof(win_tmp), "%d", curwin->handle);
       set_internal_string_var("g:actual_curwin", win_tmp);
 
@@ -3927,7 +3928,7 @@ int build_stl_str_hl(win_T *wp, char_u *out, size_t outlen, char_u *fmt, int use
       }
 
       // Note: The result stored in `t` is unused.
-      str = eval_to_string_safe(out_p, &t, use_sandbox);
+      str = (char *)eval_to_string_safe(out_p, &t, use_sandbox);
 
       curwin = save_curwin;
       curbuf = save_curbuf;
@@ -3942,8 +3943,8 @@ int build_stl_str_hl(win_T *wp, char_u *out, size_t outlen, char_u *fmt, int use
       // Check if the evaluated result is a number.
       // If so, convert the number to an int and free the string.
       if (str != NULL && *str != 0) {
-        if (*skipdigits(str) == NUL) {
-          num = atoi((char *)str);
+        if (*skipdigits((char_u *)str) == NUL) {
+          num = atoi(str);
           XFREE_CLEAR(str);
           itemisflag = false;
         }
@@ -3956,8 +3957,8 @@ int build_stl_str_hl(win_T *wp, char_u *out, size_t outlen, char_u *fmt, int use
           && strchr((const char *)str, '%') != NULL
           && evaldepth < MAX_STL_EVAL_DEPTH) {
         size_t parsed_usefmt = (size_t)(block_start - usefmt);
-        size_t str_length = strlen((const char *)str);
-        size_t fmt_length = strlen((const char *)fmt_p);
+        size_t str_length = STRLEN(str);
+        size_t fmt_length = STRLEN(fmt_p);
         size_t new_fmt_len = parsed_usefmt
                              + str_length + fmt_length + 3;
         char_u *new_fmt = (char_u *)xmalloc(new_fmt_len * sizeof(char_u));
@@ -4028,7 +4029,7 @@ int build_stl_str_hl(win_T *wp, char_u *out, size_t outlen, char_u *fmt, int use
       // Store the position percentage in our temporary buffer.
       // Note: We cannot store the value in `num` because
       //       `get_rel_pos` can return a named position. Ex: "Top"
-      get_rel_pos(wp, buf_tmp, TMPLEN);
+      get_rel_pos(wp, (char_u *)buf_tmp, TMPLEN);
       str = buf_tmp;
       break;
 
@@ -4043,14 +4044,14 @@ int build_stl_str_hl(win_T *wp, char_u *out, size_t outlen, char_u *fmt, int use
 
       // Note: The call will only return true if it actually
       //       appended data to the `buf_tmp` buffer.
-      if (append_arg_number(wp, buf_tmp, (int)sizeof(buf_tmp), false)) {
+      if (append_arg_number(wp, (char_u *)buf_tmp, (int)sizeof(buf_tmp), false)) {
         str = buf_tmp;
       }
       break;
 
     case STL_KEYMAP:
       fillable = false;
-      if (get_keymap_str(wp, (char_u *)"<%s>", buf_tmp, TMPLEN)) {
+      if (get_keymap_str(wp, (char_u *)"<%s>", (char_u *)buf_tmp, TMPLEN)) {
         str = buf_tmp;
       }
       break;
@@ -4089,7 +4090,7 @@ int build_stl_str_hl(win_T *wp, char_u *out, size_t outlen, char_u *fmt, int use
     case STL_ROFLAG_ALT:
       itemisflag = true;
       if (wp->w_buffer->b_p_ro) {
-        str = (char_u *)((opt == STL_ROFLAG_ALT) ? ",RO" : _("[RO]"));
+        str = (opt == STL_ROFLAG_ALT) ? ",RO" : _("[RO]");
       }
       break;
 
@@ -4097,8 +4098,7 @@ int build_stl_str_hl(win_T *wp, char_u *out, size_t outlen, char_u *fmt, int use
     case STL_HELPFLAG_ALT:
       itemisflag = true;
       if (wp->w_buffer->b_help) {
-        str = (char_u *)((opt == STL_HELPFLAG_ALT) ? ",HLP"
-                                                   : _("[Help]"));
+        str = (opt == STL_HELPFLAG_ALT) ? ",HLP" : _("[Help]");
       }
       break;
 
@@ -4108,7 +4108,7 @@ int build_stl_str_hl(win_T *wp, char_u *out, size_t outlen, char_u *fmt, int use
       // (including the brackets and null terminating character)
       if (*wp->w_buffer->b_p_ft != NUL
           && STRLEN(wp->w_buffer->b_p_ft) < TMPLEN - 3) {
-        vim_snprintf((char *)buf_tmp, sizeof(buf_tmp), "[%s]",
+        vim_snprintf(buf_tmp, sizeof(buf_tmp), "[%s]",
                      wp->w_buffer->b_p_ft);
         str = buf_tmp;
       }
@@ -4121,10 +4121,10 @@ int build_stl_str_hl(win_T *wp, char_u *out, size_t outlen, char_u *fmt, int use
       // (including the comma and null terminating character)
       if (*wp->w_buffer->b_p_ft != NUL
           && STRLEN(wp->w_buffer->b_p_ft) < TMPLEN - 2) {
-        vim_snprintf((char *)buf_tmp, sizeof(buf_tmp), ",%s",
+        vim_snprintf(buf_tmp, sizeof(buf_tmp), ",%s",
                      wp->w_buffer->b_p_ft);
         // Uppercase the file extension
-        for (char_u *t = buf_tmp; *t != 0; t++) {
+        for (char_u *t = (char_u *)buf_tmp; *t != 0; t++) {
           *t = (char_u)TOUPPER_LOC(*t);
         }
         str = buf_tmp;
@@ -4134,16 +4134,13 @@ int build_stl_str_hl(win_T *wp, char_u *out, size_t outlen, char_u *fmt, int use
     case STL_PREVIEWFLAG_ALT:
       itemisflag = true;
       if (wp->w_p_pvw) {
-        str = (char_u *)((opt == STL_PREVIEWFLAG_ALT) ? ",PRV"
-                                                      : _("[Preview]"));
+        str = (opt == STL_PREVIEWFLAG_ALT) ? ",PRV" : _("[Preview]");
       }
       break;
 
     case STL_QUICKFIX:
       if (bt_quickfix(wp->w_buffer)) {
-        str = (char_u *)(wp->w_llist_ref
-                         ? _(msg_loclist)
-                         : _(msg_qflist));
+        str = wp->w_llist_ref ? _(msg_loclist) : _(msg_qflist);
       }
       break;
 
@@ -4154,17 +4151,17 @@ int build_stl_str_hl(win_T *wp, char_u *out, size_t outlen, char_u *fmt, int use
               + bufIsChanged(wp->w_buffer) * 2
               + (!MODIFIABLE(wp->w_buffer)) * 4) {
       case 2:
-        str = (char_u *)"[+]"; break;
+        str = "[+]"; break;
       case 3:
-        str = (char_u *)",+"; break;
+        str = ",+"; break;
       case 4:
-        str = (char_u *)"[-]"; break;
+        str = "[-]"; break;
       case 5:
-        str = (char_u *)",-"; break;
+        str = ",-"; break;
       case 6:
-        str = (char_u *)"[+-]"; break;
+        str = "[+-]"; break;
       case 7:
-        str = (char_u *)",+-"; break;
+        str = ",+-"; break;
       }
       break;
 
@@ -4198,7 +4195,7 @@ int build_stl_str_hl(win_T *wp, char_u *out, size_t outlen, char_u *fmt, int use
     if (str != NULL && *str) {
       // { Skip the leading `,` or ` ` if the item is a flag
       //  and the proper conditions are met
-      char_u *t = str;
+      char_u *t = (char_u *)str;
       if (itemisflag) {
         if ((t[0] && t[1])
             && ((!prevchar_isitem && *t == ',')
@@ -4410,7 +4407,7 @@ int build_stl_str_hl(win_T *wp, char_u *out, size_t outlen, char_u *fmt, int use
       // string to find the last character that will fit.
       trunc_p = out;
       width = 0;
-      for (;; ) {
+      for (;;) {
         width += ptr2cells(trunc_p);
         if (width >= maxwidth) {
           break;
@@ -4761,7 +4758,7 @@ void do_arg_all(int count, int forceit, int keep_tabs)
   if (had_tab > 0) {
     goto_tabpage_tp(first_tabpage, true, true);
   }
-  for (;; ) {
+  for (;;) {
     win_T *wpnext = NULL;
     tpnext = curtab->tp_next;
     for (win_T *wp = firstwin; wp != NULL; wp = wpnext) {
@@ -5012,7 +5009,7 @@ void ex_buffer_all(exarg_T *eap)
   if (had_tab > 0) {
     goto_tabpage_tp(first_tabpage, true, true);
   }
-  for (;; ) {
+  for (;;) {
     tpnext = curtab->tp_next;
     for (wp = firstwin; wp != NULL; wp = wpnext) {
       wpnext = wp->w_next;
@@ -5023,8 +5020,8 @@ void ex_buffer_all(exarg_T *eap)
                : wp->w_width != Columns)
            || (had_tab > 0 && wp != firstwin))
           && !ONE_WINDOW
-          && !(wp->w_closing ||
-               wp->w_buffer->b_locked > 0)) {
+          && !(wp->w_closing
+               || wp->w_buffer->b_locked > 0)) {
         win_close(wp, false);
         wpnext = firstwin;              // just in case an autocommand does
                                         // something strange with windows
@@ -5141,7 +5138,7 @@ void ex_buffer_all(exarg_T *eap)
   /*
    * Close superfluous windows.
    */
-  for (wp = lastwin; open_wins > count; ) {
+  for (wp = lastwin; open_wins > count;) {
     r = (buf_hide(wp->w_buffer) || !bufIsChanged(wp->w_buffer)
          || autowrite(wp->w_buffer, false) == OK);
     if (!win_valid(wp)) {

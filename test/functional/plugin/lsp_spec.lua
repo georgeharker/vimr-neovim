@@ -66,7 +66,10 @@ local function fake_lsp_server_setup(test_name, timeout_ms, options)
           end
         end;
       });
-      root_dir = vim.loop.cwd();
+      workspace_folders = {{
+          uri = 'file://' .. vim.loop.cwd(),
+          name = 'test_folder',
+      }};
       on_init = function(client, result)
         TEST_RPC_CLIENT = client
         vim.rpcrequest(1, "init", result)
@@ -153,7 +156,10 @@ describe('LSP', function()
             "-c", string.format("lua TEST_NAME = %q", test_name),
             "-c", "luafile "..fixture_filename;
           };
-          root_dir = vim.loop.cwd();
+          workspace_folders = {{
+              uri = 'file://' .. vim.loop.cwd(),
+              name = 'test_folder',
+          }};
         }
       end
       TEST_CLIENT1 = test__start_client()
@@ -1153,15 +1159,9 @@ describe('LSP', function()
     end)
 
     it('should invalid cmd argument', function()
-      eq(dedent([[
-          Error executing lua: .../lsp.lua:0: cmd: expected list, got nvim
-          stack traceback:
-              .../lsp.lua:0: in function <.../lsp.lua:0>]]),
+      eq('Error executing lua: .../lsp.lua:0: cmd: expected list, got nvim',
         pcall_err(_cmd_parts, 'nvim'))
-      eq(dedent([[
-          Error executing lua: .../lsp.lua:0: cmd argument: expected string, got number
-          stack traceback:
-              .../lsp.lua:0: in function <.../lsp.lua:0>]]),
+      eq('Error executing lua: .../lsp.lua:0: cmd argument: expected string, got number',
         pcall_err(_cmd_parts, {'nvim', 1}))
     end)
   end)
@@ -1741,6 +1741,7 @@ describe('LSP', function()
 
         -- after rename the target file must have the contents of the source file
         local bufnr = vim.fn.bufadd(new)
+        vim.fn.bufload(new)
         return vim.api.nvim_buf_get_lines(bufnr, 0, -1, true)
       ]], old, new)
       eq({'Test content'}, lines)
@@ -2441,9 +2442,9 @@ describe('LSP', function()
             local bufnr = vim.api.nvim_get_current_buf()
             lsp.buf_attach_client(bufnr, TEST_RPC_CLIENT_ID)
             vim.lsp._stubs = {}
-            vim.fn.input = function(prompt, text)
-              vim.lsp._stubs.input_prompt = prompt
-              vim.lsp._stubs.input_text = text
+            vim.fn.input = function(opts, on_confirm)
+              vim.lsp._stubs.input_prompt = opts.prompt
+              vim.lsp._stubs.input_text = opts.default
               return 'renameto' -- expect this value in fake lsp
             end
             vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {'', 'this is line two'})

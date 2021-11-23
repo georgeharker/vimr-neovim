@@ -162,10 +162,12 @@ CONFIG = {
             'buf.lua',
             'diagnostic.lua',
             'codelens.lua',
+            'tagfunc.lua',
             'handlers.lua',
             'util.lua',
             'log.lua',
             'rpc.lua',
+            'sync.lua',
             'protocol.lua',
         ],
         'files': ' '.join([
