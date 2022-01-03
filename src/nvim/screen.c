@@ -98,7 +98,6 @@
 #include "nvim/memory.h"
 #include "nvim/menu.h"
 #include "nvim/message.h"
-#include "nvim/misc1.h"
 #include "nvim/move.h"
 #include "nvim/normal.h"
 #include "nvim/option.h"
@@ -314,6 +313,19 @@ void update_curbuf(int type)
   update_screen(type);
 }
 
+/// called when the status bars for the buffer 'buf' need to be updated
+void redraw_buf_status_later(buf_T *buf)
+{
+  FOR_ALL_WINDOWS_IN_TAB(wp, curtab) {
+    if (wp->w_buffer == buf && wp->w_status_height) {
+      wp->w_redr_status = true;
+      if (must_redraw < VALID) {
+        must_redraw = VALID;
+      }
+    }
+  }
+}
+
 /// Redraw the parts of the screen that is marked for redraw.
 ///
 /// Most code shouldn't call this directly, rather use redraw_later() and
@@ -451,9 +463,11 @@ int update_screen(int type)
   // reset cmdline_row now (may have been changed temporarily)
   compute_cmdrow();
 
+  bool hl_changed = false;
   // Check for changed highlighting
   if (need_highlight_changed) {
     highlight_changed();
+    hl_changed = true;
   }
 
   if (type == CLEAR) {          // first clear screen
@@ -554,7 +568,7 @@ int update_screen(int type)
    * buffer.  Each buffer must only be done once.
    */
   FOR_ALL_WINDOWS_IN_TAB(wp, curtab) {
-    update_window_hl(wp, type >= NOT_VALID);
+    update_window_hl(wp, type >= NOT_VALID || hl_changed);
 
     buf_T *buf = wp->w_buffer;
     if (buf->b_mod_set) {
@@ -1692,7 +1706,7 @@ static void win_update(win_T *wp, Providers *providers)
     if (eof) {  // we hit the end of the file
       wp->w_botline = buf->b_ml.ml_line_count + 1;
       j = win_get_fill(wp, wp->w_botline);
-      if (j > 0 && !wp->w_botfill) {
+      if (j > 0 && !wp->w_botfill && row < wp->w_grid.Rows) {
         // Display filler text below last line. win_line() will check
         // for ml_line_count+1 and only draw filler lines
         foldinfo_T info = FOLDINFO_INIT;
@@ -2744,7 +2758,11 @@ static int win_line(win_T *wp, linenr_T lnum, int startrow, int endrow, bool noc
           p_extra = p_extra_free;
           c_extra = NUL;
           c_final = NUL;
-          char_attr = win_hl_attr(wp, HLF_FC);
+          if (use_cursor_line_sign(wp, lnum)) {
+            char_attr = win_hl_attr(wp, HLF_CLF);
+          } else {
+            char_attr = win_hl_attr(wp, HLF_FC);
+          }
         }
       }
 
@@ -2755,7 +2773,7 @@ static int win_line(win_T *wp, linenr_T lnum, int startrow, int endrow, bool noc
          * buffer or when using Netbeans. */
         int count = win_signcol_count(wp);
         if (count > 0) {
-          get_sign_display_info(false, wp, sattrs, row,
+          get_sign_display_info(false, wp, lnum, sattrs, row,
                                 startrow, filler_lines, filler_todo, count,
                                 &c_extra, &c_final, extra, sizeof(extra),
                                 &p_extra, &n_extra,
@@ -2776,7 +2794,7 @@ static int win_line(win_T *wp, linenr_T lnum, int startrow, int endrow, bool noc
           if (*wp->w_p_scl == 'n' && *(wp->w_p_scl + 1) == 'u'
               && num_signs > 0) {
             int count = win_signcol_count(wp);
-            get_sign_display_info(true, wp, sattrs, row,
+            get_sign_display_info(true, wp, lnum, sattrs, row,
                                   startrow, filler_lines, filler_todo, count,
                                   &c_extra, &c_final, extra, sizeof(extra),
                                   &p_extra, &n_extra,
@@ -3753,7 +3771,7 @@ static int win_line(win_T *wp, linenr_T lnum, int startrow, int endrow, bool noc
 
             // Make sure, the highlighting for the tab char will be
             // correctly set further below (effectively reverts the
-            // FIX_FOR_BOGSUCOLS macro.
+            // FIX_FOR_BOGSUCOLS macro).
             if (n_extra == tab_len + vc_saved && wp->w_p_list
                 && wp->w_p_lcs_chars.tab1) {
               tab_len += vc_saved;
@@ -4276,7 +4294,7 @@ static int win_line(win_T *wp, linenr_T lnum, int startrow, int endrow, bool noc
       // Store the character.
       //
       if (wp->w_p_rl && utf_char2cells(mb_c) > 1) {
-        // A double-wide character is: put first halve in left cell.
+        // A double-wide character is: put first half in left cell.
         off--;
         col--;
       }
@@ -4615,6 +4633,14 @@ void screen_adjust_grid(ScreenGrid **grid, int *row_off, int *col_off)
   }
 }
 
+// Return true if CursorLineSign highlight is to be used.
+static bool use_cursor_line_sign(win_T *wp, linenr_T lnum)
+{
+  return wp->w_p_cul
+         && lnum == wp->w_cursor.lnum
+         && (wp->w_p_culopt_flags & CULOPT_NBR);
+}
+
 // Get information needed to display the sign in line 'lnum' in window 'wp'.
 // If 'nrcol' is TRUE, the sign is going to be displayed in the number column.
 // Otherwise the sign is going to be displayed in the sign column.
@@ -4622,11 +4648,11 @@ void screen_adjust_grid(ScreenGrid **grid, int *row_off, int *col_off)
 // @param count max number of signs
 // @param[out] n_extrap number of characters from pp_extra to display
 // @param[in, out] sign_idxp Index of the displayed sign
-static void get_sign_display_info(bool nrcol, win_T *wp, sign_attrs_T sattrs[], int row,
-                                  int startrow, int filler_lines, int filler_todo, int count,
-                                  int *c_extrap, int *c_finalp, char_u *extra, size_t extra_size,
-                                  char_u **pp_extra, int *n_extrap, int *char_attrp,
-                                  int *draw_statep, int *sign_idxp)
+static void get_sign_display_info(bool nrcol, win_T *wp, linenr_T lnum, sign_attrs_T sattrs[],
+                                  int row, int startrow, int filler_lines, int filler_todo,
+                                  int count, int *c_extrap, int *c_finalp, char_u *extra,
+                                  size_t extra_size, char_u **pp_extra, int *n_extrap,
+                                  int *char_attrp, int *draw_statep, int *sign_idxp)
 {
   // Draw cells with the sign value or blank.
   *c_extrap = ' ';
@@ -4634,7 +4660,11 @@ static void get_sign_display_info(bool nrcol, win_T *wp, sign_attrs_T sattrs[], 
   if (nrcol) {
     *n_extrap = number_width(wp) + 1;
   } else {
-    *char_attrp = win_hl_attr(wp, HLF_SC);
+    if (use_cursor_line_sign(wp, lnum)) {
+      *char_attrp = win_hl_attr(wp, HLF_CLS);
+    } else {
+      *char_attrp = win_hl_attr(wp, HLF_SC);
+    }
     *n_extrap = win_signcol_width(wp);
   }
 
@@ -4674,7 +4704,12 @@ static void get_sign_display_info(bool nrcol, win_T *wp, sign_attrs_T sattrs[], 
           (*pp_extra)[*n_extrap] = NUL;
         }
       }
-      *char_attrp = sattr->sat_texthl;
+
+      if (use_cursor_line_sign(wp, lnum) && sattr->sat_culhl > 0) {
+        *char_attrp = sattr->sat_culhl;
+      } else {
+        *char_attrp = sattr->sat_texthl;
+      }
     }
   }
 
@@ -4799,9 +4834,9 @@ static void grid_put_linebuf(ScreenGrid *grid, int row, int coloff, int endcol, 
       end_dirty = col + char_cells;
       // When writing a single-width character over a double-width
       // character and at the end of the redrawn text, need to clear out
-      // the right halve of the old character.
-      // Also required when writing the right halve of a double-width
-      // char over the left halve of an existing one
+      // the right half of the old character.
+      // Also required when writing the right half of a double-width
+      // char over the left half of an existing one
       if (col + char_cells == endcol
           && ((char_cells == 1
                && grid_off2cells(grid, off_to, max_off_to) > 1)
@@ -5852,8 +5887,8 @@ void grid_puts_len(ScreenGrid *grid, char_u *text, int textlen, int row, int col
   }
   off = grid->line_offset[row] + col;
 
-  /* When drawing over the right halve of a double-wide char clear out the
-   * left halve.  Only needed in a terminal. */
+  // When drawing over the right half of a double-wide char clear out the
+  // left half.  Only needed in a terminal.
   if (grid != &default_grid && col == 0 && grid_invalid_row(grid, row)) {
     // redraw the previous cell, make it empty
     put_dirty_first = -1;
@@ -5898,6 +5933,8 @@ void grid_puts_len(ScreenGrid *grid, char_u *text, int textlen, int row, int col
       // Only 1 cell left, but character requires 2 cells:
       // display a '>' in the last column to avoid wrapping. */
       c = '>';
+      u8c = '>';
+      u8cc[0] = 0;
       mbyte_cells = 1;
     }
 
@@ -5913,9 +5950,9 @@ void grid_puts_len(ScreenGrid *grid, char_u *text, int textlen, int row, int col
     if (need_redraw) {
       // When at the end of the text and overwriting a two-cell
       // character with a one-cell character, need to clear the next
-      // cell.  Also when overwriting the left halve of a two-cell char
-      // with the right halve of a two-cell char.  Do this only once
-      // (utf8_off2cells() may return 2 on the right halve).
+      // cell.  Also when overwriting the left half of a two-cell char
+      // with the right half of a two-cell char.  Do this only once
+      // (utf8_off2cells() may return 2 on the right half).
       if (clear_next_cell) {
         clear_next_cell = false;
       } else if ((len < 0 ? ptr[mbyte_blen] == NUL
@@ -5926,6 +5963,13 @@ void grid_puts_len(ScreenGrid *grid, char_u *text, int textlen, int row, int col
                          && grid_off2cells(grid, off, max_off) == 1
                          && grid_off2cells(grid, off + 1, max_off) > 1))) {
         clear_next_cell = true;
+      }
+
+      // When at the start of the text and overwriting the right half of a
+      // two-cell character in the same grid, truncate that into a '>'.
+      if (ptr == text && col > 0 && grid->chars[off][0] == 0) {
+        grid->chars[off - 1][0] = '>';
+        grid->chars[off - 1][1] = 0;
       }
 
       schar_copy(grid->chars[off], buf);
@@ -6307,9 +6351,9 @@ void grid_fill(ScreenGrid *grid, int start_row, int end_row, int start_col, int 
   }
 
   for (int row = start_row; row < end_row; row++) {
-    // When drawing over the right halve of a double-wide char clear
-    // out the left halve.  When drawing over the left halve of a
-    // double wide-char clear out the right halve.  Only needed in a
+    // When drawing over the right half of a double-wide char clear
+    // out the left half.  When drawing over the left half of a
+    // double wide-char clear out the right half.  Only needed in a
     // terminal.
     if (start_col > 0 && grid_fix_col(grid, start_col, row) != start_col) {
       grid_puts_len(grid, (char_u *)" ", 1, row, start_col - 1, 0);
@@ -6930,7 +6974,7 @@ int showmode(void)
   do_mode = ((p_smd && msg_silent == 0)
              && ((State & TERM_FOCUS)
                  || (State & INSERT)
-                 || restart_edit
+                 || restart_edit != NUL
                  || VIsual_active));
   if (do_mode || reg_recording != 0) {
     // Don't show mode right now, when not redrawing or inside a mapping.
@@ -7010,7 +7054,7 @@ int showmode(void)
           }
           msg_puts_attr(_(" INSERT"), attr);
         } else if (restart_edit == 'I' || restart_edit == 'i'
-                   || restart_edit == 'a') {
+                   || restart_edit == 'a' || restart_edit == 'A') {
           msg_puts_attr(_(" (insert)"), attr);
         } else if (restart_edit == 'R') {
           msg_puts_attr(_(" (replace)"), attr);

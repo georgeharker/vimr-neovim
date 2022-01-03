@@ -46,6 +46,7 @@
 #include "nvim/ascii.h"
 #include "nvim/buffer.h"
 #include "nvim/change.h"
+#include "nvim/cursor.h"
 #include "nvim/edit.h"
 #include "nvim/event/loop.h"
 #include "nvim/event/time.h"
@@ -63,7 +64,6 @@
 #include "nvim/memline.h"
 #include "nvim/memory.h"
 #include "nvim/message.h"
-#include "nvim/misc1.h"
 #include "nvim/mouse.h"
 #include "nvim/move.h"
 #include "nvim/option.h"
@@ -135,7 +135,6 @@ struct terminal {
     int row, col;
     bool visible;
   } cursor;
-  int pressed_button;               // which mouse button is pressed
   bool pending_resize;              // pending width/height
 
   bool color_set[16];
@@ -324,10 +323,11 @@ void terminal_close(Terminal *term, int status)
   }
 
   if (buf && !is_autocmd_blocked()) {
-    dict_T *dict = get_vim_var_dict(VV_EVENT);
+    save_v_event_T save_v_event;
+    dict_T *dict = get_v_event(&save_v_event);
     tv_dict_add_nr(dict, S_LEN("status"), status);
     apply_autocmds(EVENT_TERMCLOSE, NULL, NULL, false, buf);
-    tv_dict_clear(dict);
+    restore_v_event(dict, &save_v_event);
   }
 }
 
@@ -414,6 +414,7 @@ void terminal_enter(void)
 
   ui_cursor_shape();
   apply_autocmds(EVENT_TERMENTER, NULL, NULL, false, curbuf);
+  trigger_modechanged();
 
   s->state.execute = terminal_execute;
   s->state.check = terminal_check;
@@ -466,9 +467,7 @@ static void terminal_check_cursor(void)
                               row_to_linenr(term, term->cursor.row));
   // Nudge cursor when returning to normal-mode.
   int off = is_focused(term) ? 0 : (curwin->w_p_rl ? 1 : -1);
-  curwin->w_cursor.col = MAX(0, term->cursor.col + win_col_off(curwin) + off);
-  curwin->w_cursor.coladd = 0;
-  mb_check_adjust_col(curwin);
+  coladvance(MAX(0, term->cursor.col + off));
 }
 
 // Function executed before each iteration of terminal mode.
@@ -531,6 +530,10 @@ static int terminal_execute(VimState *state, int key)
 
   case K_COMMAND:
     do_cmdline(NULL, getcmdkeycmd, NULL, 0);
+    break;
+
+  case K_LUA:
+    map_execute_lua();
     break;
 
   case Ctrl_N:
@@ -1213,21 +1216,12 @@ static VTermKey convert_key(int key, VTermModifier *statep)
   }
 }
 
-static void mouse_action(Terminal *term, int button, int row, int col, bool drag, VTermModifier mod)
+static void mouse_action(Terminal *term, int button, int row, int col, bool pressed,
+                         VTermModifier mod)
 {
-  if (term->pressed_button && (term->pressed_button != button || !drag)) {
-    // release the previous button
-    vterm_mouse_button(term->vt, term->pressed_button, 0, mod);
-    term->pressed_button = 0;
-  }
-
-  // move the mouse
   vterm_mouse_move(term->vt, row, col, mod);
-
-  if (!term->pressed_button) {
-    // press the button if not already pressed
-    vterm_mouse_button(term->vt, button, 1, mod);
-    term->pressed_button = button;
+  if (button) {
+    vterm_mouse_button(term->vt, button, pressed, mod);
   }
 }
 
@@ -1246,32 +1240,35 @@ static bool send_mouse_event(Terminal *term, int c)
     // event in the terminal window and mouse events was enabled by the
     // program. translate and forward the event
     int button;
-    bool drag = false;
+    bool pressed = false;
 
     switch (c) {
     case K_LEFTDRAG:
-      drag = true;   FALLTHROUGH;
     case K_LEFTMOUSE:
+      pressed = true; FALLTHROUGH;
+    case K_LEFTRELEASE:
       button = 1; break;
     case K_MOUSEMOVE:
-      drag = true; button = 0; break;
+      button = 0; break;
     case K_MIDDLEDRAG:
-      drag = true; FALLTHROUGH;
     case K_MIDDLEMOUSE:
+      pressed = true; FALLTHROUGH;
+    case K_MIDDLERELEASE:
       button = 2; break;
     case K_RIGHTDRAG:
-      drag = true;  FALLTHROUGH;
     case K_RIGHTMOUSE:
+      pressed = true; FALLTHROUGH;
+    case K_RIGHTRELEASE:
       button = 3; break;
     case K_MOUSEDOWN:
-      button = 4; break;
+      pressed = true; button = 4; break;
     case K_MOUSEUP:
-      button = 5; break;
+      pressed = true; button = 5; break;
     default:
       return false;
     }
 
-    mouse_action(term, button, row, col - offset, drag, 0);
+    mouse_action(term, button, row, col - offset, pressed, 0);
     size_t len = vterm_output_read(term->vt, term->textbuf,
                                    sizeof(term->textbuf));
     terminal_send(term, term->textbuf, len);
@@ -1297,6 +1294,12 @@ static bool send_mouse_event(Terminal *term, int c)
     invalidate_terminal(term, -1, -1);
     // Only need to exit focus if the scrolled window is the terminal window
     return mouse_win == curwin;
+  }
+
+  // ignore left release action if it was not proccessed above
+  // to prevent leaving Terminal mode after entering to it using a mouse
+  if (c == K_LEFTRELEASE && mouse_win->w_buffer->terminal == term) {
+    return false;
   }
 
 end:
@@ -1520,6 +1523,13 @@ static void refresh_screen(Terminal *term, buf_T *buf)
   vterm_get_size(term->vt, &height, &width);
   // Terminal height may have decreased before `invalid_end` reflects it.
   term->invalid_end = MIN(term->invalid_end, height);
+
+  // There are no invalid rows.
+  if (term->invalid_start >= term->invalid_end) {
+    term->invalid_start = INT_MAX;
+    term->invalid_end = -1;
+    return;
+  }
 
   for (int r = term->invalid_start, linenr = row_to_linenr(term, r);
        r < term->invalid_end; r++, linenr++) {

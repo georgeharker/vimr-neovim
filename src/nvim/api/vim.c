@@ -171,7 +171,7 @@ void nvim__set_hl_ns(Integer ns_id, Error *err)
   // event path for redraws caused by "fast" events. This could tie in with
   // better throttling of async events causing redraws, such as non-batched
   // nvim_buf_set_extmark calls from async contexts.
-  if (!provider_active && !ns_hl_changed) {
+  if (!provider_active && !ns_hl_changed && must_redraw < NOT_VALID) {
     multiqueue_put(main_loop.events, on_redraw_event, 0);
   }
   ns_hl_changed = true;
@@ -644,7 +644,7 @@ void nvim_set_vvar(String name, Object value, Error *err)
   dict_set_var(&vimvardict, name, value, false, false, err);
 }
 
-/// Gets an option value string.
+/// Gets the global value of an option.
 ///
 /// @param name     Option name
 /// @param[out] err Error details, if any
@@ -653,6 +653,125 @@ Object nvim_get_option(String name, Error *err)
   FUNC_API_SINCE(1)
 {
   return get_option_from(NULL, SREQ_GLOBAL, name, err);
+}
+
+/// Gets the value of an option. The behavior of this function matches that of
+/// |:set|: the local value of an option is returned if it exists; otherwise,
+/// the global value is returned. Local values always correspond to the current
+/// buffer or window. To get a buffer-local or window-local option for a
+/// specific buffer or window, use |nvim_buf_get_option()| or
+/// |nvim_win_get_option()|.
+///
+/// @param name      Option name
+/// @param opts      Optional parameters
+///                  - scope: One of 'global' or 'local'. Analogous to
+///                  |:setglobal| and |:setlocal|, respectively.
+/// @param[out] err  Error details, if any
+/// @return          Option value
+Object nvim_get_option_value(String name, Dict(option) *opts, Error *err)
+  FUNC_API_SINCE(9)
+{
+  Object rv = OBJECT_INIT;
+
+  int scope = 0;
+  if (opts->scope.type == kObjectTypeString) {
+    if (!strcmp(opts->scope.data.string.data, "local")) {
+      scope = OPT_LOCAL;
+    } else if (!strcmp(opts->scope.data.string.data, "global")) {
+      scope = OPT_GLOBAL;
+    } else {
+      api_set_error(err, kErrorTypeValidation, "invalid scope: must be 'local' or 'global'");
+      goto end;
+    }
+  } else if (HAS_KEY(opts->scope)) {
+    api_set_error(err, kErrorTypeValidation, "invalid value for key: scope");
+    goto end;
+  }
+
+  long numval = 0;
+  char *stringval = NULL;
+  switch (get_option_value(name.data, &numval, (char_u **)&stringval, scope)) {
+  case 0:
+    rv = STRING_OBJ(cstr_as_string(stringval));
+    break;
+  case 1:
+    rv = INTEGER_OBJ(numval);
+    break;
+  case 2:
+    switch (numval) {
+      case 0:
+      case 1:
+        rv = BOOLEAN_OBJ(numval);
+        break;
+      default:
+        // Boolean options that return something other than 0 or 1 should return nil. Currently this
+        // only applies to 'autoread' which uses -1 as a local value to indicate "unset"
+        rv = NIL;
+        break;
+    }
+    break;
+  default:
+    api_set_error(err, kErrorTypeValidation, "unknown option '%s'", name.data);
+    goto end;
+  }
+
+end:
+  return rv;
+}
+
+/// Sets the value of an option. The behavior of this function matches that of
+/// |:set|: for global-local options, both the global and local value are set
+/// unless otherwise specified with {scope}.
+///
+/// @param name      Option name
+/// @param value     New option value
+/// @param opts      Optional parameters
+///                  - scope: One of 'global' or 'local'. Analogous to
+///                  |:setglobal| and |:setlocal|, respectively.
+/// @param[out] err  Error details, if any
+void nvim_set_option_value(String name, Object value, Dict(option) *opts, Error *err)
+  FUNC_API_SINCE(9)
+{
+  int scope = 0;
+  if (opts->scope.type == kObjectTypeString) {
+    if (!strcmp(opts->scope.data.string.data, "local")) {
+      scope = OPT_LOCAL;
+    } else if (!strcmp(opts->scope.data.string.data, "global")) {
+      scope = OPT_GLOBAL;
+    } else {
+      api_set_error(err, kErrorTypeValidation, "invalid scope: must be 'local' or 'global'");
+      return;
+    }
+  } else if (HAS_KEY(opts->scope)) {
+    api_set_error(err, kErrorTypeValidation, "invalid value for key: scope");
+    return;
+  }
+
+  long numval = 0;
+  char *stringval = NULL;
+
+  switch (value.type) {
+  case kObjectTypeInteger:
+    numval = value.data.integer;
+    break;
+  case kObjectTypeBoolean:
+    numval = value.data.boolean ? 1 : 0;
+    break;
+  case kObjectTypeString:
+    stringval = value.data.string.data;
+    break;
+  case kObjectTypeNil:
+    scope |= OPT_CLEAR;
+    break;
+  default:
+    api_set_error(err, kErrorTypeValidation, "invalid value for option");
+    return;
+  }
+
+  char *e = set_option_value(name.data, numval, stringval, scope);
+  if (e) {
+    api_set_error(err, kErrorTypeException, "%s", e);
+  }
 }
 
 /// Gets the option information for all options.
@@ -696,7 +815,7 @@ Dictionary nvim_get_option_info(String name, Error *err)
   return get_vimoption(name, err);
 }
 
-/// Sets an option value.
+/// Sets the global value of an option.
 ///
 /// @param channel_id
 /// @param name     Option name
@@ -735,7 +854,7 @@ void nvim_echo(Array chunks, Boolean history, Dictionary opts, Error *err)
   for (uint32_t i = 0; i < kv_size(hl_msg); i++) {
     HlMessageChunk chunk = kv_A(hl_msg, i);
     msg_multiline_attr((const char *)chunk.text.data, chunk.attr,
-                       false, &need_clear);
+                       true, &need_clear);
   }
   if (history) {
     msg_ext_set_kind("echomsg");
@@ -1427,10 +1546,10 @@ Dictionary nvim_get_mode(void)
 /// @param  mode       Mode short-name ("n", "i", "v", ...)
 /// @returns Array of maparg()-like dictionaries describing mappings.
 ///          The "buffer" key is always zero.
-ArrayOf(Dictionary) nvim_get_keymap(String mode)
+ArrayOf(Dictionary) nvim_get_keymap(uint64_t channel_id, String mode)
   FUNC_API_SINCE(3)
 {
-  return keymap_array(mode, NULL);
+  return keymap_array(mode, NULL, channel_id == LUA_INTERNAL_CALL);
 }
 
 /// Sets a global |mapping| for the given mode.
@@ -1455,7 +1574,10 @@ ArrayOf(Dictionary) nvim_get_keymap(String mode)
 /// @param  lhs   Left-hand-side |{lhs}| of the mapping.
 /// @param  rhs   Right-hand-side |{rhs}| of the mapping.
 /// @param  opts  Optional parameters map. Accepts all |:map-arguments|
-///               as keys excluding |<buffer>| but including |noremap|.
+///               as keys excluding |<buffer>| but including |noremap| and "desc".
+///               |desc| can be used to give a description to keymap.
+///               When called from Lua, also accepts a "callback" key that takes
+///               a Lua function to call when the mapping is executed.
 ///               Values are Booleans. Unknown key is an error.
 /// @param[out]   err   Error details, if any.
 void nvim_set_keymap(String mode, String lhs, String rhs, Dict(keymap) *opts, Error *err)
@@ -1630,7 +1752,7 @@ Array nvim_list_chans(void)
 /// 1. To perform several requests from an async context atomically, i.e.
 ///    without interleaving redraws, RPC requests from other clients, or user
 ///    interactions (however API methods may trigger autocommands or event
-///    processing which have such side-effects, e.g. |:sleep| may wake timers).
+///    processing which have such side effects, e.g. |:sleep| may wake timers).
 /// 2. To minimize RPC overhead (roundtrips) of a sequence of many requests.
 ///
 /// @param channel_id
@@ -1741,6 +1863,9 @@ static void write_msg(String message, bool to_err)
 
   ++no_wait_return;
   for (uint32_t i = 0; i < message.size; i++) {
+    if (got_int) {
+      break;
+    }
     if (to_err) {
       PUSH_CHAR(i, err_pos, err_line_buf, emsg);
     } else {
@@ -1987,7 +2112,7 @@ void nvim__screenshot(String path)
 }
 
 
-/// Deletes a uppercase/file named mark. See |mark-motions|.
+/// Deletes an uppercase/file named mark. See |mark-motions|.
 ///
 /// @note fails with error if a lowercase or buffer local named mark is used.
 /// @param name       Mark name
@@ -2250,15 +2375,64 @@ Dictionary nvim_eval_statusline(String str, Dict(eval_statusline) *opts, Error *
   return result;
 }
 
+/// Create a new user command |user-commands|
+///
+/// {name} is the name of the new command. The name must begin with an uppercase letter.
+///
+/// {command} is the replacement text or Lua function to execute.
+///
+/// Example:
+/// <pre>
+///    :call nvim_add_user_command('SayHello', 'echo "Hello world!"', {})
+///    :SayHello
+///    Hello world!
+/// </pre>
+///
+/// @param  name    Name of the new user command. Must begin with an uppercase letter.
+/// @param  command Replacement command to execute when this user command is executed. When called
+///                 from Lua, the command can also be a Lua function. The function is called with a
+///                 single table argument that contains the following keys:
+///                 - args: (string) The args passed to the command, if any |<args>|
+///                 - bang: (boolean) "true" if the command was executed with a ! modifier |<bang>|
+///                 - line1: (number) The starting line of the command range |<line1>|
+///                 - line2: (number) The final line of the command range |<line2>|
+///                 - range: (number) The number of items in the command range: 0, 1, or 2 |<range>|
+///                 - count: (number) Any count supplied |<count>|
+///                 - reg: (string) The optional register, if specified |<reg>|
+///                 - mods: (string) Command modifiers, if any |<mods>|
+/// @param  opts    Optional command attributes. See |command-attributes| for more details. To use
+///                 boolean attributes (such as |:command-bang| or |:command-bar|) set the value to
+///                 "true". When using a Lua function for {command} you can also provide a "desc"
+///                 key that will be displayed when listing commands. In addition to the string
+///                 options listed in |:command-complete|, the "complete" key also accepts a Lua
+///                 function which works like the "customlist" completion mode
+///                 |:command-complete-customlist|.
+/// @param[out] err Error details, if any.
+void nvim_add_user_command(String name, Object command, Dict(user_command) *opts, Error *err)
+  FUNC_API_SINCE(9)
+{
+  add_user_command(name, command, opts, 0, err);
+}
+
+/// Delete a user-defined command.
+///
+/// @param  name    Name of the command to delete.
+/// @param[out] err Error details, if any.
+void nvim_del_user_command(String name, Error *err)
+  FUNC_API_SINCE(9)
+{
+  nvim_buf_del_user_command(-1, name, err);
+}
+
 // CUSTOM_UI
 // Dirty status
 Boolean nvim_get_dirty_status(void)
-  FUNC_API_SINCE(4)
+FUNC_API_SINCE(4)
 {
   FOR_ALL_BUFFERS(buffer) {
-    if (bufIsChanged(buffer)) {
-      return true;
-    }
+      if (bufIsChanged(buffer)) {
+        return true;
+      }
   }
 
   return false;

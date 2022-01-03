@@ -684,9 +684,12 @@ A jump table for the options with a short description can be found at |Q_op|.
 'autowrite' 'aw'	boolean	(default off)
 			global
 	Write the contents of the file, if it has been modified, on each
-	:next, :rewind, :last, :first, :previous, :stop, :suspend, :tag, :!,
-	:make, CTRL-] and CTRL-^ command; and when a :buffer, CTRL-O, CTRL-I,
-	'{A-Z0-9}, or `{A-Z0-9} command takes one to another file.
+	`:next`, `:rewind`, `:last`, `:first`, `:previous`, `:stop`,
+	`:suspend`, `:tag`, `:!`, `:make`, CTRL-] and CTRL-^ command; and when
+	a :buffer, CTRL-O, CTRL-I, '{A-Z0-9}, or `{A-Z0-9} command takes one
+	to another file.
+	A buffer is not written if it becomes hidden, e.g. when 'bufhidden' is
+	set to "hide" and `:next` is used
 	Note that for some commands the 'autowrite' option is not used, see
 	'autowriteall' for that.
 	Some buffers will not be written, specifically when 'buftype' is
@@ -950,7 +953,6 @@ A jump table for the options with a short description can be found at |Q_op|.
 	error	    Other Error occurred (e.g. try to join last line)
 		    (mostly used in |Normal-mode| or |Cmdline-mode|).
 	esc	    hitting <Esc> in |Normal-mode|.
-	ex	    In |Visual-mode|, hitting |Q| results in an error.
 	hangul	    Ignored.
 	insertmode  Pressing <Esc> in 'insertmode'.
 	lang	    Calling the beep module for Lua/Mzscheme/TCL.
@@ -1156,6 +1158,14 @@ A jump table for the options with a short description can be found at |Q_op|.
 	keepascii	For the ASCII characters (0x00 to 0x7f) use the US
 			case mapping, the current locale is not effective.
 			This probably only matters for Turkish.
+
+						*'cdhome'* *'cdh'*
+'cdhome' 'cdh'		boolean	(default: off)
+			global
+	When on, |:cd|, |:tcd| and |:lcd| without an argument changes the
+	current working directory to the |$HOME| directory like in Unix.
+	When off, those commands just print the current directory name.
+	On Unix this option has no effect.
 
 						*'cdpath'* *'cd'* *E344* *E346*
 'cdpath' 'cd'		string	(default: equivalent to $CDPATH or ",,")

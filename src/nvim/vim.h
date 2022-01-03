@@ -72,6 +72,8 @@ enum { NUMBUFLEN = 65, };
 #define TERM_FOCUS      0x2000  // Terminal focus mode
 #define CMDPREVIEW      0x4000  // Showing 'inccommand' command "live" preview.
 
+#define MODE_MAX_LENGTH 4       // max mode length returned in mode()
+
 // all mode bits used for mapping
 #define MAP_ALL_MODES   (0x3f | SELECTMODE | TERM_FOCUS)
 
@@ -141,6 +143,7 @@ enum {
   EXPAND_COMPILER,
   EXPAND_USER_DEFINED,
   EXPAND_USER_LIST,
+  EXPAND_USER_LUA,
   EXPAND_SHELLCMD,
   EXPAND_CSCOPE,
   EXPAND_SIGN,
@@ -213,6 +216,11 @@ enum { FOLD_TEXT_LEN = 51, };  //!< buffer size for get_foldtext()
 // (vim_strchr() is now in strings.c)
 
 #define STRLEN(s)           strlen((char *)(s))
+#ifdef HAVE_STRNLEN
+#  define STRNLEN(s, n)     strnlen((char *)(s), (size_t)(n))
+#else
+#  define STRNLEN(s, n)     xstrnlen((char *)(s), (size_t)(n))
+#endif
 #define STRCPY(d, s)        strcpy((char *)(d), (char *)(s))
 #define STRNCPY(d, s, n)    strncpy((char *)(d), (char *)(s), (size_t)(n))
 #define STRLCPY(d, s, n)    xstrlcpy((char *)(d), (char *)(s), (size_t)(n))

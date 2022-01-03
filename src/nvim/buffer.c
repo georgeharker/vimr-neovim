@@ -57,7 +57,6 @@
 #include "nvim/mbyte.h"
 #include "nvim/memory.h"
 #include "nvim/message.h"
-#include "nvim/misc1.h"
 #include "nvim/move.h"
 #include "nvim/option.h"
 #include "nvim/os/input.h"
@@ -2719,7 +2718,7 @@ void buflist_list(exarg_T *eap)
       IObuff[len++] = ' ';
     } while (--i > 0 && len < IOSIZE - 18);
     if (vim_strchr(eap->arg, 't') && buf->b_last_used) {
-      add_time(IObuff + len, (size_t)(IOSIZE - len), buf->b_last_used);
+      undo_fmt_time(IObuff + len, (size_t)(IOSIZE - len), buf->b_last_used);
     } else {
       vim_snprintf((char *)IObuff + len, (size_t)(IOSIZE - len),
                    _("line %" PRId64),
@@ -4577,7 +4576,7 @@ int build_stl_str_hl(win_T *wp, char_u *out, size_t outlen, char_u *fmt, int use
     cur_tab_rec->def.func = NULL;
   }
 
-  // When inside update_screen we do not want redrawing a stausline, ruler,
+  // When inside update_screen we do not want redrawing a statusline, ruler,
   // title, etc. to trigger another redraw, it may cause an endless loop.
   if (updating_screen) {
     must_redraw = save_must_redraw;

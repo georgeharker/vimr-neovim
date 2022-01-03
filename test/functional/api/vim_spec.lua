@@ -949,6 +949,67 @@ describe('API', function()
     end)
   end)
 
+  describe('nvim_get_option_value, nvim_set_option_value', function()
+    it('works', function()
+      ok(nvim('get_option_value', 'equalalways', {}))
+      nvim('set_option_value', 'equalalways', false, {})
+      ok(not nvim('get_option_value', 'equalalways', {}))
+    end)
+
+    it('can get local values when global value is set', function()
+      eq(0, nvim('get_option_value', 'scrolloff', {}))
+      eq(-1, nvim('get_option_value', 'scrolloff', {scope = 'local'}))
+    end)
+
+    it('can set global and local values', function()
+      nvim('set_option_value', 'makeprg', 'hello', {})
+      eq('hello', nvim('get_option_value', 'makeprg', {}))
+      eq('', nvim('get_option_value', 'makeprg', {scope = 'local'}))
+      nvim('set_option_value', 'makeprg', 'world', {scope = 'local'})
+      eq('world', nvim('get_option_value', 'makeprg', {scope = 'local'}))
+      nvim('set_option_value', 'makeprg', 'goodbye', {scope = 'global'})
+      eq('goodbye', nvim('get_option_value', 'makeprg', {scope = 'global'}))
+      nvim('set_option_value', 'makeprg', 'hello', {})
+      eq('hello', nvim('get_option_value', 'makeprg', {scope = 'global'}))
+      eq('hello', nvim('get_option_value', 'makeprg', {}))
+      eq('', nvim('get_option_value', 'makeprg', {scope = 'local'}))
+    end)
+
+    it('clears the local value of an option with nil', function()
+      -- Set global value
+      nvim('set_option_value', 'shiftwidth', 42, {})
+      eq(42, nvim('get_option_value', 'shiftwidth', {}))
+
+      -- Set local value
+      nvim('set_option_value', 'shiftwidth', 8, {scope = 'local'})
+      eq(8, nvim('get_option_value', 'shiftwidth', {}))
+      eq(8, nvim('get_option_value', 'shiftwidth', {scope = 'local'}))
+      eq(42, nvim('get_option_value', 'shiftwidth', {scope = 'global'}))
+
+      -- Clear value without scope
+      nvim('set_option_value', 'shiftwidth', NIL, {})
+      eq(42, nvim('get_option_value', 'shiftwidth', {}))
+      eq(42, nvim('get_option_value', 'shiftwidth', {scope = 'local'}))
+
+      -- Clear value with explicit scope
+      nvim('set_option_value', 'shiftwidth', 8, {scope = 'local'})
+      nvim('set_option_value', 'shiftwidth', NIL, {scope = 'local'})
+      eq(42, nvim('get_option_value', 'shiftwidth', {}))
+      eq(42, nvim('get_option_value', 'shiftwidth', {scope = 'local'}))
+
+      -- Now try with options with a special "local is unset" value (e.g. 'undolevels')
+      nvim('set_option_value', 'undolevels', 1000, {})
+      eq(1000, nvim('get_option_value', 'undolevels', {scope = 'local'}))
+      nvim('set_option_value', 'undolevels', NIL, {scope = 'local'})
+      eq(-123456, nvim('get_option_value', 'undolevels', {scope = 'local'}))
+
+      nvim('set_option_value', 'autoread', true, {})
+      eq(true, nvim('get_option_value', 'autoread', {scope = 'local'}))
+      nvim('set_option_value', 'autoread', NIL, {scope = 'local'})
+      eq(NIL, nvim('get_option_value', 'autoread', {scope = 'local'}))
+    end)
+  end)
+
   describe('nvim_{get,set}_current_buf, nvim_list_bufs', function()
     it('works', function()
       eq(1, #nvim('list_bufs'))
@@ -1093,8 +1154,8 @@ describe('API', function()
     end)
   end)
 
-  describe('RPC (K_EVENT) #6166', function()
-    it('does not complete ("interrupt") normal-mode operator-pending', function()
+  describe('RPC (K_EVENT)', function()
+    it('does not complete ("interrupt") normal-mode operator-pending #6166', function()
       helpers.insert([[
         FIRST LINE
         SECOND LINE]])
@@ -1130,7 +1191,7 @@ describe('API', function()
       ]])
     end)
 
-    it('does not complete ("interrupt") normal-mode map-pending', function()
+    it('does not complete ("interrupt") normal-mode map-pending #6166', function()
       command("nnoremap dd :let g:foo='it worked...'<CR>")
       helpers.insert([[
         FIRST LINE
@@ -1146,7 +1207,8 @@ describe('API', function()
         SECOND LINE]])
       eq('it worked...', helpers.eval('g:foo'))
     end)
-    it('does not complete ("interrupt") insert-mode map-pending', function()
+
+    it('does not complete ("interrupt") insert-mode map-pending #6166', function()
       command('inoremap xx foo')
       command('set timeoutlen=9999')
       helpers.insert([[
@@ -1160,6 +1222,37 @@ describe('API', function()
       expect([[
         FIRST LINE
         SECOND LINfooE]])
+    end)
+
+    it('does not interrupt Insert mode i_CTRL-O #10035', function()
+      feed('iHello World<c-o>')
+      eq({mode='niI', blocking=false}, meths.get_mode())  -- fast event
+      eq(2, eval('1+1'))  -- causes K_EVENT key
+      eq({mode='niI', blocking=false}, meths.get_mode())  -- still in ctrl-o mode
+      feed('dd')
+      eq({mode='i', blocking=false}, meths.get_mode())  -- left ctrl-o mode
+      expect('') -- executed the command
+    end)
+
+    it('does not interrupt Select mode v_CTRL-O #15688', function()
+      feed('iHello World<esc>gh<c-o>')
+      eq({mode='vs', blocking=false}, meths.get_mode())  -- fast event
+      eq({mode='vs', blocking=false}, meths.get_mode())  -- again #15288
+      eq(2, eval('1+1'))  -- causes K_EVENT key
+      eq({mode='vs', blocking=false}, meths.get_mode())  -- still in ctrl-o mode
+      feed('^')
+      eq({mode='s', blocking=false}, meths.get_mode())  -- left ctrl-o mode
+      feed('h')
+      eq({mode='i', blocking=false}, meths.get_mode())  -- entered insert mode
+      expect('h')  -- selection is the whole line and is replaced
+    end)
+
+    it('does not interrupt Insert mode i_0_CTRL-D #13997', function()
+      command('set timeoutlen=9999')
+      feed('i<Tab><Tab>a0')
+      eq(2, eval('1+1'))  -- causes K_EVENT key
+      feed('<C-D>')
+      expect('a')  -- recognized i_0_CTRL-D
     end)
   end)
 

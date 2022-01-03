@@ -35,7 +35,6 @@
 #include "nvim/memline.h"
 #include "nvim/memory.h"
 #include "nvim/message.h"
-#include "nvim/misc1.h"
 #include "nvim/mouse.h"
 #include "nvim/move.h"
 #include "nvim/normal.h"
@@ -227,6 +226,7 @@ typedef struct insert_state {
   cmdarg_T *ca;
   int mincol;
   int cmdchar;
+  int cmdchar_todo;                  // cmdchar to handle once in init_prompt
   int startln;
   long count;
   int c;
@@ -290,6 +290,7 @@ static void insert_enter(InsertState *s)
   s->did_backspace = true;
   s->old_topfill = -1;
   s->replaceState = REPLACE;
+  s->cmdchar_todo = s->cmdchar;
   // Remember whether editing was restarted after CTRL-O
   did_restart_edit = restart_edit;
   // sleep before redrawing, needed for "CTRL-O :" that results in an
@@ -385,6 +386,7 @@ static void insert_enter(InsertState *s)
     State = INSERT;
   }
 
+  trigger_modechanged();
   stop_insert_mode = false;
 
   // Need to recompute the cursor position, it might move when the cursor is
@@ -584,7 +586,8 @@ static int insert_check(VimState *state)
   }
 
   if (bt_prompt(curbuf)) {
-    init_prompt(s->cmdchar);
+    init_prompt(s->cmdchar_todo);
+    s->cmdchar_todo = NUL;
   }
 
   // If we inserted a character at the last position of the last line in the
@@ -640,7 +643,10 @@ static int insert_check(VimState *state)
   update_curswant();
   s->old_topline = curwin->w_topline;
   s->old_topfill = curwin->w_topfill;
-  s->lastc = s->c;   // remember previous char for CTRL-D
+
+  if (s->c != K_EVENT) {
+    s->lastc = s->c;  // remember previous char for CTRL-D
+  }
 
   // After using CTRL-G U the next cursor key will not break undo.
   if (dont_sync_undo == kNone) {
@@ -654,10 +660,17 @@ static int insert_check(VimState *state)
 
 static int insert_execute(VimState *state, int key)
 {
+  InsertState *const s = (InsertState *)state;
+  if (stop_insert_mode) {
+    // Insert mode ended, possibly from a callback.
+    s->count = 0;
+    s->nomove = true;
+    return 0;
+  }
+
   if (key == K_IGNORE || key == K_NOP) {
     return -1;  // get another key
   }
-  InsertState *s = (InsertState *)state;
   s->c = key;
 
   // Don't want K_EVENT with cursorhold for the second key, e.g., after CTRL-V.
@@ -819,6 +832,16 @@ static int insert_execute(VimState *state, int key)
   }
 
   return insert_handle_key(s);
+}
+
+
+/// Return true when need to go to Insert mode because of 'insertmode'.
+///
+/// Don't do this when still processing a command or a mapping.
+/// Don't do this when inside a ":normal" command.
+bool goto_im(void)
+{
+  return p_im && stuff_empty() && typebuf_typed();
 }
 
 static int insert_handle_key(InsertState *s)
@@ -983,6 +1006,15 @@ static int insert_handle_key(InsertState *s)
     break;
 
   case Ctrl_W:        // delete word before the cursor
+    if (bt_prompt(curbuf) && (mod_mask & MOD_MASK_SHIFT) == 0) {
+      // In a prompt window CTRL-W is used for window commands.
+      // Use Shift-CTRL-W to delete a word.
+      stuffcharReadbuff(Ctrl_W);
+      restart_edit = 'A';
+      s->nomove = true;
+      s->count = 0;
+      return 0;
+    }
     s->did_backspace = ins_bs(s->c, BACKSPACE_WORD, &s->inserted_space);
     auto_format(false, true);
     break;
@@ -1046,6 +1078,10 @@ static int insert_handle_key(InsertState *s)
 
   case K_COMMAND:       // some command
     do_cmdline(NULL, getcmdkeycmd, NULL, 0);
+    goto check_pum;
+
+  case K_LUA:
+    map_execute_lua();
 
 check_pum:
     // TODO(bfredl): Not entirely sure this indirection is necessary
@@ -1570,8 +1606,8 @@ static void ins_ctrl_v(void)
  */
 static int pc_status;
 #define PC_STATUS_UNSET 0       // pc_bytes was not set
-#define PC_STATUS_RIGHT 1       // right halve of double-wide char
-#define PC_STATUS_LEFT  2       // left halve of double-wide char
+#define PC_STATUS_RIGHT 1       // right half of double-wide char
+#define PC_STATUS_LEFT  2       // left half of double-wide char
 #define PC_STATUS_SET   3       // pc_bytes was filled
 static char_u pc_bytes[MB_MAXBYTES + 1];  // saved bytes
 static int pc_attr;
@@ -1654,11 +1690,22 @@ static void init_prompt(int cmdchar_todo)
     coladvance(MAXCOL);
     changed_bytes(curbuf->b_ml.ml_line_count, 0);
   }
+
+  // Insert always starts after the prompt, allow editing text after it.
+  if (Insstart_orig.lnum != curwin->w_cursor.lnum || Insstart_orig.col != (colnr_T)STRLEN(prompt)) {
+    Insstart.lnum = curwin->w_cursor.lnum;
+    Insstart.col = (colnr_T)STRLEN(prompt);
+    Insstart_orig = Insstart;
+    Insstart_textlen = Insstart.col;
+    Insstart_blank_vcol = MAXCOL;
+    arrow_used = false;
+  }
+
   if (cmdchar_todo == 'A') {
     coladvance(MAXCOL);
   }
-  if (cmdchar_todo == 'I' || curwin->w_cursor.col <= (int)STRLEN(prompt)) {
-    curwin->w_cursor.col = STRLEN(prompt);
+  if (curwin->w_cursor.col < (colnr_T)STRLEN(prompt)) {
+    curwin->w_cursor.col = (colnr_T)STRLEN(prompt);
   }
   // Make sure the cursor is in a valid position.
   check_cursor();
@@ -2050,6 +2097,8 @@ static void ins_ctrl_x(void)
     // CTRL-V look like CTRL-N
     ctrl_x_mode = CTRL_X_CMDLINE_CTRL_X;
   }
+
+  trigger_modechanged();
 }
 
 // Whether other than default completion has been selected.
@@ -2662,6 +2711,7 @@ void set_completion(colnr_T startcol, list_T *list)
     show_pum(save_w_wrow, save_w_leftcol);
   }
 
+  trigger_modechanged();
   ui_flush();
 }
 
@@ -2717,12 +2767,13 @@ static bool pum_enough_matches(void)
 static void trigger_complete_changed_event(int cur)
 {
   static bool recursive = false;
+  save_v_event_T save_v_event;
 
   if (recursive) {
     return;
   }
 
-  dict_T *v_event = get_vim_var_dict(VV_EVENT);
+  dict_T *v_event = get_v_event(&save_v_event);
   if (cur < 0) {
     tv_dict_add_dict(v_event, S_LEN("completed_item"), tv_dict_alloc());
   } else {
@@ -2738,7 +2789,7 @@ static void trigger_complete_changed_event(int cur)
   textlock--;
   recursive = false;
 
-  tv_dict_clear(v_event);
+  restore_v_event(v_event, &save_v_event);
 }
 
 /// Show the popup menu for the list of matches.
@@ -3840,6 +3891,8 @@ static bool ins_compl_prep(int c)
     ins_apply_autocmds(EVENT_COMPLETEDONE);
   }
 
+  trigger_modechanged();
+
   /* reset continue_* if we left expansion-mode, if we stay they'll be
    * (re)set properly in ins_complete() */
   if (!vim_is_ctrl_x_key(c)) {
@@ -3921,7 +3974,8 @@ static buf_T *ins_compl_next_buf(buf_T *buf, int flag)
 
 
 /// Get the user-defined completion function name for completion 'type'
-static char_u *get_complete_funcname(int type) {
+static char_u *get_complete_funcname(int type)
+{
   switch (type) {
   case CTRL_X_FUNCTION:
     return curbuf->b_p_cfu;
@@ -4588,6 +4642,8 @@ static int ins_compl_get_exp(pos_T *ini)
       compl_curr_match = compl_old_match;
     }
   }
+  trigger_modechanged();
+
   return i;
 }
 
@@ -5233,7 +5289,7 @@ static int ins_complete(int c, bool enable_pum)
       funcname = get_complete_funcname(ctrl_x_mode);
       if (*funcname == NUL) {
         semsg(_(e_notset), ctrl_x_mode == CTRL_X_FUNCTION
-            ? "completefunc" : "omnifunc");
+              ? "completefunc" : "omnifunc");
         // restore did_ai, so that adding comment leader works
         did_ai = save_did_ai;
         return FAIL;
@@ -6566,7 +6622,7 @@ static void spell_back_to_badword(void)
 int stop_arrow(void)
 {
   if (arrow_used) {
-    Insstart = curwin->w_cursor;  //new insertion starts here
+    Insstart = curwin->w_cursor;  // new insertion starts here
     if (Insstart.col > Insstart_orig.col && !ins_need_undo) {
       // Don't update the original insert position when moved to the
       // right, except when nothing was inserted yet.
@@ -7632,16 +7688,34 @@ int hkmap(int c)
       KAFsofit, hKAF, LAMED, MEMsofit, MEM, NUNsofit, NUN, SAMEH, AIN,
       PEIsofit, PEI, ZADIsofit, ZADI, KOF, RESH, hSHIN, TAV,
     };
-    static char_u map[26] =
-    { (char_u)hALEF  /*a*/, (char_u)BET  /*b*/, (char_u)hKAF  /*c*/,
-      (char_u)DALET  /*d*/, (char_u)-1  /*e*/, (char_u)PEIsofit  /*f*/,
-      (char_u)GIMEL  /*g*/, (char_u)HEI  /*h*/, (char_u)IUD  /*i*/,
-      (char_u)HET  /*j*/, (char_u)KOF  /*k*/, (char_u)LAMED  /*l*/,
-      (char_u)MEM  /*m*/, (char_u)NUN  /*n*/, (char_u)SAMEH  /*o*/,
-      (char_u)PEI  /*p*/, (char_u)-1  /*q*/, (char_u)RESH  /*r*/,
-      (char_u)ZAIN  /*s*/, (char_u)TAV  /*t*/, (char_u)TET  /*u*/,
-      (char_u)VAV  /*v*/, (char_u)hSHIN  /*w*/, (char_u)-1  /*x*/,
-      (char_u)AIN  /*y*/, (char_u)ZADI  /*z*/ };
+    static char_u map[26] = {
+      (char_u)hALEF,  // a
+      (char_u)BET,  // b
+      (char_u)hKAF,  // c
+      (char_u)DALET,  // d
+      (char_u)-1,  // e
+      (char_u)PEIsofit,  // f
+      (char_u)GIMEL,  // g
+      (char_u)HEI,  // h
+      (char_u)IUD,  // i
+      (char_u)HET,  // j
+      (char_u)KOF,  // k
+      (char_u)LAMED,  // l
+      (char_u)MEM,  // m
+      (char_u)NUN,  // n
+      (char_u)SAMEH,  // o
+      (char_u)PEI,  // p
+      (char_u)-1,  // q
+      (char_u)RESH,  // r
+      (char_u)ZAIN,  // s
+      (char_u)TAV,  // t
+      (char_u)TET,  // u
+      (char_u)VAV,  // v
+      (char_u)hSHIN,  // w
+      (char_u)-1,  // x
+      (char_u)AIN,  // y
+      (char_u)ZADI,  // z
+    };
 
     if (c == 'N' || c == 'M' || c == 'P' || c == 'C' || c == 'Z') {
       return (int)(map[CharOrd(c)] - 1 + p_aleph);
@@ -7967,6 +8041,7 @@ static bool ins_esc(long *count, int cmdchar, bool nomove)
 
 
   State = NORMAL;
+  trigger_modechanged();
   // need to position cursor again (e.g. when on a TAB )
   changed_cline_bef_curs();
 
@@ -8068,6 +8143,7 @@ static void ins_insert(int replaceState)
   } else {
     State = replaceState | (State & LANGMAP);
   }
+  trigger_modechanged();
   AppendCharToRedobuff(K_INS);
   showmode();
   ui_cursor_shape();            // may show different cursor shape
@@ -8213,7 +8289,7 @@ static bool ins_bs(int c, int mode, int *inserted_space_p)
       || (!revins_on
           && ((curwin->w_cursor.lnum == 1 && curwin->w_cursor.col == 0)
               || (!can_bs(BS_START)
-                  && (arrow_used
+                  && ((arrow_used && !bt_prompt(curbuf))
                       || (curwin->w_cursor.lnum == Insstart_orig.lnum
                           && curwin->w_cursor.col <= Insstart_orig.col)))
               || (!can_bs(BS_INDENT) && !arrow_used && ai_col > 0

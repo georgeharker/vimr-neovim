@@ -16,23 +16,22 @@
 
 #include "nvim/ascii.h"
 #include "nvim/garray.h"
+#include "nvim/os/input.h"
 
-/*
- * Logging of NFA engine.
- *
- * The NFA engine can write four log files:
- * - Error log: Contains NFA engine's fatal errors.
- * - Dump log: Contains compiled NFA state machine's information.
- * - Run log: Contains information of matching procedure.
- * - Debug log: Contains detailed information of matching procedure. Can be
- *   disabled by undefining NFA_REGEXP_DEBUG_LOG.
- * The first one can also be used without debug mode.
- * The last three are enabled when compiled as debug mode and individually
- * disabled by commenting them out.
- * The log files can get quite big!
- * Do disable all of this when compiling Vim for debugging, undefine REGEXP_DEBUG in
- * regexp.c
- */
+// Logging of NFA engine.
+//
+// The NFA engine can write four log files:
+// - Error log: Contains NFA engine's fatal errors.
+// - Dump log: Contains compiled NFA state machine's information.
+// - Run log: Contains information of matching procedure.
+// - Debug log: Contains detailed information of matching procedure. Can be
+//   disabled by undefining NFA_REGEXP_DEBUG_LOG.
+// The first one can also be used without debug mode.
+// The last three are enabled when compiled as debug mode and individually
+// disabled by commenting them out.
+// The log files can get quite big!
+// To disable all of this when compiling Vim for debugging, undefine REGEXP_DEBUG in
+// regexp.c
 #ifdef REGEXP_DEBUG
 # define NFA_REGEXP_ERROR_LOG   "nfa_regexp_error.log"
 # define NFA_REGEXP_DUMP_LOG    "nfa_regexp_dump.log"
@@ -2014,7 +2013,7 @@ static int nfa_regpiece(void)
     // will emit NFA_STAR.
     // Bail out if we can use the other engine, but only, when the
     // pattern does not need the NFA engine like (e.g. [[:upper:]]\{2,\}
-    // does not work with with characters > 8 bit with the BT engine)
+    // does not work with characters > 8 bit with the BT engine)
     if ((nfa_re_flags & RE_AUTO)
         && (maxval > 500 || maxval > minval + 200)
         && (maxval != MAX_LIMIT && minval < 200)
@@ -2566,20 +2565,20 @@ static void nfa_print_state2(FILE *debugf, nfa_state_T *state, garray_T *indent)
     ga_concat(indent, (char_u *)"| ");
   else
     ga_concat(indent, (char_u *)"  ");
-  ga_append(indent, '\0');
+  ga_append(indent, NUL);
 
   nfa_print_state2(debugf, state->out, indent);
 
   /* replace last part of indent for state->out1 */
   indent->ga_len -= 3;
   ga_concat(indent, (char_u *)"  ");
-  ga_append(indent, '\0');
+  ga_append(indent, NUL);
 
   nfa_print_state2(debugf, state->out1, indent);
 
   /* shrink indent */
   indent->ga_len -= 3;
-  ga_append(indent, '\0');
+  ga_append(indent, NUL);
 }
 
 /*
@@ -4368,7 +4367,7 @@ static regsubs_T *addstate_here(
 
   // First add the state(s) at the end, so that we know how many there are.
   // Pass the listidx as offset (avoids adding another argument to
-  // addstate().
+  // addstate()).
   regsubs_T *r = addstate(l, state, subs, pim, -listidx - ADDSTATE_HERE_OFFSET);
   if (r == NULL) {
     return NULL;

@@ -17,7 +17,6 @@
 #include "nvim/memfile.h"
 #include "nvim/memory.h"
 #include "nvim/message.h"
-#include "nvim/misc1.h"
 #include "nvim/sign.h"
 #include "nvim/ui.h"
 #include "nvim/vim.h"
@@ -631,6 +630,7 @@ void free_all_mem(void)
   clear_sb_text(true);            // free any scrollback text
 
   // Free some global vars.
+  xfree(last_mode);
   xfree(last_cmdline);
   xfree(new_last_cmdline);
   set_keep_msg(NULL, 0);

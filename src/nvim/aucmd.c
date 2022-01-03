@@ -25,13 +25,14 @@ void do_autocmd_uienter(uint64_t chanid, bool attached)
   }
   recursive = true;
 
-  dict_T *dict = get_vim_var_dict(VV_EVENT);
+  save_v_event_T save_v_event;
+  dict_T *dict = get_v_event(&save_v_event);
   assert(chanid < VARNUMBER_MAX);
   tv_dict_add_nr(dict, S_LEN("chan"), (varnumber_T)chanid);
   tv_dict_set_keys_readonly(dict);
   apply_autocmds(attached ? EVENT_UIENTER : EVENT_UILEAVE,
                  NULL, NULL, false, curbuf);
-  tv_dict_clear(dict);
+  restore_v_event(dict, &save_v_event);
 
   recursive = false;
 }

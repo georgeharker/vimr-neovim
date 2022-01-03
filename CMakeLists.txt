@@ -136,14 +136,14 @@ set_property(CACHE CMAKE_BUILD_TYPE PROPERTY
 # If not in a git repo (e.g., a tarball) these tokens define the complete
 # version string, else they are combined with the result of `git describe`.
 set(NVIM_VERSION_MAJOR 0)
-set(NVIM_VERSION_MINOR 6)
-set(NVIM_VERSION_PATCH 1)
-set(NVIM_VERSION_PRERELEASE "") # for package maintainers
+set(NVIM_VERSION_MINOR 7)
+set(NVIM_VERSION_PATCH 0)
+set(NVIM_VERSION_PRERELEASE "-dev") # for package maintainers
 
 # API level
-set(NVIM_API_LEVEL 8)         # Bump this after any API change.
+set(NVIM_API_LEVEL 9)         # Bump this after any API change.
 set(NVIM_API_LEVEL_COMPAT 0)  # Adjust this after a _breaking_ API change.
-set(NVIM_API_PRERELEASE false)
+set(NVIM_API_PRERELEASE true)
 
 set(NVIM_VERSION_BUILD_TYPE "${CMAKE_BUILD_TYPE}")
 # NVIM_VERSION_CFLAGS set further below.
@@ -552,6 +552,29 @@ if(NOT LUA_PRG_WORKS)
 endif()
 
 message(STATUS "Using Lua interpreter: ${LUA_PRG}")
+
+option(COMPILE_LUA "Pre-compile Lua sources into bytecode (for sources that are included in the binary)" ON)
+
+if(COMPILE_LUA AND NOT WIN32)
+  if(PREFER_LUA)
+    foreach(CURRENT_LUAC_PRG luac5.1 luac)
+      find_program(_CHECK_LUAC_PRG ${CURRENT_LUAC_PRG})
+      if(_CHECK_LUAC_PRG)
+        set(LUAC_PRG "${_CHECK_LUAC_PRG} -s -o - %s" CACHE STRING "Format for compiling to Lua bytecode")
+        break()
+      endif()
+    endforeach()
+  elseif(LUA_PRG MATCHES "luajit")
+    check_lua_module(${LUA_PRG} "jit.bcsave" LUAJIT_HAS_JIT_BCSAVE)
+    if(LUAJIT_HAS_JIT_BCSAVE)
+      set(LUAC_PRG "${LUA_PRG} -b -s %s -" CACHE STRING "Format for compiling to Lua bytecode")
+    endif()
+  endif()
+endif()
+
+if(LUAC_PRG)
+  message(STATUS "Using Lua compiler: ${LUAC_PRG}")
+endif()
 
 # Setup busted.
 find_program(BUSTED_PRG NAMES busted busted.bat)

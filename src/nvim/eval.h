@@ -138,6 +138,9 @@ typedef enum {
   VV_COMPLETED_ITEM,
   VV_OPTION_NEW,
   VV_OPTION_OLD,
+  VV_OPTION_OLDLOCAL,
+  VV_OPTION_OLDGLOBAL,
+  VV_OPTION_COMMAND,
   VV_OPTION_TYPE,
   VV_ERRORS,
   VV_FALSE,
@@ -190,6 +193,13 @@ extern const list_T *eval_msgpack_type_lists[LAST_MSGPACK_TYPE + 1];
 
 #undef LAST_MSGPACK_TYPE
 
+// Struct passed to get_v_event() and restore_v_event().
+typedef struct {
+  bool sve_did_save;
+  hashtab_T sve_hashtab;
+} save_v_event_T;
+
+
 /// trans_function_name() flags
 typedef enum {
   TFN_INT = 1,  ///< May use internal function name
@@ -209,8 +219,8 @@ typedef enum {
 
 /// flags for find_name_end()
 #define FNE_INCL_BR     1       // find_name_end(): include [] in name
-#define FNE_CHECK_START 2       /* find_name_end(): check name starts with
-                                   valid character */
+#define FNE_CHECK_START 2       // find_name_end(): check name starts with
+                                // valid character
 
 typedef struct {
   TimeWatcher tw;

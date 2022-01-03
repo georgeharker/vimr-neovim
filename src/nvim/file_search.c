@@ -57,7 +57,6 @@
 #include "nvim/globals.h"
 #include "nvim/memory.h"
 #include "nvim/message.h"
-#include "nvim/misc1.h"
 #include "nvim/option.h"
 #include "nvim/os/fs_defs.h"
 #include "nvim/os/input.h"
@@ -608,7 +607,7 @@ char_u *vim_findfile(void *search_ctx_arg)
   for (;;) {
     // downward search loop
     for (;;) {
-      // check if user user wants to stop the search
+      // check if user wants to stop the search
       os_breakcheck();
       if (got_int) {
         break;
@@ -1140,7 +1139,7 @@ static int ff_check_visited(ff_visited_T **visited_list, char_u *fname, char_u *
   bool url = false;
 
   FileID file_id;
-  // For an URL we only compare the name, otherwise we compare the
+  // For a URL we only compare the name, otherwise we compare the
   // device/inode.
   if (path_with_url((char *)fname)) {
     STRLCPY(ff_expand_buffer, fname, MAXPATHL);
@@ -1603,7 +1602,8 @@ void do_autocmd_dirchanged(char *new_dir, CdScope scope, CdCause cause)
 
   recursive = true;
 
-  dict_T *dict = get_vim_var_dict(VV_EVENT);
+  save_v_event_T save_v_event;
+  dict_T *dict = get_v_event(&save_v_event);
   char buf[8];
 
   switch (scope) {
@@ -1648,7 +1648,7 @@ void do_autocmd_dirchanged(char *new_dir, CdScope scope, CdCause cause)
   apply_autocmds(EVENT_DIRCHANGED, (char_u *)buf, (char_u *)new_dir, false,
                  curbuf);
 
-  tv_dict_clear(dict);
+  restore_v_event(dict, &save_v_event);
 
   recursive = false;
 }
@@ -1667,12 +1667,17 @@ int vim_chdirfile(char_u *fname, CdCause cause)
     NameBuff[0] = NUL;
   }
 
-  if (os_chdir(dir) == 0) {
-    if (cause != kCdCauseOther && pathcmp(dir, (char *)NameBuff, -1) != 0) {
-      do_autocmd_dirchanged(dir, kCdScopeWindow, cause);
-    }
-  } else {
+  if (pathcmp(dir, (char *)NameBuff, -1) == 0) {
+    // nothing to do
+    return OK;
+  }
+
+  if (os_chdir(dir) != 0) {
     return FAIL;
+  }
+
+  if (cause != kCdCauseOther) {
+    do_autocmd_dirchanged(dir, kCdScopeWindow, cause);
   }
 
   return OK;

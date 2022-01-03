@@ -1000,10 +1000,10 @@ function M.jump_to_location(location)
 
   --- Jump to new location (adjusting for UTF-16 encoding of characters)
   api.nvim_set_current_buf(bufnr)
-  api.nvim_buf_set_option(0, 'buflisted', true)
+  api.nvim_buf_set_option(bufnr, 'buflisted', true)
   local range = location.range or location.targetSelectionRange
   local row = range.start.line
-  local col = get_line_byte_from_position(0, range.start)
+  local col = get_line_byte_from_position(bufnr, range.start)
   api.nvim_win_set_cursor(0, {row + 1, col})
   -- Open folds under the cursor
   vim.cmd("normal! zv")
@@ -1677,7 +1677,7 @@ function M.symbols_to_items(symbols, bufnr)
     end
     return _items
   end
-  return _symbols_to_items(symbols, {}, bufnr)
+  return _symbols_to_items(symbols, {}, bufnr or 0)
 end
 
 --- Removes empty lines from the beginning and end.
@@ -1796,7 +1796,7 @@ end
 ---@returns { textDocument = { uri = `current_file_uri` }, range = { start =
 ---`current_position`, end = `current_position` } }
 function M.make_range_params(window, offset_encoding)
-  local buf = vim.api.nvim_win_get_buf(window)
+  local buf = vim.api.nvim_win_get_buf(window or 0)
   offset_encoding = offset_encoding or M._get_offset_encoding(buf)
   local position = make_position_param(window, offset_encoding)
   return {

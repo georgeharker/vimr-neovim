@@ -32,8 +32,8 @@
 #include "nvim/memline.h"
 #include "nvim/memory.h"
 #include "nvim/message.h"
-#include "nvim/misc1.h"
 #include "nvim/option.h"
+#include "nvim/os/input.h"
 #include "nvim/os/os.h"
 #include "nvim/os/time.h"
 #include "nvim/os_unix.h"
@@ -114,6 +114,8 @@ static inline struct hl_group *HL_TABLE(void)
 static int include_none = 0;    // when 1 include "nvim/None"
 static int include_default = 0;  // when 1 include "nvim/default"
 static int include_link = 0;    // when 2 include "nvim/link" and "clear"
+
+#define MAX_SYN_NAME 200
 
 /// The "term", "cterm" and "gui" arguments can be any combination of the
 /// following names, separated by commas (but no spaces!).
@@ -5401,7 +5403,7 @@ static int get_id_list(char_u **const arg, const int keylen, int16_t **const lis
     do {
       for (end = p; *end && !ascii_iswhite(*end) && *end != ','; end++) {
       }
-      char_u *const name = xmalloc((int)(end - p + 3));   // leave room for "^$"
+      char_u *const name = xmalloc(end - p + 3);   // leave room for "^$"
       STRLCPY(name + 1, p, end - p + 1);
       if (STRCMP(name + 1, "ALLBUT") == 0
           || STRCMP(name + 1, "ALL") == 0
@@ -6175,6 +6177,8 @@ static const char *highlight_init_both[] = {
   "default link LineNrAbove LineNr",
   "default link LineNrBelow LineNr",
   "default link QuickFixLine Search",
+  "default link CursorLineSign SignColumn",
+  "default link CursorLineFold FoldColumn",
   "default link Substitute Search",
   "default link Whitespace NonText",
   "default link MsgSeparator StatusLine",
@@ -7573,7 +7577,7 @@ static bool syn_list_header(const bool did_header, const int outlen, const int i
   // Show "xxx" with the attributes.
   if (!did_header) {
     if (endcol == Columns - 1 && endcol <= name_col) {
-        msg_putchar(' ');
+      msg_putchar(' ');
     }
     msg_puts_attr("xxx", syn_id2attr(id));
     msg_putchar(' ');
@@ -7623,10 +7627,9 @@ int syn_name2id(const char *name)
 int syn_name2id_len(const char_u *name, size_t len)
   FUNC_ATTR_NONNULL_ALL
 {
-  char name_u[201];
+  char name_u[MAX_SYN_NAME + 1];
 
-  if (len == 0 || len > 200) {
-    // ID names over 200 chars don't deserve to be found!
+  if (len == 0 || len > MAX_SYN_NAME) {
     return 0;
   }
 
@@ -7684,6 +7687,10 @@ char_u *syn_id2name(int id)
 /// @return 0 for failure else the id of the group
 int syn_check_group(const char *name, int len)
 {
+  if (len > MAX_SYN_NAME) {
+    emsg(_(e_highlight_group_name_too_long));
+    return 0;
+  }
   int id = syn_name2id_len((char_u *)name, len);
   if (id == 0) {  // doesn't exist yet
     return syn_add_group(vim_strnsave((char_u *)name, len));

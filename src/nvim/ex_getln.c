@@ -48,7 +48,6 @@
 #include "nvim/memory.h"
 #include "nvim/menu.h"
 #include "nvim/message.h"
-#include "nvim/misc1.h"
 #include "nvim/mouse.h"
 #include "nvim/move.h"
 #include "nvim/ops.h"
@@ -880,7 +879,8 @@ static uint8_t *command_line_enter(int firstc, long count, int indent)
   TryState tstate;
   Error err = ERROR_INIT;
   bool tl_ret = true;
-  dict_T *dict = get_vim_var_dict(VV_EVENT);
+  save_v_event_T save_v_event;
+  dict_T *dict = get_v_event(&save_v_event);
   char firstcbuf[2];
   firstcbuf[0] = (char)(firstc > 0 ? firstc : '-');
   firstcbuf[1] = 0;
@@ -894,7 +894,7 @@ static uint8_t *command_line_enter(int firstc, long count, int indent)
 
     apply_autocmds(EVENT_CMDLINEENTER, (char_u *)firstcbuf, (char_u *)firstcbuf,
                    false, curbuf);
-    tv_dict_clear(dict);
+    restore_v_event(dict, &save_v_event);
 
 
     tl_ret = try_leave(&tstate, &err);
@@ -906,6 +906,7 @@ static uint8_t *command_line_enter(int firstc, long count, int indent)
     }
     tl_ret = true;
   }
+  trigger_modechanged();
 
   state_enter(&s->state);
 
@@ -924,7 +925,7 @@ static uint8_t *command_line_enter(int firstc, long count, int indent)
     if (tv_dict_get_number(dict, "abort") != 0) {
       s->gotesc = 1;
     }
-    tv_dict_clear(dict);
+    restore_v_event(dict, &save_v_event);
   }
 
   cmdmsg_rl = false;
@@ -1023,11 +1024,13 @@ static int command_line_execute(VimState *state, int key)
   CommandLineState *s = (CommandLineState *)state;
   s->c = key;
 
-  if (s->c == K_EVENT || s->c == K_COMMAND) {
+  if (s->c == K_EVENT || s->c == K_COMMAND || s->c == K_LUA) {
     if (s->c == K_EVENT) {
       state_handle_k_event();
-    } else {
+    } else if (s->c == K_COMMAND) {
       do_cmdline(NULL, getcmdkeycmd, NULL, DOCMD_NOWAIT);
+    } else {
+      map_execute_lua();
     }
 
     if (!cmdline_was_last_drawn) {
@@ -2289,7 +2292,8 @@ static int command_line_changed(CommandLineState *s)
   if (has_event(EVENT_CMDLINECHANGED)) {
     TryState tstate;
     Error err = ERROR_INIT;
-    dict_T *dict = get_vim_var_dict(VV_EVENT);
+    save_v_event_T save_v_event;
+    dict_T *dict = get_v_event(&save_v_event);
 
     char firstcbuf[2];
     firstcbuf[0] = (char)(s->firstc > 0 ? s->firstc : '-');
@@ -2303,7 +2307,7 @@ static int command_line_changed(CommandLineState *s)
 
     apply_autocmds(EVENT_CMDLINECHANGED, (char_u *)firstcbuf,
                    (char_u *)firstcbuf, false, curbuf);
-    tv_dict_clear(dict);
+    restore_v_event(dict, &save_v_event);
 
     bool tl_ret = try_leave(&tstate, &err);
     if (!tl_ret && ERROR_SET(&err)) {
@@ -2488,27 +2492,25 @@ char *get_text_locked_msg(void)
 }
 
 /// Check if "curbuf->b_ro_locked" or "allbuf_lock" is set and
-/// return TRUE when it is and give an error message.
-int curbuf_locked(void)
+/// return true when it is and give an error message.
+bool curbuf_locked(void)
 {
   if (curbuf->b_ro_locked > 0) {
     emsg(_("E788: Not allowed to edit another buffer now"));
-    return TRUE;
+    return true;
   }
   return allbuf_locked();
 }
 
-/*
- * Check if "allbuf_lock" is set and return TRUE when it is and give an error
- * message.
- */
-int allbuf_locked(void)
+// Check if "allbuf_lock" is set and return true when it is and give an error
+// message.
+bool allbuf_locked(void)
 {
   if (allbuf_lock > 0) {
     emsg(_("E811: Not allowed to change buffer information now"));
-    return TRUE;
+    return true;
   }
-  return FALSE;
+  return false;
 }
 
 static int cmdline_charsize(int idx)
@@ -4983,6 +4985,9 @@ static int ExpandFromContext(expand_T *xp, char_u *pat, int *num_file, char_u **
   if (xp->xp_context == EXPAND_USER_LIST) {
     return ExpandUserList(xp, num_file, file);
   }
+  if (xp->xp_context == EXPAND_USER_LUA) {
+    return ExpandUserLua(xp, num_file, file);
+  }
   if (xp->xp_context == EXPAND_PACKADD) {
     return ExpandPackAddDir(pat, num_file, file);
   }
@@ -5392,6 +5397,35 @@ static int ExpandUserList(expand_T *xp, int *num_file, char_u ***file)
   if (retlist == NULL) {
     return FAIL;
   }
+
+  garray_T ga;
+  ga_init(&ga, (int)sizeof(char *), 3);
+  // Loop over the items in the list.
+  TV_LIST_ITER_CONST(retlist, li, {
+    if (TV_LIST_ITEM_TV(li)->v_type != VAR_STRING
+        || TV_LIST_ITEM_TV(li)->vval.v_string == NULL) {
+      continue;  // Skip non-string items and empty strings.
+    }
+
+    GA_APPEND(char *, &ga, xstrdup((const char *)TV_LIST_ITEM_TV(li)->vval.v_string));
+  });
+  tv_list_unref(retlist);
+
+  *file = ga.ga_data;
+  *num_file = ga.ga_len;
+  return OK;
+}
+
+static int ExpandUserLua(expand_T *xp, int *num_file, char_u ***file)
+{
+  typval_T rettv;
+  nlua_call_user_expand_func(xp, &rettv);
+  if (rettv.v_type != VAR_LIST) {
+    tv_clear(&rettv);
+    return FAIL;
+  }
+
+  list_T *const retlist = rettv.vval.v_list;
 
   garray_T ga;
   ga_init(&ga, (int)sizeof(char *), 3);
@@ -6547,6 +6581,7 @@ static int open_cmdwin(void)
   cmdmsg_rl = save_cmdmsg_rl;
 
   State = save_State;
+  trigger_modechanged();
   setmouse();
 
   return cmdwin_result;

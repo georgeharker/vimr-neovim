@@ -39,6 +39,7 @@
 #include "nvim/globals.h"
 #include "nvim/hardcopy.h"
 #include "nvim/if_cscope.h"
+#include "nvim/input.h"
 #include "nvim/keymap.h"
 #include "nvim/lua/executor.h"
 #include "nvim/main.h"
@@ -48,7 +49,6 @@
 #include "nvim/memory.h"
 #include "nvim/menu.h"
 #include "nvim/message.h"
-#include "nvim/misc1.h"
 #include "nvim/mouse.h"
 #include "nvim/move.h"
 #include "nvim/normal.h"
@@ -67,6 +67,7 @@
 #include "nvim/sign.h"
 #include "nvim/spell.h"
 #include "nvim/spellfile.h"
+#include "nvim/state.h"
 #include "nvim/strings.h"
 #include "nvim/syntax.h"
 #include "nvim/tag.h"
@@ -80,23 +81,7 @@
 static int quitmore = 0;
 static bool ex_pressedreturn = false;
 
-typedef struct ucmd {
-  char_u *uc_name;         // The command name
-  uint32_t uc_argt;             // The argument type
-  char_u *uc_rep;          // The command's replacement string
-  long uc_def;                  // The default value for a range/count
-  int uc_compl;                 // completion type
-  cmd_addr_T uc_addr_type;      // The command's address type
-  sctx_T uc_script_ctx;         // SCTX where the command was defined
-  char_u *uc_compl_arg;    // completion argument if any
-} ucmd_T;
-
-#define UC_BUFFER       1       // -buffer: local to current buffer
-
-static garray_T ucmds = { 0, 0, sizeof(ucmd_T), 4, NULL };
-
-#define USER_CMD(i) (&((ucmd_T *)(ucmds.ga_data))[i])
-#define USER_CMD_GA(gap, i) (&((ucmd_T *)((gap)->ga_data))[i])
+garray_T ucmds = { 0, 0, sizeof(ucmd_T), 4, NULL };
 
 // Whether a command index indicates a user command.
 #define IS_USER_CMDIDX(idx) ((int)(idx) < 0)
@@ -196,6 +181,7 @@ void do_exmode(void)
 
   exmode_active = true;
   State = NORMAL;
+  trigger_modechanged();
 
   // When using ":global /pat/ visual" and then "Q" we return to continue
   // the :global command.
@@ -434,7 +420,7 @@ int do_cmdline(char_u *cmdline, LineGetter fgetline, void *cookie, int flags)
         && cstack.cs_idx < 0
         && !(getline_is_func
              && func_has_abort(real_cookie))) {
-      did_emsg = FALSE;
+      did_emsg = false;
     }
 
     /*
@@ -818,7 +804,7 @@ int do_cmdline(char_u *cmdline, LineGetter fgetline, void *cookie, int flags)
     // of interrupts or errors to exceptions, and ensure that no more
     // commands are executed.
     if (current_exception) {
-      void *p = NULL;
+      char *p = NULL;
       char_u *saved_sourcing_name;
       int saved_sourcing_lnum;
       struct msglist *messages = NULL;
@@ -835,7 +821,7 @@ int do_cmdline(char_u *cmdline, LineGetter fgetline, void *cookie, int flags)
         vim_snprintf((char *)IObuff, IOSIZE,
                      _("E605: Exception not caught: %s"),
                      current_exception->value);
-        p = vim_strsave(IObuff);
+        p = (char *)vim_strsave(IObuff);
         break;
       case ET_ERROR:
         messages = current_exception->messages;
@@ -2716,7 +2702,7 @@ static char_u *find_ucmd(exarg_T *eap, char_u *p, int *full, expand_T *xp, int *
    */
   gap = &curbuf->b_ucmds;
   for (;;) {
-    for (j = 0; j < gap->ga_len; ++j) {
+    for (j = 0; j < gap->ga_len; j++) {
       uc = USER_CMD_GA(gap, j);
       cp = eap->cmd;
       np = uc->uc_name;
@@ -2759,6 +2745,7 @@ static char_u *find_ucmd(exarg_T *eap, char_u *p, int *full, expand_T *xp, int *
             *complp = uc->uc_compl;
           }
           if (xp != NULL) {
+            xp->xp_luaref = uc->uc_compl_luaref;
             xp->xp_arg = uc->uc_compl_arg;
             xp->xp_script_ctx = uc->uc_script_ctx;
             xp->xp_script_ctx.sc_lnum += sourcing_lnum;
@@ -2896,6 +2883,31 @@ int cmd_exists(const char *const name)
     return 0;           // trailing garbage
   }
   return ea.cmdidx == CMD_SIZE ? 0 : (full ? 2 : 1);
+}
+
+// "fullcommand" function
+void f_fullcommand(typval_T *argvars, typval_T *rettv, FunPtr fptr)
+{
+  exarg_T ea;
+  char_u *name = argvars[0].vval.v_string;
+
+  while (name[0] != NUL && name[0] == ':') {
+    name++;
+  }
+  name = skip_range(name, NULL);
+
+  rettv->v_type = VAR_STRING;
+
+  ea.cmd = (*name == '2' || *name == '3') ? name + 1 : name;
+  ea.cmdidx = (cmdidx_T)0;
+  char_u *p = find_command(&ea, NULL);
+  if (p == NULL || ea.cmdidx == CMD_SIZE) {
+    return;
+  }
+
+  rettv->vval.v_string = vim_strsave(IS_USER_CMDIDX(ea.cmdidx)
+                                     ? get_user_commands(NULL, ea.useridx)
+                                     : cmdnames[ea.cmdidx].cmd_name);
 }
 
 /// This is all pretty much copied from do_one_cmd(), with all the extra stuff
@@ -5144,8 +5156,9 @@ char_u *get_command_name(expand_T *xp, int idx)
   return cmdnames[idx].cmd_name;
 }
 
-static int uc_add_command(char_u *name, size_t name_len, char_u *rep, uint32_t argt, long def,
-                          int flags, int compl, char_u *compl_arg, cmd_addr_T addr_type, bool force)
+int uc_add_command(char_u *name, size_t name_len, char_u *rep, uint32_t argt, long def, int flags,
+                   int compl, char_u *compl_arg, LuaRef compl_luaref, cmd_addr_T addr_type,
+                   LuaRef luaref, bool force)
   FUNC_ATTR_NONNULL_ARG(1, 3)
 {
   ucmd_T *cmd = NULL;
@@ -5199,6 +5212,8 @@ static int uc_add_command(char_u *name, size_t name_len, char_u *rep, uint32_t a
 
       XFREE_CLEAR(cmd->uc_rep);
       XFREE_CLEAR(cmd->uc_compl_arg);
+      NLUA_CLEAR_REF(cmd->uc_luaref);
+      NLUA_CLEAR_REF(cmd->uc_compl_luaref);
       break;
     }
 
@@ -5229,13 +5244,17 @@ static int uc_add_command(char_u *name, size_t name_len, char_u *rep, uint32_t a
   cmd->uc_script_ctx = current_sctx;
   cmd->uc_script_ctx.sc_lnum += sourcing_lnum;
   cmd->uc_compl_arg = compl_arg;
+  cmd->uc_compl_luaref = compl_luaref;
   cmd->uc_addr_type = addr_type;
+  cmd->uc_luaref = luaref;
 
   return OK;
 
 fail:
   xfree(rep_buf);
   xfree(compl_arg);
+  NLUA_CLEAR_REF(luaref);
+  NLUA_CLEAR_REF(compl_luaref);
   return FAIL;
 }
 
@@ -5274,6 +5293,7 @@ static const char *command_complete[] =
   [EXPAND_CSCOPE] = "cscope",
   [EXPAND_USER_DEFINED] = "custom",
   [EXPAND_USER_LIST] = "customlist",
+  [EXPAND_USER_LUA] = "<Lua function>",
   [EXPAND_DIFF_BUFFERS] = "diff_buffer",
   [EXPAND_DIRECTORIES] = "dir",
   [EXPAND_ENV_VARS] = "environment",
@@ -5327,7 +5347,7 @@ static void uc_list(char_u *name, size_t name_len)
     ? &prevwin->w_buffer->b_ucmds
     : &curbuf->b_ucmds;
   for (;;) {
-    for (i = 0; i < gap->ga_len; ++i) {
+    for (i = 0; i < gap->ga_len; i++) {
       cmd = USER_CMD_GA(gap, i);
       a = cmd->uc_argt;
 
@@ -5675,8 +5695,8 @@ static void ex_command(exarg_T *eap)
   } else if (compl > 0 && (argt & EX_EXTRA) == 0) {
     emsg(_(e_complete_used_without_nargs));
   } else {
-    uc_add_command(name, end - name, p, argt, def, flags, compl, compl_arg,
-                   addr_type_arg, eap->forceit);
+    uc_add_command(name, end - name, p, argt, def, flags, compl, compl_arg, LUA_NOREF,
+                   addr_type_arg, LUA_NOREF, eap->forceit);
   }
 }
 
@@ -5690,11 +5710,13 @@ void ex_comclear(exarg_T *eap)
   uc_clear(&curbuf->b_ucmds);
 }
 
-static void free_ucmd(ucmd_T *cmd)
+void free_ucmd(ucmd_T *cmd)
 {
   xfree(cmd->uc_name);
   xfree(cmd->uc_rep);
   xfree(cmd->uc_compl_arg);
+  NLUA_CLEAR_REF(cmd->uc_compl_luaref);
+  NLUA_CLEAR_REF(cmd->uc_luaref);
 }
 
 /*
@@ -5714,7 +5736,7 @@ static void ex_delcommand(exarg_T *eap)
 
   gap = &curbuf->b_ucmds;
   for (;;) {
-    for (i = 0; i < gap->ga_len; ++i) {
+    for (i = 0; i < gap->ga_len; i++) {
       cmd = USER_CMD_GA(gap, i);
       cmp = STRCMP(eap->arg, cmd->uc_name);
       if (cmp <= 0) {
@@ -5732,9 +5754,7 @@ static void ex_delcommand(exarg_T *eap)
     return;
   }
 
-  xfree(cmd->uc_name);
-  xfree(cmd->uc_rep);
-  xfree(cmd->uc_compl_arg);
+  free_ucmd(cmd);
 
   --gap->ga_len;
 
@@ -5816,7 +5836,7 @@ static char_u *uc_split_args(char_u *arg, size_t *lenp)
   return buf;
 }
 
-static size_t add_cmd_modifier(char_u *buf, char *mod_str, bool *multi_mods)
+static size_t add_cmd_modifier(char *buf, char *mod_str, bool *multi_mods)
 {
   size_t result = STRLEN(mod_str);
   if (*multi_mods) {
@@ -6017,70 +6037,8 @@ static size_t uc_check_code(char_u *code, size_t len, char_u *buf, ucmd_T *cmd, 
       *buf = '\0';
     }
 
-    bool multi_mods = false;
+    result += uc_mods((char *)buf);
 
-    // :aboveleft and :leftabove
-    if (cmdmod.split & WSP_ABOVE) {
-      result += add_cmd_modifier(buf, "aboveleft", &multi_mods);
-    }
-    // :belowright and :rightbelow
-    if (cmdmod.split & WSP_BELOW) {
-      result += add_cmd_modifier(buf, "belowright", &multi_mods);
-    }
-    // :botright
-    if (cmdmod.split & WSP_BOT) {
-      result += add_cmd_modifier(buf, "botright", &multi_mods);
-    }
-
-    typedef struct {
-      bool *set;
-      char *name;
-    } mod_entry_T;
-    static mod_entry_T mod_entries[] = {
-      { &cmdmod.browse, "browse" },
-      { &cmdmod.confirm, "confirm" },
-      { &cmdmod.hide, "hide" },
-      { &cmdmod.keepalt, "keepalt" },
-      { &cmdmod.keepjumps, "keepjumps" },
-      { &cmdmod.keepmarks, "keepmarks" },
-      { &cmdmod.keeppatterns, "keeppatterns" },
-      { &cmdmod.lockmarks, "lockmarks" },
-      { &cmdmod.noswapfile, "noswapfile" }
-    };
-    // the modifiers that are simple flags
-    for (size_t i = 0; i < ARRAY_SIZE(mod_entries); i++) {
-      if (*mod_entries[i].set) {
-        result += add_cmd_modifier(buf, mod_entries[i].name, &multi_mods);
-      }
-    }
-
-    // TODO(vim): How to support :noautocmd?
-    // TODO(vim): How to support :sandbox?
-
-    // :silent
-    if (msg_silent > 0) {
-      result += add_cmd_modifier(buf, emsg_silent > 0 ? "silent!" : "silent",
-                                 &multi_mods);
-    }
-    // :tab
-    if (cmdmod.tab > 0) {
-      result += add_cmd_modifier(buf, "tab", &multi_mods);
-    }
-    // :topleft
-    if (cmdmod.split & WSP_TOP) {
-      result += add_cmd_modifier(buf, "topleft", &multi_mods);
-    }
-
-    // TODO(vim): How to support :unsilent?
-
-    // :verbose
-    if (p_verbose > 0) {
-      result += add_cmd_modifier(buf, "verbose", &multi_mods);
-    }
-    // :vertical
-    if (cmdmod.split & WSP_VERT) {
-      result += add_cmd_modifier(buf, "vertical", &multi_mods);
-    }
     if (quote && buf != NULL) {
       buf += result - 2;
       *buf = '"';
@@ -6125,6 +6083,76 @@ static size_t uc_check_code(char_u *code, size_t len, char_u *buf, ucmd_T *cmd, 
   return result;
 }
 
+size_t uc_mods(char *buf)
+{
+  size_t result = 0;
+  bool multi_mods = false;
+
+  // :aboveleft and :leftabove
+  if (cmdmod.split & WSP_ABOVE) {
+    result += add_cmd_modifier(buf, "aboveleft", &multi_mods);
+  }
+  // :belowright and :rightbelow
+  if (cmdmod.split & WSP_BELOW) {
+    result += add_cmd_modifier(buf, "belowright", &multi_mods);
+  }
+  // :botright
+  if (cmdmod.split & WSP_BOT) {
+    result += add_cmd_modifier(buf, "botright", &multi_mods);
+  }
+
+  typedef struct {
+    bool *set;
+    char *name;
+  } mod_entry_T;
+  static mod_entry_T mod_entries[] = {
+    { &cmdmod.browse, "browse" },
+    { &cmdmod.confirm, "confirm" },
+    { &cmdmod.hide, "hide" },
+    { &cmdmod.keepalt, "keepalt" },
+    { &cmdmod.keepjumps, "keepjumps" },
+    { &cmdmod.keepmarks, "keepmarks" },
+    { &cmdmod.keeppatterns, "keeppatterns" },
+    { &cmdmod.lockmarks, "lockmarks" },
+    { &cmdmod.noswapfile, "noswapfile" }
+  };
+  // the modifiers that are simple flags
+  for (size_t i = 0; i < ARRAY_SIZE(mod_entries); i++) {
+    if (*mod_entries[i].set) {
+      result += add_cmd_modifier(buf, mod_entries[i].name, &multi_mods);
+    }
+  }
+
+  // TODO(vim): How to support :noautocmd?
+  // TODO(vim): How to support :sandbox?
+
+  // :silent
+  if (msg_silent > 0) {
+    result += add_cmd_modifier(buf, emsg_silent > 0 ? "silent!" : "silent", &multi_mods);
+  }
+  // :tab
+  if (cmdmod.tab > 0) {
+    result += add_cmd_modifier(buf, "tab", &multi_mods);
+  }
+  // :topleft
+  if (cmdmod.split & WSP_TOP) {
+    result += add_cmd_modifier(buf, "topleft", &multi_mods);
+  }
+
+  // TODO(vim): How to support :unsilent?
+
+  // :verbose
+  if (p_verbose > 0) {
+    result += add_cmd_modifier(buf, "verbose", &multi_mods);
+  }
+  // :vertical
+  if (cmdmod.split & WSP_VERT) {
+    result += add_cmd_modifier(buf, "vertical", &multi_mods);
+  }
+
+  return result;
+}
+
 static void do_ucmd(exarg_T *eap)
 {
   char_u *buf;
@@ -6145,6 +6173,11 @@ static void do_ucmd(exarg_T *eap)
     cmd = USER_CMD(eap->useridx);
   } else {
     cmd = USER_CMD_GA(&curbuf->b_ucmds, eap->useridx);
+  }
+
+  if (cmd->uc_luaref > 0) {
+    nlua_do_ucmd(cmd, eap);
+    return;
   }
 
   /*
@@ -7466,9 +7499,8 @@ void do_exedit(exarg_T *eap, win_T *old_curwin)
   if ((eap->cmdidx == CMD_new
        || eap->cmdidx == CMD_tabnew
        || eap->cmdidx == CMD_tabedit
-       || eap->cmdidx == CMD_vnew
-       ) && *eap->arg == NUL) {
-    // ":new" or ":tabnew" without argument: edit an new empty buffer
+       || eap->cmdidx == CMD_vnew) && *eap->arg == NUL) {
+    // ":new" or ":tabnew" without argument: edit a new empty buffer
     setpcmark();
     (void)do_ecmd(0, NULL, NULL, eap, ECMD_ONE,
                   ECMD_HIDE + (eap->forceit ? ECMD_FORCEIT : 0),
@@ -7809,17 +7841,21 @@ bool changedir_func(char_u *new_dir, CdScope scope)
     prev_dir = pdir;
   }
 
+  // For UNIX ":cd" means: go to home directory.
+  // On other systems too if 'cdhome' is set.
 #if defined(UNIX)
-  // On Unix ":cd" means: go to home directory.
   if (*new_dir == NUL) {
+#else
+  if (*new_dir == NUL && p_cdh) {
+#endif
     // Use NameBuff for home directory name.
     expand_env((char_u *)"$HOME", NameBuff, MAXPATHL);
     new_dir = NameBuff;
   }
-#endif
 
-  if (vim_chdir(new_dir) == 0) {
-    bool dir_differs = pdir == NULL || pathcmp((char *)pdir, (char *)new_dir, -1) != 0;
+  bool dir_differs = new_dir == NULL || pdir == NULL
+                     || pathcmp((char *)pdir, (char *)new_dir, -1) != 0;
+  if (new_dir != NULL && (!dir_differs || vim_chdir(new_dir) == 0)) {
     post_chdir(scope, dir_differs);
     retval = true;
   } else {
@@ -7835,9 +7871,9 @@ void ex_cd(exarg_T *eap)
 {
   char_u *new_dir;
   new_dir = eap->arg;
-#if !defined(UNIX) && !defined(VMS)
-  // for non-UNIX ":cd" means: print current directory
-  if (*new_dir == NUL) {
+#if !defined(UNIX)
+  // for non-UNIX ":cd" means: print current directory unless 'cdhome' is set
+  if (*new_dir == NUL && !p_cdh) {
     ex_pwd(NULL);
   } else
 #endif
@@ -8343,9 +8379,7 @@ static void ex_redir(exarg_T *eap)
       if (var_redir_start(skipwhite(arg), append) == OK) {
         redir_vname = 1;
       }
-    }
-    // TODO: redirect to a buffer
-    else {
+    } else {  // TODO(vim): redirect to a buffer
       semsg(_(e_invarg2), eap->arg);
     }
   }

@@ -18,6 +18,7 @@
 #include "nvim/event/loop.h"
 #include "nvim/event/time.h"
 #include "nvim/ex_cmds2.h"
+#include "nvim/ex_docmd.h"
 #include "nvim/ex_getln.h"
 #include "nvim/extmark.h"
 #include "nvim/func_attr.h"
@@ -31,7 +32,6 @@
 #include "nvim/map.h"
 #include "nvim/memline.h"
 #include "nvim/message.h"
-#include "nvim/misc1.h"
 #include "nvim/msgpack_rpc/channel.h"
 #include "nvim/os/os.h"
 #include "nvim/screen.h"
@@ -405,9 +405,9 @@ static int nlua_state_init(lua_State *const lstate) FUNC_ATTR_NONNULL_ALL
 
   {
     const char *code = (char *)&shared_module[0];
-    if (luaL_loadbuffer(lstate, code, strlen(code), "@vim/shared.lua")
+    if (luaL_loadbuffer(lstate, code, sizeof(shared_module) - 1, "@vim/shared.lua")
         || nlua_pcall(lstate, 0, 0)) {
-      nlua_error(lstate, _("E5106: Error while creating shared module: %.*s"));
+      nlua_error(lstate, _("E5106: Error while creating shared module: %.*s\n"));
       return 1;
     }
   }
@@ -417,18 +417,18 @@ static int nlua_state_init(lua_State *const lstate) FUNC_ATTR_NONNULL_ALL
     lua_getfield(lstate, -1, "loaded");  // [package, loaded]
 
     const char *code = (char *)&inspect_module[0];
-    if (luaL_loadbuffer(lstate, code, strlen(code), "@vim/inspect.lua")
+    if (luaL_loadbuffer(lstate, code, sizeof(inspect_module) - 1, "@vim/inspect.lua")
         || nlua_pcall(lstate, 0, 1)) {
-      nlua_error(lstate, _("E5106: Error while creating inspect module: %.*s"));
+      nlua_error(lstate, _("E5106: Error while creating inspect module: %.*s\n"));
       return 1;
     }
     // [package, loaded, inspect]
     lua_setfield(lstate, -2, "vim.inspect");  // [package, loaded]
 
     code = (char *)&lua_F_module[0];
-    if (luaL_loadbuffer(lstate, code, strlen(code), "@vim/F.lua")
+    if (luaL_loadbuffer(lstate, code, sizeof(lua_F_module) - 1, "@vim/F.lua")
         || nlua_pcall(lstate, 0, 1)) {
-      nlua_error(lstate, _("E5106: Error while creating vim.F module: %.*s"));
+      nlua_error(lstate, _("E5106: Error while creating vim.F module: %.*s\n"));
       return 1;
     }
     // [package, loaded, module]
@@ -439,9 +439,9 @@ static int nlua_state_init(lua_State *const lstate) FUNC_ATTR_NONNULL_ALL
 
   {
     const char *code = (char *)&vim_module[0];
-    if (luaL_loadbuffer(lstate, code, strlen(code), "@vim.lua")
+    if (luaL_loadbuffer(lstate, code, sizeof(vim_module) - 1, "@vim.lua")
         || nlua_pcall(lstate, 0, 0)) {
-      nlua_error(lstate, _("E5106: Error while creating vim module: %.*s"));
+      nlua_error(lstate, _("E5106: Error while creating vim module: %.*s\n"));
       return 1;
     }
   }
@@ -451,9 +451,9 @@ static int nlua_state_init(lua_State *const lstate) FUNC_ATTR_NONNULL_ALL
     lua_getfield(lstate, -1, "loaded");  // [package, loaded]
 
     const char *code = (char *)&lua_meta_module[0];
-    if (luaL_loadbuffer(lstate, code, strlen(code), "@vim/_meta.lua")
+    if (luaL_loadbuffer(lstate, code, sizeof(lua_meta_module) - 1, "@vim/_meta.lua")
         || nlua_pcall(lstate, 0, 1)) {
-      nlua_error(lstate, _("E5106: Error while creating vim._meta module: %.*s"));
+      nlua_error(lstate, _("E5106: Error while creating vim._meta module: %.*s\n"));
       return 1;
     }
     // [package, loaded, module]
@@ -521,6 +521,9 @@ static void nlua_print_event(void **argv)
   const size_t len = (size_t)(intptr_t)argv[1]-1;  // exclude final NUL
 
   for (size_t i = 0; i < len;) {
+    if (got_int) {
+      break;
+    }
     const size_t start = i;
     while (i < len) {
       switch (str[i]) {
@@ -910,6 +913,24 @@ void nlua_typval_call(const char *str, size_t len, typval_T *const args, int arg
   if (lcmd != (char *)IObuff) {
     xfree(lcmd);
   }
+}
+
+void nlua_call_user_expand_func(expand_T *xp, typval_T *ret_tv)
+  FUNC_ATTR_NONNULL_ALL
+{
+  lua_State *const lstate = global_lstate;
+
+  nlua_pushref(lstate, xp->xp_luaref);
+  lua_pushstring(lstate, (char *)xp->xp_pattern);
+  lua_pushstring(lstate, (char *)xp->xp_line);
+  lua_pushinteger(lstate, xp->xp_col);
+
+  if (nlua_pcall(lstate, 3, 1)) {
+    nlua_error(lstate, _("E5108: Error executing Lua function: %.*s"));
+    return;
+  }
+
+  nlua_pop_typval(lstate, ret_tv);
 }
 
 static void nlua_typval_exec(const char *lcmd, size_t lcmd_len, const char *name,
@@ -1428,5 +1449,50 @@ void nlua_execute_on_key(int c)
   // [ ]
   assert(top == lua_gettop(lstate));
 #endif
+}
+
+void nlua_do_ucmd(ucmd_T *cmd, exarg_T *eap)
+{
+  lua_State *const lstate = global_lstate;
+
+  nlua_pushref(lstate, cmd->uc_luaref);
+
+  lua_newtable(lstate);
+  lua_pushboolean(lstate, eap->forceit == 1);
+  lua_setfield(lstate, -2, "bang");
+
+  lua_pushinteger(lstate, eap->line1);
+  lua_setfield(lstate, -2, "line1");
+
+  lua_pushinteger(lstate, eap->line2);
+  lua_setfield(lstate, -2, "line2");
+
+  lua_pushstring(lstate, (const char *)eap->arg);
+  lua_setfield(lstate, -2, "args");
+
+  lua_pushstring(lstate, (const char *)&eap->regname);
+  lua_setfield(lstate, -2, "reg");
+
+  lua_pushinteger(lstate, eap->addr_count);
+  lua_setfield(lstate, -2, "range");
+
+  if (eap->addr_count > 0) {
+    lua_pushinteger(lstate, eap->line2);
+  } else {
+    lua_pushinteger(lstate, cmd->uc_def);
+  }
+  lua_setfield(lstate, -2, "count");
+
+  // The size of this buffer is chosen empirically to be large enough to hold
+  // every possible modifier (with room to spare). If the list of possible
+  // modifiers grows this may need to be updated.
+  char buf[200] = { 0 };
+  (void)uc_mods(buf);
+  lua_pushstring(lstate, buf);
+  lua_setfield(lstate, -2, "mods");
+
+  if (nlua_pcall(lstate, 1, 0)) {
+    nlua_error(lstate, _("Error executing Lua callback: %.*s"));
+  }
 }
 

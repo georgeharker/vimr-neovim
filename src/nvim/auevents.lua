@@ -70,11 +70,15 @@ return {
     'InsertLeave',            -- just after leaving Insert mode
     'InsertLeavePre',         -- just before leaving Insert mode
     'MenuPopup',              -- just before popup menu is displayed
+    'ModeChanged',            -- after changing the mode
     'OptionSet',              -- after setting any option
     'QuickFixCmdPost',        -- after :make, :grep etc.
     'QuickFixCmdPre',         -- before :make, :grep etc.
     'QuitPre',                -- before :quit
+    'RecordingEnter',         -- when starting to record a macro
+    'RecordingLeave',         -- just before a macro stops recording
     'RemoteReply',            -- upon string reception from a remote vim
+    'SearchWrapped',          -- after the search wrapped around
     'SessionLoadPost',        -- after loading a session file
     'ShellCmdPost',           -- after ":!cmd"
     'ShellFilterPost',        -- after ":1,2!cmd", ":w !cmd", ":r !cmd".
@@ -129,6 +133,8 @@ return {
     BufModifiedSet=true,
     DiagnosticChanged=true,
     DirChanged=true,
+    RecordingEnter=true,
+    RecordingLeave=true,
     Signal=true,
     TabClosed=true,
     TabNew=true,

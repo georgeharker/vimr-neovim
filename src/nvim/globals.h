@@ -4,6 +4,7 @@
 #include <inttypes.h>
 #include <stdbool.h>
 
+#include "nvim/ascii.h"
 #include "nvim/event/loop.h"
 #include "nvim/ex_eval.h"
 #include "nvim/iconv.h"
@@ -201,7 +202,6 @@ EXTERN bool msg_did_scroll INIT(= false);
 
 EXTERN char_u *keep_msg INIT(= NULL);       // msg to be shown after redraw
 EXTERN int keep_msg_attr INIT(= 0);         // highlight attr for keep_msg
-EXTERN bool keep_msg_more INIT(= false);    // keep_msg was set by msgmore()
 EXTERN bool need_fileinfo INIT(= false);    // do fileinfo() after redraw
 EXTERN int msg_scroll INIT(= false);        // msg_start() will scroll
 EXTERN bool msg_didout INIT(= false);       // msg_outstr() was used in line
@@ -533,6 +533,11 @@ EXTERN int VIsual_mode INIT(= 'v');
 /// true when redoing Visual.
 EXTERN int redo_VIsual_busy INIT(= false);
 
+// The Visual area is remembered for reselection.
+EXTERN int resel_VIsual_mode INIT(= NUL);       // 'v', 'V', or Ctrl-V
+EXTERN linenr_T resel_VIsual_line_count;        // number of lines
+EXTERN colnr_T resel_VIsual_vcol;               // nr of cols or end col
+
 /// When pasting text with the middle mouse button in visual mode with
 /// restart_edit set, remember where it started so we can set Insstart.
 EXTERN pos_T where_paste_started;
@@ -627,6 +632,7 @@ EXTERN bool ex_no_reprint INIT(=false);   // No need to print after z or p.
 
 EXTERN int reg_recording INIT(= 0);     // register for recording  or zero
 EXTERN int reg_executing INIT(= 0);     // register being executed or zero
+EXTERN int reg_recorded INIT(= 0);      // last recorded register or zero
 
 EXTERN int no_mapping INIT(= false);    // currently no mapping allowed
 EXTERN int no_zero_mapping INIT(= 0);   // mapping zero not allowed
@@ -727,6 +733,7 @@ EXTERN bool listcmd_busy INIT(= false);     // set when :argdo, :windo or
                                             // :bufdo is executing
 EXTERN bool need_start_insertmode INIT(= false);
 // start insert mode soon
+EXTERN char *last_mode INIT(= NULL);
 EXTERN char_u *last_cmdline INIT(= NULL);      // last command line (for ":)
 EXTERN char_u *repeat_cmdline INIT(= NULL);    // command line for "."
 EXTERN char_u *new_last_cmdline INIT(= NULL);  // new value for last_cmdline
@@ -989,6 +996,8 @@ EXTERN char e_floatexchange[] INIT(= N_("E5602: Cannot exchange or rotate float"
 EXTERN char e_non_empty_string_required[] INIT(= N_("E1142: Non-empty string required"));
 
 EXTERN char e_cannot_define_autocommands_for_all_events[] INIT(= N_("E1155: Cannot define autocommands for ALL events"));
+
+EXTERN char e_highlight_group_name_too_long[] INIT(= N_("E1249: Highlight group name too long"));
 
 EXTERN char top_bot_msg[] INIT(= N_("search hit TOP, continuing at BOTTOM"));
 EXTERN char bot_top_msg[] INIT(= N_("search hit BOTTOM, continuing at TOP"));

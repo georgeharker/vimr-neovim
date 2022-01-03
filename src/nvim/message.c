@@ -23,12 +23,12 @@
 #include "nvim/garray.h"
 #include "nvim/getchar.h"
 #include "nvim/highlight.h"
+#include "nvim/input.h"
 #include "nvim/keymap.h"
 #include "nvim/main.h"
 #include "nvim/mbyte.h"
 #include "nvim/memory.h"
 #include "nvim/message.h"
-#include "nvim/misc1.h"
 #include "nvim/mouse.h"
 #include "nvim/normal.h"
 #include "nvim/ops.h"
@@ -75,6 +75,8 @@ static int msg_hist_len = 0;
 
 static FILE *verbose_fd = NULL;
 static int verbose_did_open = FALSE;
+
+bool keep_msg_more = false;    // keep_msg was set by msgmore()
 
 /*
  * When writing messages to the screen, there are many different situations.
@@ -839,13 +841,11 @@ void msg_schedule_semsg(const char *const fmt, ...)
   multiqueue_put(main_loop.events, msg_semsg_event, 1, s);
 }
 
-/*
- * Like msg(), but truncate to a single line if p_shm contains 't', or when
- * "force" is TRUE.  This truncates in another way as for normal messages.
- * Careful: The string may be changed by msg_may_trunc()!
- * Returns a pointer to the printed message, if wait_return() not called.
- */
-char *msg_trunc_attr(char *s, int force, int attr)
+// Like msg(), but truncate to a single line if p_shm contains 't', or when
+// "force" is true.  This truncates in another way as for normal messages.
+// Careful: The string may be changed by msg_may_trunc()!
+// Returns a pointer to the printed message, if wait_return() not called.
+char *msg_trunc_attr(char *s, bool force, int attr)
 {
   int n;
 
@@ -869,7 +869,7 @@ char *msg_trunc_attr(char *s, int force, int attr)
  * Return a pointer to where the truncated message starts.
  * Note: May change the message by replacing a character with '<'.
  */
-char_u *msg_may_trunc(int force, char_u *s)
+char_u *msg_may_trunc(bool force, char_u *s)
 {
   int room;
 
@@ -1269,7 +1269,7 @@ static void hit_return_msg(void)
 {
   int save_p_more = p_more;
 
-  p_more = FALSE;       // don't want see this message when scrolling back
+  p_more = false;       // don't want to see this message when scrolling back
   if (msg_didout) {     // start on a new line
     msg_putchar('\n');
   }
@@ -1299,6 +1299,49 @@ void set_keep_msg(char *s, int attr)
   keep_msg_more = false;
   keep_msg_attr = attr;
 }
+
+void msgmore(long n)
+{
+  long pn;
+
+  if (global_busy           // no messages now, wait until global is finished
+      || !messaging()) {      // 'lazyredraw' set, don't do messages now
+    return;
+  }
+
+  // We don't want to overwrite another important message, but do overwrite
+  // a previous "more lines" or "fewer lines" message, so that "5dd" and
+  // then "put" reports the last action.
+  if (keep_msg != NULL && !keep_msg_more) {
+    return;
+  }
+
+  if (n > 0) {
+    pn = n;
+  } else {
+    pn = -n;
+  }
+
+  if (pn > p_report) {
+    if (n > 0) {
+      vim_snprintf(msg_buf, MSG_BUF_LEN,
+                   NGETTEXT("%ld more line", "%ld more lines", pn),
+                   pn);
+    } else {
+      vim_snprintf(msg_buf, MSG_BUF_LEN,
+                   NGETTEXT("%ld line less", "%ld fewer lines", pn),
+                   pn);
+    }
+    if (got_int) {
+      xstrlcat(msg_buf, _(" (Interrupted)"), MSG_BUF_LEN);
+    }
+    if (msg(msg_buf)) {
+      set_keep_msg(msg_buf, 0);
+      keep_msg_more = true;
+    }
+  }
+}
+
 
 void msg_ext_set_kind(const char *msg_kind)
 {
@@ -2056,7 +2099,7 @@ static void msg_puts_display(const char_u *str, int maxlen, int attr, int recurs
       msg_ext_last_attr = attr;
     }
     // Concat pieces with the same highlight
-    size_t len = strnlen((char *)str, maxlen);             // -V781
+    size_t len = STRNLEN(str, maxlen);             // -V781
     ga_concat_len(&msg_ext_last_chunk, (char *)str, len);
     msg_ext_cur_len += len;
     return;

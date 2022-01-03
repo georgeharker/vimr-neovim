@@ -28,10 +28,10 @@
 #include "nvim/memline.h"
 #include "nvim/memory.h"
 #include "nvim/message.h"
-#include "nvim/misc1.h"
 #include "nvim/move.h"
 #include "nvim/ops.h"
 #include "nvim/option.h"
+#include "nvim/os/input.h"
 #include "nvim/plines.h"
 #include "nvim/screen.h"
 #include "nvim/strings.h"
@@ -2332,7 +2332,7 @@ static linenr_T foldUpdateIEMSRecurse(garray_T *const gap, const int level,
        * firstlnum.
        */
       while (!got_int) {
-        // set concat to 1 if it's allowed to concatenated this fold
+        // set concat to 1 if it's allowed to concatenate this fold
         // with a previous one that touches it.
         if (flp->start != 0 || flp->had_end <= MAX_LEVEL) {
           concat = 0;

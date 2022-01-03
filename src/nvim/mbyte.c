@@ -42,13 +42,13 @@
 #include "nvim/eval.h"
 #include "nvim/fileio.h"
 #include "nvim/func_attr.h"
+#include "nvim/getchar.h"
 #include "nvim/iconv.h"
 #include "nvim/mark.h"
 #include "nvim/mbyte.h"
 #include "nvim/memline.h"
 #include "nvim/memory.h"
 #include "nvim/message.h"
-#include "nvim/misc1.h"
 #include "nvim/option.h"
 #include "nvim/os/os.h"
 #include "nvim/path.h"
@@ -1609,7 +1609,8 @@ void show_utf8(void)
   msg((char *)IObuff);
 }
 
-/// Return offset from "p" to the first byte of the character it points into.
+/// Return offset from "p" to the start of a character, including composing characters.
+/// "base" must be the start of the string, which must be NUL terminated.
 /// If "p" points to the NUL at the end of the string return 0.
 /// Returns 0 when already at the first byte of a character.
 int utf_head_off(const char_u *base, const char_u *p)
@@ -1850,10 +1851,9 @@ int mb_off_next(char_u *base, char_u *p)
   return i;
 }
 
-/*
- * Return the offset from "p" to the last byte of the character it points
- * into.  Can start anywhere in a stream of bytes.
- */
+/// Return the offset from "p" to the last byte of the character it points
+/// into.  Can start anywhere in a stream of bytes.
+/// Composing characters are not included.
 int mb_tail_off(char_u *base, char_u *p)
 {
   int i;

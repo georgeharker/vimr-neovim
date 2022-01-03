@@ -467,6 +467,43 @@ func Test_getcompletion()
   call assert_fails('call getcompletion("abc", [])', 'E475:')
 endfunc
 
+func Test_fullcommand()
+  let tests = {
+        \ '':           '',
+        \ ':':          '',
+        \ ':::':        '',
+        \ ':::5':       '',
+        \ 'not_a_cmd':  '',
+        \ 'Check':      '',
+        \ 'syntax':     'syntax',
+        \ ':syntax':    'syntax',
+        \ '::::syntax': 'syntax',
+        \ 'sy':         'syntax',
+        \ 'syn':        'syntax',
+        \ 'synt':       'syntax',
+        \ ':sy':        'syntax',
+        \ '::::sy':     'syntax',
+        \ 'match':      'match',
+        \ '2match':     'match',
+        \ '3match':     'match',
+        \ 'aboveleft':  'aboveleft',
+        \ 'abo':        'aboveleft',
+        \ 's':          'substitute',
+        \ '5s':         'substitute',
+        \ ':5s':        'substitute',
+        \ "'<,'>s":     'substitute',
+        \ ":'<,'>s":    'substitute',
+        \ 'CheckUni':   'CheckUnix',
+        \ 'CheckUnix':  'CheckUnix',
+  \ }
+
+  for [in, want] in items(tests)
+    call assert_equal(want, fullcommand(in))
+  endfor
+
+  call assert_equal('syntax', 'syn'->fullcommand())
+endfunc
+
 func Test_shellcmd_completion()
   let save_path = $PATH
 
@@ -905,7 +942,7 @@ func Test_setcmdpos()
   call assert_equal('"12ab', @:)
 
   " setcmdpos() returns 1 when not editing the command line.
-  call assert_equal(1, setcmdpos(3))
+  call assert_equal(1, 3->setcmdpos())
 endfunc
 
 func Test_cmdline_overstrike()

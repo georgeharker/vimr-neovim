@@ -15,8 +15,8 @@
 #include "nvim/ex_docmd.h"
 #include "nvim/fileio.h"
 #include "nvim/getchar.h"
-#include "nvim/misc1.h"
 #include "nvim/option.h"
+#include "nvim/os/input.h"
 #include "nvim/regexp.h"
 #include "nvim/search.h"
 #include "nvim/state.h"
@@ -925,6 +925,19 @@ static int do_autocmd_event(event_T event, char_u *pat, bool once, int nested, c
             return FAIL;
           }
         }
+
+        // need to initialize last_mode for the first ModeChanged autocmd
+        if (event == EVENT_MODECHANGED && !has_event(EVENT_MODECHANGED)) {
+          xfree(last_mode);
+          last_mode = get_mode();
+        }
+
+        //  If the event is CursorMoved, update the last cursor position
+        //  position to avoid immediately triggering the autocommand
+        if (event == EVENT_CURSORMOVED && !has_event(EVENT_CURSORMOVED)) {
+          curwin->w_last_cursormoved = curwin->w_cursor;
+        }
+
         ap->cmds = NULL;
         *prev_ap = ap;
         last_autopat[(int)event] = ap;
@@ -1206,10 +1219,13 @@ win_found:
       // Hmm, original window disappeared.  Just use the first one.
       curwin = firstwin;
     }
+    curbuf = curwin->w_buffer;
+    // May need to restore insert mode for a prompt buffer.
+    entering_window(curwin);
+
     prevwin = win_find_by_handle(aco->save_prevwin_handle);
     vars_clear(&aucmd_win->w_vars->dv_hashtab);         // free all w: variables
     hash_init(&aucmd_win->w_vars->dv_hashtab);          // re-use the hashtab
-    curbuf = curwin->w_buffer;
 
     xfree(globaldir);
     globaldir = aco->globaldir;
@@ -1460,7 +1476,7 @@ static bool apply_autocmds_group(event_T event, char_u *fname, char_u *fname_io,
   // invalid.
   if (fname_io == NULL) {
     if (event == EVENT_COLORSCHEME || event == EVENT_COLORSCHEMEPRE
-        || event == EVENT_OPTIONSET) {
+        || event == EVENT_OPTIONSET || event == EVENT_MODECHANGED) {
       autocmd_fname = NULL;
     } else if (fname != NULL && !ends_excmd(*fname)) {
       autocmd_fname = fname;
@@ -1514,11 +1530,12 @@ static bool apply_autocmds_group(event_T event, char_u *fname, char_u *fname_io,
         || event == EVENT_CMDWINLEAVE || event == EVENT_CMDUNDEFINED
         || event == EVENT_COLORSCHEME || event == EVENT_COLORSCHEMEPRE
         || event == EVENT_DIRCHANGED || event == EVENT_FILETYPE
-        || event == EVENT_FUNCUNDEFINED || event == EVENT_OPTIONSET
-        || event == EVENT_QUICKFIXCMDPOST || event == EVENT_QUICKFIXCMDPRE
-        || event == EVENT_REMOTEREPLY || event == EVENT_SPELLFILEMISSING
-        || event == EVENT_SYNTAX || event == EVENT_SIGNAL
-        || event == EVENT_TABCLOSED || event == EVENT_WINCLOSED) {
+        || event == EVENT_FUNCUNDEFINED || event == EVENT_MODECHANGED
+        || event == EVENT_OPTIONSET || event == EVENT_QUICKFIXCMDPOST
+        || event == EVENT_QUICKFIXCMDPRE || event == EVENT_REMOTEREPLY
+        || event == EVENT_SPELLFILEMISSING || event == EVENT_SYNTAX
+        || event == EVENT_SIGNAL || event == EVENT_TABCLOSED
+        || event == EVENT_WINCLOSED) {
       fname = vim_strsave(fname);
     } else {
       fname = (char_u *)FullName_save((char *)fname, false);

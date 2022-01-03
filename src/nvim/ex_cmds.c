@@ -39,6 +39,7 @@
 #include "nvim/getchar.h"
 #include "nvim/highlight.h"
 #include "nvim/indent.h"
+#include "nvim/input.h"
 #include "nvim/log.h"
 #include "nvim/main.h"
 #include "nvim/mark.h"
@@ -46,7 +47,6 @@
 #include "nvim/memline.h"
 #include "nvim/memory.h"
 #include "nvim/message.h"
-#include "nvim/misc1.h"
 #include "nvim/mouse.h"
 #include "nvim/move.h"
 #include "nvim/normal.h"
@@ -305,9 +305,8 @@ void ex_align(exarg_T *eap)
                */
               do {
                 (void)set_indent(++new_indent, 0);
-              }
-              while (linelen(NULL) <= width);
-              --new_indent;
+              } while (linelen(NULL) <= width);
+              new_indent--;
               break;
             }
             --new_indent;
@@ -1457,7 +1456,7 @@ error:
 filterend:
 
   if (curbuf != old_curbuf) {
-    --no_wait_return;
+    no_wait_return--;
     emsg(_("E135: *Filter* Autocommands must not change current buffer"));
   }
   if (itmp != NULL) {
@@ -2094,7 +2093,7 @@ void do_wqall(exarg_T *eap)
     }
     if (buf->b_ffname == NULL) {
       semsg(_("E141: No file name for buffer %" PRId64), (int64_t)buf->b_fnum);
-      ++error;
+      error++;
     } else if (check_readonly(&eap->forceit, buf)
                || check_overwrite(eap, buf, buf->b_fname, buf->b_ffname,
                                   FALSE) == FAIL) {
@@ -2120,17 +2119,15 @@ void do_wqall(exarg_T *eap)
   }
 }
 
-/*
- * Check the 'write' option.
- * Return TRUE and give a message when it's not st.
- */
-int not_writing(void)
+// Check the 'write' option.
+// Return true and give a message when it's not st.
+bool not_writing(void)
 {
   if (p_write) {
-    return FALSE;
+    return false;
   }
   emsg(_("E142: File not written: Writing is disabled by 'write' option"));
-  return TRUE;
+  return true;
 }
 
 /*
@@ -2945,7 +2942,7 @@ void ex_append(exarg_T *eap)
   }
 
   for (;;) {
-    msg_scroll = TRUE;
+    msg_scroll = true;
     need_wait_return = false;
     if (curbuf->b_p_ai) {
       if (append_indent >= 0) {
@@ -3009,7 +3006,12 @@ void ex_append(exarg_T *eap)
 
     did_undo = true;
     ml_append(lnum, theline, (colnr_T)0, false);
-    appended_lines_mark(lnum + (empty ? 1 : 0), 1L);
+    if (empty) {
+      // there are no marks below the inserted lines
+      appended_lines(lnum, 1L);
+    } else {
+      appended_lines_mark(lnum, 1L);
+    }
 
     xfree(theline);
     ++lnum;
@@ -3028,7 +3030,7 @@ void ex_append(exarg_T *eap)
   // "start" is set to eap->line2+1 unless that position is invalid (when
   // eap->line2 pointed to the end of the buffer and nothing was appended)
   // "end" is set to lnum when something has been appended, otherwise
-  // it is the same than "start"  -- Acevedo
+  // it is the same as "start"  -- Acevedo
   curbuf->b_op_start.lnum = (eap->line2 < curbuf->b_ml.ml_line_count) ?
                             eap->line2 + 1 : curbuf->b_ml.ml_line_count;
   if (eap->cmdidx != CMD_append) {
@@ -3131,7 +3133,7 @@ void ex_z(exarg_T *eap)
 
   // the number of '-' and '+' multiplies the distance
   if (*kind == '-' || *kind == '+') {
-    for (x = kind + 1; *x == *kind; ++x) {
+    for (x = kind + 1; *x == *kind; x++) {
     }
   }
 
@@ -3214,26 +3216,24 @@ void ex_z(exarg_T *eap)
   ex_no_reprint = true;
 }
 
-/*
- * Check if the secure flag is set (.exrc or .vimrc in current directory).
- * If so, give an error message and return TRUE.
- * Otherwise, return FALSE.
- */
-int check_secure(void)
+// Check if the secure flag is set (.exrc or .vimrc in current directory).
+// If so, give an error message and return true.
+// Otherwise, return false.
+bool check_secure(void)
 {
   if (secure) {
     secure = 2;
     emsg(_(e_curdir));
-    return TRUE;
+    return true;
   }
 
   // In the sandbox more things are not allowed, including the things
   // disallowed in secure mode.
   if (sandbox != 0) {
     emsg(_(e_sandbox));
-    return TRUE;
+    return true;
   }
-  return FALSE;
+  return false;
 }
 
 /// Previous substitute replacement string
@@ -4589,6 +4589,9 @@ void ex_global(exarg_T *eap)
       // a match on this line?
       match = vim_regexec_multi(&regmatch, curwin, curbuf, lnum,
                                 (colnr_T)0, NULL, NULL);
+      if (regmatch.regprog == NULL) {
+        break;  // re-compiling regprog failed
+      }
       if ((type == 'g' && match) || (type == 'v' && !match)) {
         ml_setmarked(lnum);
         ndone++;
