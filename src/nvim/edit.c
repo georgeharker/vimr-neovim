@@ -260,7 +260,7 @@ static colnr_T Insstart_blank_vcol;     // vcol for first inserted blank
 static bool update_Insstart_orig = true;  // set Insstart_orig to Insstart
 
 static char_u *last_insert = NULL;    // the text of the previous insert,
-                                      // K_SPECIAL and CSI are escaped
+                                      // K_SPECIAL is escaped
 static int last_insert_skip;      // nr of chars in front of previous insert
 static int new_insert_skip;       // nr of chars in front of current insert
 static int did_restart_edit;            // "restart_edit" when calling edit()
@@ -1084,6 +1084,8 @@ static int insert_handle_key(InsertState *s)
     map_execute_lua();
 
 check_pum:
+    // nvim_select_popupmenu_item() can be called from the handling of
+    // K_EVENT, K_COMMAND, or K_LUA.
     // TODO(bfredl): Not entirely sure this indirection is necessary
     // but doing like this ensures using nvim_select_popupmenu_item is
     // equivalent to selecting the item with a typed key.
@@ -3622,7 +3624,7 @@ static bool ins_compl_prep(int c)
   // Ignore end of Select mode mapping and mouse scroll buttons.
   if (c == K_SELECT || c == K_MOUSEDOWN || c == K_MOUSEUP
       || c == K_MOUSELEFT || c == K_MOUSERIGHT || c == K_EVENT
-      || c == K_COMMAND) {
+      || c == K_COMMAND || c == K_LUA) {
     return retval;
   }
 
@@ -4988,7 +4990,7 @@ void ins_compl_check_keys(int frequency, int in_compl_func)
  */
 static int ins_compl_key2dir(int c)
 {
-  if (c == K_EVENT || c == K_COMMAND) {
+  if (c == K_EVENT || c == K_COMMAND || c == K_LUA) {
     return pum_want.item < pum_selected_item ? BACKWARD : FORWARD;
   }
   if (c == Ctrl_P || c == Ctrl_L
@@ -5018,7 +5020,7 @@ static int ins_compl_key2count(int c)
 {
   int h;
 
-  if (c == K_EVENT || c == K_COMMAND) {
+  if (c == K_EVENT || c == K_COMMAND || c == K_LUA) {
     int offset = pum_want.item - pum_selected_item;
     return abs(offset);
   }
@@ -5052,6 +5054,7 @@ static bool ins_compl_use_match(int c)
     return false;
   case K_EVENT:
   case K_COMMAND:
+  case K_LUA:
     return pum_want.active && pum_want.insert;
   }
   return true;
@@ -6816,7 +6819,7 @@ void free_last_insert(void)
 
 /// Add character "c" to buffer "s"
 ///
-/// Escapes the special meaning of K_SPECIAL and CSI, handles multi-byte
+/// Escapes the special meaning of K_SPECIAL, handles multi-byte
 /// characters.
 ///
 /// @param[in]  c  Character to add.
@@ -6830,7 +6833,7 @@ char_u *add_char2buf(int c, char_u *s)
   const int len = utf_char2bytes(c, temp);
   for (int i = 0; i < len; i++) {
     c = temp[i];
-    // Need to escape K_SPECIAL and CSI like in the typeahead buffer.
+    // Need to escape K_SPECIAL like in the typeahead buffer.
     if (c == K_SPECIAL) {
       *s++ = K_SPECIAL;
       *s++ = KS_SPECIAL;

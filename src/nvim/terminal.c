@@ -1303,7 +1303,7 @@ static bool send_mouse_event(Terminal *term, int c)
   }
 
 end:
-  ins_char_typebuf(c);
+  ins_char_typebuf(c, mod_mask);
   return true;
 }
 

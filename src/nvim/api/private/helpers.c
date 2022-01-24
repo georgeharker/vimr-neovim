@@ -1141,7 +1141,7 @@ bool extmark_get_index_from_obj(buf_T *buf, Integer ns_id, Object obj, int
       return false;
     }
 
-    ExtmarkInfo extmark = extmark_from_id(buf, (uint64_t)ns_id, (uint64_t)id);
+    ExtmarkInfo extmark = extmark_from_id(buf, (uint32_t)ns_id, (uint32_t)id);
     if (extmark.row >= 0) {
       *row = extmark.row;
       *col = extmark.col;
@@ -1506,6 +1506,12 @@ void add_user_command(String name, Object command, Dict(user_command) *opts, int
 
   if (api_object_to_bool(opts->register_, "register", false, err)) {
     argt |= EX_REGSTR;
+  } else if (ERROR_SET(err)) {
+    goto err;
+  }
+
+  if (api_object_to_bool(opts->keepscript, "keepscript", false, err)) {
+    argt |= EX_KEEPSCRIPT;
   } else if (ERROR_SET(err)) {
     goto err;
   }

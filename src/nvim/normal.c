@@ -1010,7 +1010,7 @@ static int normal_execute(VimState *state, int key)
     // restart automatically.
     // Insert the typed character in the typeahead buffer, so that it can
     // be mapped in Insert mode.  Required for ":lmap" to work.
-    ins_char_typebuf(s->c);
+    ins_char_typebuf(s->c, mod_mask);
     if (restart_edit != 0) {
       s->c = 'd';
     } else {
@@ -4437,11 +4437,7 @@ static void nv_ident(cmdarg_T *cap)
       // Start insert mode in terminal buffer
       restart_edit = 'i';
 
-      add_map((char_u *)"<buffer> <esc> <Cmd>call jobstop(&channel)<CR>", TERM_FOCUS, true);
-      do_cmdline_cmd("autocmd TermClose <buffer> "
-                     " if !v:event.status |"
-                     "   exec 'bdelete! ' .. expand('<abuf>') |"
-                     " endif");
+      add_map((char_u *)"<buffer> <esc> <Cmd>bdelete!<CR>", TERM_FOCUS, true);
     }
   }
 

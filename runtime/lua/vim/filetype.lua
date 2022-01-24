@@ -119,7 +119,13 @@ local extension = {
   tcc = "cpp",
   hxx = "cpp",
   hpp = "cpp",
-  cpp = function()
+  cpp = function(path, bufnr)
+    if vim.g.cynlib_syntax_for_cc then
+      return "cynlib"
+    end
+    return "cpp"
+  end,
+  cc = function(path, bufnr)
     if vim.g.cynlib_syntax_for_cc then
       return "cynlib"
     end
@@ -214,7 +220,6 @@ local extension = {
   ["f08"] = "fortran",
   fpc = "fpcmake",
   fsl = "framescript",
-  bi = "freebasic",
   fb = "freebasic",
   fsi = "fsharp",
   fsx = "fsharp",
@@ -225,6 +230,7 @@ local extension = {
   gemini = "gemtext",
   gift = "gift",
   gpi = "gnuplot",
+  gnuplot = "gnuplot",
   go = "go",
   gp = "gp",
   gs = "grads",
@@ -287,6 +293,7 @@ local extension = {
   webmanifest = "json",
   ipynb = "json",
   ["json-patch"] = "json",
+  json5 = "json5",
   jsonc = "jsonc",
   jsp = "jsp",
   jl = "julia",
@@ -732,7 +739,9 @@ local extension = {
   PL = function() vim.fn["dist#ft#FTpl"]() end,
   R = function() vim.fn["dist#ft#FTr"]() end,
   asm = function() vim.fn["dist#ft#FTasm"]() end,
-  bas = function() vim.fn["dist#ft#FTVB"]("basic") end,
+  bas = function() vim.fn["dist#ft#FTbas"]() end,
+  bi = function() vim.fn["dist#ft#FTbas"]() end,
+  bm = function() vim.fn["dist#ft#FTbas"]() end,
   bash = function() vim.fn["dist#ft#SetFileTypeSH"]("bash") end,
   btm = function() vim.fn["dist#ft#FTbtm"]() end,
   c = function() vim.fn["dist#ft#FTlpc"]() end,
@@ -770,6 +779,14 @@ local extension = {
   mm = function() vim.fn["dist#ft#FTmm"]() end,
   mms = function() vim.fn["dist#ft#FTmms"]() end,
   p = function() vim.fn["dist#ft#FTprogress_pascal"]() end,
+  patch = function(path, bufnr)
+    local firstline = getline(bufnr, 1)
+    if string.find(firstline, "^From " .. string.rep("%x", 40) .. "+ Mon Sep 17 00:00:00 2001$") then
+      return "gitsendemail"
+    else
+      return "diff"
+    end
+  end,
   pl = function() vim.fn["dist#ft#FTpl"]() end,
   pp = function() vim.fn["dist#ft#FTpp"]() end,
   pro = function() vim.fn["dist#ft#ProtoCheck"]('idlang') end,
@@ -860,6 +877,10 @@ local filename = {
   ["exim.conf"] = "exim",
   exports = "exports",
   [".fetchmailrc"] = "fetchmail",
+  fvSchemes = function() vim.fn["dist#ft#FTfoam"]() end,
+  fvSolution = function() vim.fn["dist#ft#FTfoam"]() end,
+  fvConstraints = function() vim.fn["dist#ft#FTfoam"]() end,
+  fvModels = function() vim.fn["dist#ft#FTfoam"]() end,
   fstab = "fstab",
   mtab = "fstab",
   [".gdbinit"] = "gdb",
@@ -872,8 +893,6 @@ local filename = {
   ["EDIT_DESCRIPTION"] = "gitcommit",
   [".gitconfig"] = "gitconfig",
   [".gitmodules"] = "gitconfig",
-  ["/.config/git/config"] = "gitconfig",
-  ["/etc/gitconfig"] = "gitconfig",
   ["gitolite.conf"] = "gitolite",
   ["git-rebase-todo"] = "gitrebase",
   gkrellmrc = "gkrellmrc",
@@ -1034,6 +1053,7 @@ local filename = {
   ["tidy.conf"] = "tidy",
   tidyrc = "tidy",
   [".tidyrc"] = "tidy",
+  [".tmux.conf"] = "tmux",
   ["/.cargo/config"] = "toml",
   Pipfile = "toml",
   ["Gopkg.lock"] = "toml",
@@ -1071,6 +1091,7 @@ local filename = {
   [".alias"] = function() vim.fn["dist#ft#CSH"]() end,
   [".bashrc"] = function() vim.fn["dist#ft#SetFileTypeSH"]("bash") end,
   [".cshrc"] = function() vim.fn["dist#ft#CSH"]() end,
+  [".env"] = function() vim.fn["dist#ft#SetFileTypeSH"](vim.fn.getline(1)) end,
   [".kshrc"] = function() vim.fn["dist#ft#SetFileTypeSH"]("ksh") end,
   [".login"] = function() vim.fn["dist#ft#CSH"]() end,
   [".profile"] = function() vim.fn["dist#ft#SetFileTypeSH"](vim.fn.getline(1)) end,
@@ -1126,7 +1147,10 @@ local pattern = {
   [".*Eterm/.*%.cfg"] = "eterm",
   [".*%.git/modules/.*/config"] = "gitconfig",
   [".*%.git/config"] = "gitconfig",
+  [".*/etc/gitconfig"] = "gitconfig",
   [".*/%.config/git/config"] = "gitconfig",
+  [".*%.git/config%.worktree"] = "gitconfig",
+  [".*%.git/worktrees/.*/config%.worktree"] = "gitconfig",
   ["%.gitsendemail%.msg%......."] = "gitsendemail",
   ["gkrellmrc_."] = "gkrellmrc",
   [".*/usr/.*/gnupg/options%.skel"] = "gpg",
@@ -1228,6 +1252,8 @@ local pattern = {
   [".*/%.config/systemd/user/.*%.d/.*%.conf"] = "systemd",
   [".*/etc/systemd/system/.*%.d/.*%.conf"] = "systemd",
   [".*%.t%.html"] = "tilde",
+  ["%.?tmux.*%.conf"] = "tmux",
+  ["%.?tmux.*%.conf.*"] = { "tmux", { priority = -1 } },
   [".*/%.cargo/config"] = "toml",
   [".*/%.cargo/credentials"] = "toml",
   [".*/etc/udev/udev%.conf"] = "udevconf",
@@ -1334,6 +1360,21 @@ local pattern = {
   ["zlog.*"] = starsetf('zsh'),
   ["zsh.*"] = starsetf('zsh'),
   ["ae%d+%.txt"] = 'mail',
+  ["[a-zA-Z0-9].*Dict"] = function() vim.fn["dist#ft#FTfoam"]() end,
+  ["[a-zA-Z0-9].*Dict%..*"] = function() vim.fn["dist#ft#FTfoam"]() end,
+  ["[a-zA-Z].*Properties"] = function() vim.fn["dist#ft#FTfoam"]() end,
+  ["[a-zA-Z].*Properties%..*"] = function() vim.fn["dist#ft#FTfoam"]() end,
+  [".*Transport%..*"] = function() vim.fn["dist#ft#FTfoam"]() end,
+  [".*/constant/g"] = function() vim.fn["dist#ft#FTfoam"]() end,
+  [".*/0/.*"] = function() vim.fn["dist#ft#FTfoam"]() end,
+  [".*/0%.orig/.*"] = function() vim.fn["dist#ft#FTfoam"]() end,
+  [".*/etc/sensors%.d/[^.].*"] = starsetf('sensors'),
+  [".*%.git/.*"] = function(path, bufnr)
+    local firstline = getline(bufnr, 1)
+    if firstline:find("^" .. string.rep("%x", 40) .. "+ ") or firstline:sub(1, 5) == "ref: " then
+      return "git"
+    end
+  end,
   -- END PATTERN
 }
 -- luacheck: pop
@@ -1361,7 +1402,7 @@ local pattern_sorted = sort_by_priority(pattern)
 
 ---@private
 local function normalize_path(path)
-  return (path:gsub("\\", "/"))
+  return (path:gsub("\\", "/"):gsub("^~", vim.env.HOME))
 end
 
 --- Add new filetype mappings.
