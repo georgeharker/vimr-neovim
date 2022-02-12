@@ -49,7 +49,6 @@ let package = Package(
           ".deps/usr/lib/libvterm.a",
           ".deps/usr/lib/libluajit-5.1.a",
           ".deps/usr/lib/libtree-sitter.a",
-          "NvimServer/third-party/lib/libintl.a",
         ]),
       ]
     ),
