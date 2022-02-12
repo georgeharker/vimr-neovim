@@ -164,7 +164,7 @@ static const struct nv_cmd {
   { Ctrl_O,    nv_ctrlo,       0,                      0 },
   { Ctrl_P,    nv_up,          NV_STS,                 false },
   { Ctrl_Q,    nv_visual,      0,                      false },
-  { Ctrl_R,    nv_redo,        0,                      0 },
+  { Ctrl_R,    nv_redo_or_register, 0,                      0 },
   { Ctrl_S,    nv_ignore,      0,                      0 },
   { Ctrl_T,    nv_tagpop,      NV_NCW,                 0 },
   { Ctrl_U,    nv_halfpage,    0,                      0 },
@@ -961,6 +961,7 @@ normal_end:
       && s->oa.regname == 0) {
     if (restart_VIsual_select == 1) {
       VIsual_select = true;
+      VIsual_select_reg = 0;
       trigger_modechanged();
       showmode();
       restart_VIsual_select = 0;
@@ -1010,7 +1011,14 @@ static int normal_execute(VimState *state, int key)
     // restart automatically.
     // Insert the typed character in the typeahead buffer, so that it can
     // be mapped in Insert mode.  Required for ":lmap" to work.
-    ins_char_typebuf(s->c, mod_mask);
+    int len = ins_char_typebuf(s->c, mod_mask);
+
+    // When recording and gotchars() was called the character will be
+    // recorded again, remove the previous recording.
+    if (KeyTyped) {
+      ungetchars(len);
+    }
+
     if (restart_edit != 0) {
       s->c = 'd';
     } else {
@@ -1022,7 +1030,7 @@ static int normal_execute(VimState *state, int key)
 
   s->need_flushbuf = add_to_showcmd(s->c);
 
-  while (normal_get_command_count(s)) { continue; }
+  while (normal_get_command_count(s)) { }
 
   if (s->c == K_EVENT) {
     // Save the count values so that ca.opcount and ca.count0 are exactly
@@ -3090,8 +3098,14 @@ static void nv_gd(oparg_T *oap, int nchar, int thisblock)
   if ((len = find_ident_under_cursor(&ptr, FIND_IDENT)) == 0
       || !find_decl(ptr, len, nchar == 'd', thisblock, SEARCH_START)) {
     clearopbeep(oap);
-  } else if ((fdo_flags & FDO_SEARCH) && KeyTyped && oap->op_type == OP_NOP) {
-    foldOpenCursor();
+  } else {
+    if ((fdo_flags & FDO_SEARCH) && KeyTyped && oap->op_type == OP_NOP) {
+      foldOpenCursor();
+    }
+    // clear any search statistics
+    if (messaging() && !msg_silent && !shortmess(SHM_SEARCHCOUNT)) {
+      clear_cmdline = true;
+    }
   }
 }
 
@@ -3281,7 +3295,7 @@ static bool nv_screengo(oparg_T *oap, int dir, long dist)
   int col_off1;                 // margin offset for first screen line
   int col_off2;                 // margin offset for wrapped screen line
   int width1;                   // text width for first screen line
-  int width2;                   // test width for wrapped screen line
+  int width2;                   // text width for wrapped screen line
 
   oap->motion_type = kMTCharWise;
   oap->inclusive = (curwin->w_curswant == MAXCOL);
@@ -3403,6 +3417,13 @@ static bool nv_screengo(oparg_T *oap, int dir, long dist)
     colnr_T virtcol = curwin->w_virtcol;
     if (virtcol > (colnr_T)width1 && *get_showbreak_value(curwin) != NUL) {
       virtcol -= vim_strsize(get_showbreak_value(curwin));
+    }
+
+    int c = utf_ptr2char(get_cursor_pos_ptr());
+    if (dir == FORWARD && virtcol < curwin->w_curswant
+        && (curwin->w_curswant <= (colnr_T)width1)
+        && !vim_isprintc(c) && c > 255) {
+      oneright();
     }
 
     if (virtcol > curwin->w_curswant
@@ -4078,7 +4099,7 @@ static void nv_colon(cmdarg_T *cap)
     if (is_lua) {
       cmd_result = map_execute_lua();
     } else {
-    // get a command line and execute it
+      // get a command line and execute it
       cmd_result = do_cmdline(NULL, is_cmdkey ? getcmdkeycmd : getexline, NULL,
                               cap->oap->op_type != OP_NOP ? DOCMD_KEEPLINE : 0);
     }
@@ -4472,8 +4493,13 @@ bool get_visual_text(cmdarg_T *cap, char_u **pp, size_t *lenp)
       *pp = ml_get_pos(&VIsual);
       *lenp = (size_t)curwin->w_cursor.col - (size_t)VIsual.col + 1;
     }
-    // Correct the length to include the whole last character.
-    *lenp += (size_t)(utfc_ptr2len(*pp + (*lenp - 1)) - 1);
+    if (**pp == NUL) {
+      *lenp = 0;
+    }
+    if (*lenp > 0) {
+      // Correct the length to include all bytes of the last character.
+      *lenp += (size_t)(utfc_ptr2len(*pp + (*lenp - 1)) - 1);
+    }
   }
   reset_VIsual_and_resel();
   return true;
@@ -5007,9 +5033,7 @@ static void nv_brackets(cmdarg_T *cap)
    * identifier     "]i"  "[i"   "]I"  "[I"     "]^I"  "[^I"
    * define           "]d"  "[d"   "]D"  "[D"   "]^D"  "[^D"
    */
-  if (vim_strchr((char_u *)
-                 "iI\011dD\004",
-                 cap->nchar) != NULL) {
+  if (vim_strchr((char_u *)"iI\011dD\004", cap->nchar) != NULL) {
     char_u *ptr;
     size_t len;
 
@@ -5963,11 +5987,8 @@ static void nv_visual(cmdarg_T *cap)
        * was only one -- webb
        */
       if (resel_VIsual_mode != 'v' || resel_VIsual_line_count > 1) {
-        curwin->w_cursor.lnum +=
-          resel_VIsual_line_count * cap->count0 - 1;
-        if (curwin->w_cursor.lnum > curbuf->b_ml.ml_line_count) {
-          curwin->w_cursor.lnum = curbuf->b_ml.ml_line_count;
-        }
+        curwin->w_cursor.lnum += resel_VIsual_line_count * cap->count0 - 1;
+        check_cursor();
       }
       VIsual_mode = resel_VIsual_mode;
       if (VIsual_mode == 'v') {
@@ -6050,7 +6071,7 @@ static void n_start_visual_mode(int c)
   // Corner case: the 0 position in a tab may change when going into
   // virtualedit.  Recalculate curwin->w_cursor to avoid bad highlighting.
   //
-  if (c == Ctrl_V && (ve_flags & VE_BLOCK) && gchar_cursor() == TAB) {
+  if (c == Ctrl_V && (get_ve_flags() & VE_BLOCK) && gchar_cursor() == TAB) {
     validate_virtcol();
     coladvance(curwin->w_virtcol);
   }
@@ -6190,6 +6211,7 @@ static void nv_g_cmd(cmdarg_T *cap)
       // start Select mode.
       if (cap->arg) {
         VIsual_select = true;
+        VIsual_select_reg = 0;
       } else {
         may_start_select('c');
       }
@@ -6316,20 +6338,17 @@ static void nv_g_cmd(cmdarg_T *cap)
     curwin->w_set_curswant = true;
     break;
 
-  case 'M': {
-    const char_u *const ptr = get_cursor_line_ptr();
-
+  case 'M':
     oap->motion_type = kMTCharWise;
     oap->inclusive = false;
-    i = (int)mb_string2cells_len(ptr, STRLEN(ptr));
+    i = linetabsize(get_cursor_line_ptr());
     if (cap->count0 > 0 && cap->count0 <= 100) {
       coladvance((colnr_T)(i * cap->count0 / 100));
     } else {
       coladvance((colnr_T)(i / 2));
     }
     curwin->w_set_curswant = true;
-  }
-  break;
+    break;
 
   case '_':
     /* "g_": to the last non-blank character in the line or <count> lines
@@ -6673,9 +6692,8 @@ static void n_opencmd(cmdarg_T *cap)
                           (cap->cmdchar == 'o' ? 1 : 0))
                )
         && open_line(cap->cmdchar == 'O' ? BACKWARD : FORWARD,
-                     has_format_option(FO_OPEN_COMS)
-                     ? OPENLINE_DO_COM : 0,
-                     0)) {
+                     has_format_option(FO_OPEN_COMS) ? OPENLINE_DO_COM : 0,
+                     0, NULL)) {
       if (win_cursorline_standout(curwin)) {
         // force redraw of cursorline
         curwin->w_valid &= ~VALID_CROW;
@@ -6702,11 +6720,26 @@ static void nv_dot(cmdarg_T *cap)
   }
 }
 
-/*
- * CTRL-R: undo undo
- */
-static void nv_redo(cmdarg_T *cap)
+// CTRL-R: undo undo or specify register in select mode
+static void nv_redo_or_register(cmdarg_T *cap)
 {
+  if (VIsual_select && VIsual_active) {
+    int reg;
+    // Get register name
+    no_mapping++;
+    reg = plain_vgetc();
+    LANGMAP_ADJUST(reg, true);
+    no_mapping--;
+
+    if (reg == '"') {
+      // the unnamed register is 0
+      reg = 0;
+    }
+
+    VIsual_select_reg = valid_yank_reg(reg, true) ? reg : 0;
+    return;
+  }
+
   if (!checkclearopq(cap->oap)) {
     u_redo((int)cap->count1);
     curwin->w_set_curswant = true;
@@ -6955,7 +6988,7 @@ static void adjust_cursor(oparg_T *oap)
   if (curwin->w_cursor.col > 0 && gchar_cursor() == NUL
       && (!VIsual_active || *p_sel == 'o')
       && !virtual_active()
-      && (ve_flags & VE_ONEMORE) == 0) {
+      && (get_ve_flags() & VE_ONEMORE) == 0) {
     curwin->w_cursor.col--;
     // prevent cursor from moving on the trail byte
     mb_adjust_cursor();
@@ -7027,6 +7060,7 @@ static void nv_select(cmdarg_T *cap)
 {
   if (VIsual_active) {
     VIsual_select = true;
+    VIsual_select_reg = 0;
   } else if (VIsual_reselect) {
     cap->nchar = 'v';               // fake "gv" command
     cap->arg = true;
@@ -7161,7 +7195,7 @@ static void nv_esc(cmdarg_T *cap)
 void set_cursor_for_append_to_line(void)
 {
   curwin->w_set_curswant = true;
-  if (ve_flags == VE_ALL) {
+  if (get_ve_flags() == VE_ALL) {
     const int save_State = State;
 
     // Pretend Insert mode here to allow the cursor on the
@@ -7479,9 +7513,9 @@ static void nv_put_opt(cmdarg_T *cap, bool fix_indent)
       // overwrites if the old contents is being put.
       was_visual = true;
       regname = cap->oap->regname;
+      bool save_unnamed = cap->cmdchar == 'P';
       // '+' and '*' could be the same selection
-      bool clipoverwrite = (regname == '+' || regname == '*')
-                           && (cb_flags & CB_UNNAMEDMASK);
+      bool clipoverwrite = (regname == '+' || regname == '*') && (cb_flags & CB_UNNAMEDMASK);
       if (regname == 0 || regname == '"' || clipoverwrite
           || ascii_isdigit(regname) || regname == '-') {
         // The delete might overwrite the register we want to put, save it first
@@ -7494,6 +7528,10 @@ static void nv_put_opt(cmdarg_T *cap, bool fix_indent)
       // do_put(), which requires the visual selection to still be active.
       if (!VIsual_active || VIsual_mode == 'V' || regname != '.') {
         // Now delete the selected text. Avoid messages here.
+        yankreg_T *old_y_previous;
+        if (save_unnamed) {
+          old_y_previous = get_y_previous();
+        }
         cap->cmdchar = 'd';
         cap->nchar = NUL;
         cap->oap->regname = NUL;
@@ -7502,6 +7540,10 @@ static void nv_put_opt(cmdarg_T *cap, bool fix_indent)
         do_pending_operator(cap, 0, false);
         empty = (curbuf->b_ml.ml_flags & ML_EMPTY);
         msg_silent--;
+
+        if (save_unnamed) {
+          set_y_previous(old_y_previous);
+        }
 
         // delete PUT_LINE_BACKWARD;
         cap->oap->regname = regname;

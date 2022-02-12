@@ -524,6 +524,8 @@ EXTERN pos_T VIsual;
 EXTERN int VIsual_active INIT(= false);
 /// Whether Select mode is active.
 EXTERN int VIsual_select INIT(= false);
+/// Register name for Select mode
+EXTERN int VIsual_select_reg INIT(= 0);
 /// Restart Select mode when next cmd finished
 EXTERN int restart_VIsual_select INIT(= 0);
 /// Whether to restart the selection after a Select-mode mapping or menu.
@@ -977,6 +979,7 @@ EXTERN char e_invalidreg[] INIT(= N_("E850: Invalid register name"));
 EXTERN char e_dirnotf[] INIT(= N_("E919: Directory not found in '%s': \"%s\""));
 EXTERN char e_au_recursive[] INIT(= N_("E952: Autocommand caused recursive behavior"));
 EXTERN char e_autocmd_close[] INIT(= N_("E813: Cannot close autocmd window"));
+EXTERN char e_listarg[] INIT(= N_("E686: Argument of %s must be a List"));
 EXTERN char e_unsupportedoption[] INIT(= N_("E519: Option not supported"));
 EXTERN char e_fnametoolong[] INIT(= N_("E856: Filename too long"));
 EXTERN char e_float_as_string[] INIT(= N_("E806: using Float as a String"));

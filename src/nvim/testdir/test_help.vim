@@ -1,4 +1,3 @@
-
 " Tests for :help
 
 func Test_help_restore_snapshot()
@@ -13,6 +12,18 @@ endfunc
 func Test_help_errors()
   call assert_fails('help doesnotexist', 'E149:')
   call assert_fails('help!', 'E478:')
+  if has('multi_lang')
+    call assert_fails('help help@xy', 'E661:')
+  endif
+
+  let save_hf = &helpfile
+  set helpfile=help_missing
+  help
+  call assert_equal(1, winnr('$'))
+  call assert_notequal('help', &buftype)
+  let &helpfile = save_hf
+
+  call assert_fails('help ' . repeat('a', 1048), 'E149:')
 
   new
   set keywordprg=:help
@@ -100,5 +111,14 @@ func Test_helptag_cmd()
 
   call delete('Xdir', 'rf')
 endfunc
+
+func Test_help_long_argument()
+  try
+    exe 'help \%' .. repeat('0', 1021)
+  catch
+    call assert_match("E149:", v:exception)
+  endtry
+endfunc
+
 
 " vim: shiftwidth=2 sts=2 expandtab

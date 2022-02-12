@@ -4,6 +4,7 @@
 #include <lauxlib.h>
 #include <lua.h>
 #include <lualib.h>
+#include <tree_sitter/api.h>
 
 #include "luv/luv.h"
 #include "nvim/api/private/defs.h"
@@ -681,7 +682,7 @@ int nlua_call(lua_State *lstate)
   typval_T vim_args[MAX_FUNC_ARGS + 1];
   int i = 0;  // also used for freeing the variables
   for (; i < nargs; i++) {
-    lua_pushvalue(lstate, (int)i+2);
+    lua_pushvalue(lstate, i+2);
     if (!nlua_pop_typval(lstate, &vim_args[i])) {
       api_set_error(&err, kErrorTypeException,
                     "error converting argument %d", i+1);
@@ -746,7 +747,7 @@ static int nlua_rpc(lua_State *lstate, bool request)
   Array args = ARRAY_DICT_INIT;
 
   for (int i = 0; i < nargs; i++) {
-    lua_pushvalue(lstate, (int)i+3);
+    lua_pushvalue(lstate, i+3);
     ADD(args, nlua_pop_Object(lstate, false, &err));
     if (ERROR_SET(&err)) {
       api_free_array(args);
@@ -1267,6 +1268,12 @@ int tslua_get_language_version(lua_State *L)
   return 1;
 }
 
+int tslua_get_minimum_language_version(lua_State *L)
+{
+  lua_pushnumber(L, TREE_SITTER_MIN_COMPATIBLE_LANGUAGE_VERSION);
+  return 1;
+}
+
 static void nlua_add_treesitter(lua_State *const lstate) FUNC_ATTR_NONNULL_ALL
 {
   tslua_init(lstate);
@@ -1288,6 +1295,9 @@ static void nlua_add_treesitter(lua_State *const lstate) FUNC_ATTR_NONNULL_ALL
 
   lua_pushcfunction(lstate, tslua_get_language_version);
   lua_setfield(lstate, -2, "_ts_get_language_version");
+
+  lua_pushcfunction(lstate, tslua_get_minimum_language_version);
+  lua_setfield(lstate, -2, "_ts_get_minimum_language_version");
 }
 
 int nlua_expand_pat(expand_T *xp, char_u *pat, int *num_results, char_u ***results)

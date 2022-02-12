@@ -1215,19 +1215,40 @@ static void win_update(win_T *wp, Providers *providers)
        */
       if (VIsual_mode == Ctrl_V) {
         colnr_T fromc, toc;
-        int save_ve_flags = ve_flags;
+        unsigned int save_ve_flags = curwin->w_ve_flags;
 
         if (curwin->w_p_lbr) {
-          ve_flags = VE_ALL;
+          curwin->w_ve_flags = VE_ALL;
         }
 
         getvcols(wp, &VIsual, &curwin->w_cursor, &fromc, &toc);
-        ve_flags = save_ve_flags;
         toc++;
+        curwin->w_ve_flags = save_ve_flags;
         // Highlight to the end of the line, unless 'virtualedit' has
         // "block".
-        if (curwin->w_curswant == MAXCOL && !(ve_flags & VE_BLOCK)) {
-          toc = MAXCOL;
+        if (curwin->w_curswant == MAXCOL) {
+          if (get_ve_flags() & VE_BLOCK) {
+            pos_T pos;
+            int cursor_above = curwin->w_cursor.lnum < VIsual.lnum;
+
+            // Need to find the longest line.
+            toc = 0;
+            pos.coladd = 0;
+            for (pos.lnum = curwin->w_cursor.lnum;
+                 cursor_above ? pos.lnum <= VIsual.lnum : pos.lnum >= VIsual.lnum;
+                 pos.lnum += cursor_above ? 1 : -1) {
+              colnr_T t;
+
+              pos.col = STRLEN(ml_get_buf(wp->w_buffer, pos.lnum, false));
+              getvvcol(wp, &pos, NULL, NULL, &t);
+              if (toc < t) {
+                toc = t;
+              }
+            }
+            toc++;
+          } else {
+            toc = MAXCOL;
+          }
         }
 
         if (fromc != wp->w_old_cursor_fcol
@@ -1960,7 +1981,7 @@ static size_t fill_foldcolumn(char_u *p, win_T *wp, foldinfo_T foldinfo, linenr_
   level = foldinfo.fi_level;
 
   // If the column is too narrow, we start at the lowest level that
-  // fits and use numbers to indicated the depth.
+  // fits and use numbers to indicate the depth.
   first_level = level - fdc - closed + 1;
   if (first_level < 1) {
     first_level = 1;
@@ -3720,10 +3741,13 @@ static int win_line(win_T *wp, linenr_T lnum, int startrow, int endrow, bool noc
               tab_len += n_extra - tab_len;
             }
 
-            // if n_extra > 0, it gives the number of chars
+            // If n_extra > 0, it gives the number of chars
             // to use for a tab, else we need to calculate the width
-            // for a tab
+            // for a tab.
             int len = (tab_len * utf_char2len(wp->w_p_lcs_chars.tab2));
+            if (wp->w_p_lcs_chars.tab3) {
+              len += utf_char2len(wp->w_p_lcs_chars.tab3);
+            }
             if (n_extra > 0) {
               len += n_extra - tab_len;
             }
@@ -3740,13 +3764,11 @@ static int win_line(win_T *wp, linenr_T lnum, int startrow, int endrow, bool noc
               }
               int lcs = wp->w_p_lcs_chars.tab2;
 
-              // if tab3 is given, need to change the char
-              // for tab
+              // if tab3 is given, use it for the last char
               if (wp->w_p_lcs_chars.tab3 && i == tab_len - 1) {
                 lcs = wp->w_p_lcs_chars.tab3;
               }
-              utf_char2bytes(lcs, p);
-              p += utf_char2len(lcs);
+              p += utf_char2bytes(lcs, p);
               n_extra += utf_char2len(lcs) - (saved_nextra > 0 ? 1 : 0);
             }
             p_extra = p_extra_free;
@@ -4232,6 +4254,7 @@ static int win_line(win_T *wp, linenr_T lnum, int startrow, int endrow, bool noc
     // Show "extends" character from 'listchars' if beyond the line end and
     // 'list' is set.
     if (wp->w_p_lcs_chars.ext != NUL
+        && draw_state == WL_LINE
         && wp->w_p_list
         && !wp->w_p_wrap
         && filler_todo <= 0
@@ -4427,7 +4450,8 @@ static int win_line(win_T *wp, linenr_T lnum, int startrow, int endrow, bool noc
      */
     if ((wp->w_p_rl ? (col < 0) : (col >= grid->Columns))
         && foldinfo.fi_lines == 0
-        && (*ptr != NUL
+        && (draw_state != WL_LINE
+            || *ptr != NUL
             || filler_todo > 0
             || (wp->w_p_list && wp->w_p_lcs_chars.eol != NUL
                 && p_extra != at_end_str)
@@ -6891,8 +6915,6 @@ void grid_ins_lines(ScreenGrid *grid, int row, int line_count, int end, int col,
   if (!grid->throttled) {
     ui_call_grid_scroll(grid->handle, row, end, col, col+width, -line_count, 0);
   }
-
-  return;
 }
 
 /// delete lines on the screen and move lines up.
@@ -6943,8 +6965,6 @@ void grid_del_lines(ScreenGrid *grid, int row, int line_count, int end, int col,
   if (!grid->throttled) {
     ui_call_grid_scroll(grid->handle, row, end, col, col+width, line_count, 0);
   }
-
-  return;
 }
 
 
@@ -7326,7 +7346,7 @@ void draw_tabline(void)
       if (room > 0) {
         // Get buffer name in NameBuff[]
         get_trans_bufname(cwp->w_buffer);
-        (void)shorten_dir(NameBuff);
+        shorten_dir(NameBuff);
         len = vim_strsize(NameBuff);
         p = NameBuff;
         while (len > room) {

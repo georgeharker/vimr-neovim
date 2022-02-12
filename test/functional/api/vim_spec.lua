@@ -333,6 +333,7 @@ describe('API', function()
 
   describe('nvim_command_output', function()
     it('does not induce hit-enter prompt', function()
+      nvim("ui_attach", 80, 20, {})
       -- Induce a hit-enter prompt use nvim_input (non-blocking).
       nvim('command', 'set cmdheight=1')
       nvim('input', [[:echo "hi\nhi2"<CR>]])
@@ -532,6 +533,31 @@ describe('API', function()
         pcall_err(request, 'nvim_call_dict_function', '42', 'f', {1,2}))
       eq('Invalid (empty) function name',
         pcall_err(request, 'nvim_call_dict_function', "{ 'f': '' }", '', {1,2}))
+    end)
+  end)
+
+  describe('nvim_set_current_dir', function()
+    local start_dir
+
+    before_each(function()
+      clear()
+      funcs.mkdir("Xtestdir")
+      start_dir = funcs.getcwd()
+    end)
+
+    after_each(function()
+      helpers.rmdir("Xtestdir")
+    end)
+
+    it('works', function()
+      meths.set_current_dir("Xtestdir")
+      eq(funcs.getcwd(), start_dir .. helpers.get_pathsep() .. "Xtestdir")
+    end)
+
+    it('sets previous directory', function()
+      meths.set_current_dir("Xtestdir")
+      meths.exec('cd -', false)
+      eq(funcs.getcwd(), start_dir)
     end)
   end)
 
@@ -1093,7 +1119,20 @@ describe('API', function()
       eq({mode='n', blocking=false}, nvim("get_mode"))
     end)
 
+    it("during press-enter prompt without UI returns blocking=false", function()
+      eq({mode='n', blocking=false}, nvim("get_mode"))
+      command("echom 'msg1'")
+      command("echom 'msg2'")
+      command("echom 'msg3'")
+      command("echom 'msg4'")
+      command("echom 'msg5'")
+      eq({mode='n', blocking=false}, nvim("get_mode"))
+      nvim("input", ":messages<CR>")
+      eq({mode='n', blocking=false}, nvim("get_mode"))
+    end)
+
     it("during press-enter prompt returns blocking=true", function()
+      nvim("ui_attach", 80, 20, {})
       eq({mode='n', blocking=false}, nvim("get_mode"))
       command("echom 'msg1'")
       command("echom 'msg2'")
@@ -1117,6 +1156,7 @@ describe('API', function()
 
     -- TODO: bug #6247#issuecomment-286403810
     it("batched with input", function()
+      nvim("ui_attach", 80, 20, {})
       eq({mode='n', blocking=false}, nvim("get_mode"))
       command("echom 'msg1'")
       command("echom 'msg2'")
@@ -2550,6 +2590,34 @@ describe('API', function()
         meths.eval_statusline(
           'Should be truncated%<',
           { maxwidth = 15 }))
+    end)
+    it('supports ASCII fillchar', function()
+      eq({ str = 'a~~~b', width = 5 },
+         meths.eval_statusline('a%=b', { fillchar = '~', maxwidth = 5 }))
+    end)
+    it('supports single-width multibyte fillchar', function()
+      eq({ str = 'a━━━b', width = 5 },
+         meths.eval_statusline('a%=b', { fillchar = '━', maxwidth = 5 }))
+    end)
+    it('rejects double-width fillchar', function()
+      eq('fillchar must be a single-width character',
+         pcall_err(meths.eval_statusline, '', { fillchar = '哦' }))
+    end)
+    it('rejects control character fillchar', function()
+      eq('fillchar must be a single-width character',
+         pcall_err(meths.eval_statusline, '', { fillchar = '\a' }))
+    end)
+    it('rejects multiple-character fillchar', function()
+      eq('fillchar must be a single-width character',
+         pcall_err(meths.eval_statusline, '', { fillchar = 'aa' }))
+    end)
+    it('rejects empty string fillchar', function()
+      eq('fillchar must be a single-width character',
+         pcall_err(meths.eval_statusline, '', { fillchar = '' }))
+    end)
+    it('rejects non-string fillchar', function()
+      eq('fillchar must be a single-width character',
+         pcall_err(meths.eval_statusline, '', { fillchar = 1 }))
     end)
     describe('highlight parsing', function()
       it('works', function()

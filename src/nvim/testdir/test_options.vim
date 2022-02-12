@@ -22,16 +22,16 @@ func Test_whichwrap()
   call assert_equal('h', &whichwrap)
 
   set whichwrap&
-endfunction
+endfunc
 
-function! Test_isfname()
+func Test_isfname()
   " This used to cause Vim to access uninitialized memory.
   set isfname=
   call assert_equal("~X", expand("~X"))
   set isfname&
-endfunction
+endfunc
 
-function Test_wildchar()
+func Test_wildchar()
   " Empty 'wildchar' used to access invalid memory.
   call assert_fails('set wildchar=', 'E521:')
   call assert_fails('set wildchar=abc', 'E521:')
@@ -42,7 +42,7 @@ function Test_wildchar()
   let a=execute('set wildchar?')
   call assert_equal("\n  wildchar=<Esc>", a)
   set wildchar&
-endfunction
+endfunc
 
 func Test_wildoptions()
   set wildoptions=
@@ -51,7 +51,7 @@ func Test_wildoptions()
   call assert_equal('tagfile', &wildoptions)
 endfunc
 
-function! Test_options()
+func Test_options_command()
   let caught = 'ok'
   try
     options
@@ -88,9 +88,9 @@ function! Test_options()
 
   " close option-window
   close
-endfunction
+endfunc
 
-function! Test_path_keep_commas()
+func Test_path_keep_commas()
   " Test that changing 'path' keeps two commas.
   set path=foo,,bar
   set path-=bar
@@ -98,7 +98,7 @@ function! Test_path_keep_commas()
   call assert_equal('foo,,bar', &path)
 
   set path&
-endfunction
+endfunc
 
 func Test_filetype_valid()
   set ft=valid_name
@@ -259,6 +259,8 @@ func Test_set_errors()
   call assert_fails('set shiftwidth=-1', 'E487:')
   call assert_fails('set sidescroll=-1', 'E487:')
   call assert_fails('set tabstop=-1', 'E487:')
+  call assert_fails('set tabstop=10000', 'E474:')
+  call assert_fails('set tabstop=5500000000', 'E474:')
   call assert_fails('set textwidth=-1', 'E487:')
   call assert_fails('set timeoutlen=-1', 'E487:')
   call assert_fails('set updatecount=-1', 'E487:')
@@ -366,6 +368,13 @@ func Test_set_all()
   call assert_match('iskeyword=a-z,A-Z', out)
   call assert_match('nosplitbelow', out)
   set tw& iskeyword& splitbelow&
+endfunc
+
+func Test_set_one_column()
+  let out_mult = execute('set all')->split("\n")
+  let out_one = execute('set! all')->split("\n")
+  " one column should be two to four times as many lines
+  call assert_inrange(len(out_mult) * 2, len(out_mult) * 4, len(out_one))
 endfunc
 
 func Test_set_values()
@@ -645,6 +654,19 @@ func Test_buftype()
   set buftype=nowrite
   call assert_fails('write', 'E382:')
   close!
+endfunc
+
+" Test for the 'shellquote' option
+func Test_shellquote()
+  CheckUnix
+  set shellquote=#
+  set verbose=20
+  redir => v
+  silent! !echo Hello
+  redir END
+  set verbose&
+  set shellquote&
+  call assert_match(': "#echo Hello#"', v)
 endfunc
 
 " Test for setting option values using v:false and v:true

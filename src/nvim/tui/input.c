@@ -227,7 +227,7 @@ static void forward_modified_utf8(TermInput *input, TermKeyKey *key)
         && !(key->modifiers & TERMKEY_KEYMOD_SHIFT)
         && ASCII_ISUPPER(key->code.codepoint)) {
       assert(len <= 62);
-      // Make remove for the S-
+      // Make room for the S-
       memmove(buf + 3, buf + 1, len - 1);
       buf[1] = 'S';
       buf[2] = '-';
@@ -315,7 +315,6 @@ static TermKeyResult tk_getkey(TermKey *tk, TermKeyKey *key, bool force)
   return force ? termkey_getkey_force(tk, key) : termkey_getkey(tk, key);
 }
 
-static void tinput_timer_cb(TimeWatcher *watcher, void *data);
 
 static void tk_getkeys(TermInput *input, bool force)
 {

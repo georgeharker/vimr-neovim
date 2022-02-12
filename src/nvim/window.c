@@ -304,7 +304,7 @@ newwindow:
         newtab = curtab;
         goto_tabpage_tp(oldtab, true, true);
         if (curwin == wp) {
-          win_close(curwin, false);
+          win_close(curwin, false, false);
         }
         if (valid_tabpage(newtab)) {
           goto_tabpage_tp(newtab, true, true);
@@ -449,7 +449,7 @@ wingotofile:
         RESET_BINDING(curwin);
         if (do_ecmd(0, ptr, NULL, NULL, ECMD_LASTL, ECMD_HIDE, NULL) == FAIL) {
           // Failed to open the file, close the window opened for it.
-          win_close(curwin, false);
+          win_close(curwin, false, false);
           goto_tabpage_win(oldtab, oldwin);
         } else if (nchar == 'F' && lnum >= 0) {
           curwin->w_cursor.lnum = lnum;
@@ -577,18 +577,19 @@ static void cmd_with_count(char *cmd, char_u *bufp, size_t bufsize, int64_t Pren
 
 void win_set_buf(Window window, Buffer buffer, bool noautocmd, Error *err)
 {
-  win_T *win = find_window_by_handle(window, err), *save_curwin = curwin;
+  win_T *win = find_window_by_handle(window, err);
   buf_T *buf = find_buffer_by_handle(buffer, err);
-  tabpage_T *tab = win_find_tabpage(win), *save_curtab = curtab;
+  tabpage_T *tab = win_find_tabpage(win);
 
   if (!win || !buf) {
     return;
   }
-
   if (noautocmd) {
     block_autocmds();
   }
-  if (switch_win_noblock(&save_curwin, &save_curtab, win, tab, false) == FAIL) {
+
+  switchwin_T switchwin;
+  if (switch_win_noblock(&switchwin, win, tab, false) == FAIL) {
     api_set_error(err,
                   kErrorTypeException,
                   "Failed to switch to window %d",
@@ -608,7 +609,7 @@ void win_set_buf(Window window, Buffer buffer, bool noautocmd, Error *err)
   // So do it now.
   validate_cursor();
 
-  restore_win_noblock(save_curwin, save_curtab, false);
+  restore_win_noblock(&switchwin, false);
   if (noautocmd) {
     unblock_autocmds();
   }
@@ -1481,8 +1482,6 @@ static void win_init(win_T *newp, win_T *oldp, int flags)
   copyFoldingState(oldp, newp);
 
   win_init_some(newp, oldp);
-
-  didset_window_options(newp);
 }
 
 /*
@@ -2289,7 +2288,7 @@ void close_windows(buf_T *buf, int keep_curwin)
   for (win_T *wp = firstwin; wp != NULL && !ONE_WINDOW;) {
     if (wp->w_buffer == buf && (!keep_curwin || wp != curwin)
         && !(wp->w_closing || wp->w_buffer->b_locked > 0)) {
-      if (win_close(wp, false) == FAIL) {
+      if (win_close(wp, false, false) == FAIL) {
         // If closing the window fails give up, to avoid looping forever.
         break;
       }
@@ -2367,6 +2366,22 @@ bool last_nonfloat(win_T *wp) FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT
   return wp != NULL && firstwin == wp && !(wp->w_next && !wp->w_floating);
 }
 
+/// Check if floating windows can be closed.
+///
+/// @return true if all floating windows can be closed
+static bool can_close_floating_windows(tabpage_T *tab)
+{
+  FOR_ALL_WINDOWS_IN_TAB(wp, tab) {
+    buf_T *buf = wp->w_buffer;
+    int need_hide = (bufIsChanged(buf) && buf->b_nwindows <= 1);
+
+    if (need_hide && !buf_hide(buf)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 /// Close the possibly last window in a tab page.
 ///
 /// @param  win          window to close
@@ -2431,7 +2446,7 @@ static bool close_last_window_tabpage(win_T *win, bool free_buf, tabpage_T *prev
 //
 // Called by :quit, :close, :xit, :wq and findtag().
 // Returns FAIL when the window was not closed.
-int win_close(win_T *win, bool free_buf)
+int win_close(win_T *win, bool free_buf, bool force)
 {
   win_T *wp;
   bool other_buffer = false;
@@ -2461,9 +2476,18 @@ int win_close(win_T *win, bool free_buf)
   }
   if ((firstwin == win && lastwin_nofloating() == win)
       && lastwin->w_floating) {
-    // TODO(bfredl): we might close the float also instead
-    emsg(e_floatonly);
-    return FAIL;
+    if (force || can_close_floating_windows(curtab)) {
+      win_T *nextwp;
+      for (win_T *wpp = firstwin; wpp != NULL; wpp = nextwp) {
+        nextwp = wpp->w_next;
+        if (wpp->w_floating) {
+          win_close(wpp, free_buf, force);
+        }
+      }
+    } else {
+      emsg(e_floatonly);
+      return FAIL;
+    }
   }
 
   // When closing the last window in a tab page first go to another tab page
@@ -3055,9 +3079,21 @@ static frame_T *win_altframe(win_T *win, tabpage_T *tp)
     return frp->fr_prev;
   }
 
+  // By default the next window will get the space that was abandoned by this
+  // window
   frame_T *target_fr = frp->fr_next;
   frame_T *other_fr  = frp->fr_prev;
-  if (p_spr || p_sb) {
+
+  // If this is part of a column of windows and 'splitbelow' is true then the
+  // previous window will get the space.
+  if (frp->fr_parent != NULL && frp->fr_parent->fr_layout == FR_COL && p_sb) {
+    target_fr = frp->fr_prev;
+    other_fr  = frp->fr_next;
+  }
+
+  // If this is part of a row of windows, and 'splitright' is true then the
+  // previous window will get the space.
+  if (frp->fr_parent != NULL && frp->fr_parent->fr_layout == FR_ROW && p_spr) {
     target_fr = frp->fr_prev;
     other_fr  = frp->fr_next;
   }
@@ -3610,7 +3646,9 @@ void close_others(int message, int forceit)
         continue;
       }
     }
-    win_close(wp, !buf_hide(wp->w_buffer) && !bufIsChanged(wp->w_buffer));
+    win_close(wp,
+              !buf_hide(wp->w_buffer) && !bufIsChanged(wp->w_buffer),
+              false);
   }
 
   if (message && !ONE_WINDOW) {
@@ -5795,7 +5833,6 @@ void win_drag_vsep_line(win_T *dragwin, int offset)
     }
     fr = curfr;  // put fr at window that grows
   }
-  assert(fr);
 
   // Not enough room
   if (room < offset) {
@@ -5808,7 +5845,9 @@ void win_drag_vsep_line(win_T *dragwin, int offset)
   }
 
   if (fr == NULL) {
-    return;  // Safety check, should not happen.
+    // This can happen when calling win_move_separator() on the rightmost
+    // window.  Just don't do anything.
+    return;
   }
 
   // grow frame fr by offset lines
@@ -6630,20 +6669,27 @@ static win_T *get_snapshot_focus(int idx)
 ///                    triggered, another tabpage access is limited.
 ///
 /// @return FAIL if switching to "win" failed.
-int switch_win(win_T **save_curwin, tabpage_T **save_curtab, win_T *win, tabpage_T *tp,
-               bool no_display)
+int switch_win(switchwin_T *switchwin, win_T *win, tabpage_T *tp, bool no_display)
 {
   block_autocmds();
-  return switch_win_noblock(save_curwin, save_curtab, win, tp, no_display);
+  return switch_win_noblock(switchwin, win, tp, no_display);
 }
 
 // As switch_win() but without blocking autocommands.
-int switch_win_noblock(win_T **save_curwin, tabpage_T **save_curtab, win_T *win, tabpage_T *tp,
-                       bool no_display)
+int switch_win_noblock(switchwin_T *switchwin, win_T *win, tabpage_T *tp, bool no_display)
 {
-  *save_curwin = curwin;
+  memset(switchwin, 0, sizeof(switchwin_T));
+  switchwin->sw_curwin = curwin;
+  if (win == curwin) {
+    switchwin->sw_same_win = true;
+  } else {
+    // Disable Visual selection, because redrawing may fail.
+    switchwin->sw_visual_active = VIsual_active;
+    VIsual_active = false;
+  }
+
   if (tp != NULL) {
-    *save_curtab = curtab;
+    switchwin->sw_curtab = curtab;
     if (no_display) {
       curtab->tp_firstwin = firstwin;
       curtab->tp_lastwin = lastwin;
@@ -6665,28 +6711,33 @@ int switch_win_noblock(win_T **save_curwin, tabpage_T **save_curtab, win_T *win,
 // Restore current tabpage and window saved by switch_win(), if still valid.
 // When "no_display" is true the display won't be affected, no redraw is
 // triggered.
-void restore_win(win_T *save_curwin, tabpage_T *save_curtab, bool no_display)
+void restore_win(switchwin_T *switchwin, bool no_display)
 {
-  restore_win_noblock(save_curwin, save_curtab, no_display);
+  restore_win_noblock(switchwin, no_display);
   unblock_autocmds();
 }
 
 // As restore_win() but without unblocking autocommands.
-void restore_win_noblock(win_T *save_curwin, tabpage_T *save_curtab, bool no_display)
+void restore_win_noblock(switchwin_T *switchwin, bool no_display)
 {
-  if (save_curtab != NULL && valid_tabpage(save_curtab)) {
+  if (switchwin->sw_curtab != NULL && valid_tabpage(switchwin->sw_curtab)) {
     if (no_display) {
       curtab->tp_firstwin = firstwin;
       curtab->tp_lastwin = lastwin;
-      curtab = save_curtab;
+      curtab = switchwin->sw_curtab;
       firstwin = curtab->tp_firstwin;
       lastwin = curtab->tp_lastwin;
     } else {
-      goto_tabpage_tp(save_curtab, false, false);
+      goto_tabpage_tp(switchwin->sw_curtab, false, false);
     }
   }
-  if (win_valid(save_curwin)) {
-    curwin = save_curwin;
+
+  if (!switchwin->sw_same_win) {
+    VIsual_active = switchwin->sw_visual_active;
+  }
+
+  if (win_valid(switchwin->sw_curwin)) {
+    curwin = switchwin->sw_curwin;
     curbuf = curwin->w_buffer;
   }
   // If called by win_execute() and executing the command changed the

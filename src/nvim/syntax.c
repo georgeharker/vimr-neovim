@@ -3112,9 +3112,9 @@ static void syn_cmd_conceal(exarg_T *eap, int syncing)
   next = skiptowhite(arg);
   if (*arg == NUL) {
     if (curwin->w_s->b_syn_conceal) {
-      msg(_("syntax conceal on"));
+      msg("syntax conceal on");
     } else {
-      msg(_("syntax conceal off"));
+      msg("syntax conceal off");
     }
   } else if (STRNICMP(arg, "on", 2) == 0 && next - arg == 2) {
     curwin->w_s->b_syn_conceal = true;
@@ -3141,9 +3141,9 @@ static void syn_cmd_case(exarg_T *eap, int syncing)
   next = skiptowhite(arg);
   if (*arg == NUL) {
     if (curwin->w_s->b_syn_ic) {
-      msg(_("syntax case ignore"));
+      msg("syntax case ignore");
     } else {
-      msg(_("syntax case match"));
+      msg("syntax case match");
     }
   } else if (STRNICMP(arg, "match", 5) == 0 && next - arg == 5) {
     curwin->w_s->b_syn_ic = false;
@@ -3168,9 +3168,9 @@ static void syn_cmd_foldlevel(exarg_T *eap, int syncing)
   if (*arg == NUL) {
     switch (curwin->w_s->b_syn_foldlevel) {
     case SYNFLD_START:
-      msg(_("syntax foldlevel start"));   break;
+      msg("syntax foldlevel start");   break;
     case SYNFLD_MINIMUM:
-      msg(_("syntax foldlevel minimum")); break;
+      msg("syntax foldlevel minimum"); break;
     default:
       break;
     }
@@ -3209,11 +3209,11 @@ static void syn_cmd_spell(exarg_T *eap, int syncing)
   next = skiptowhite(arg);
   if (*arg == NUL) {
     if (curwin->w_s->b_syn_spell == SYNSPL_TOP) {
-      msg(_("syntax spell toplevel"));
+      msg("syntax spell toplevel");
     } else if (curwin->w_s->b_syn_spell == SYNSPL_NOTOP) {
-      msg(_("syntax spell notoplevel"));
+      msg("syntax spell notoplevel");
     } else {
-      msg(_("syntax spell default"));
+      msg("syntax spell default");
     }
   } else if (STRNICMP(arg, "toplevel", 8) == 0 && next - arg == 8) {
     curwin->w_s->b_syn_spell = SYNSPL_TOP;
@@ -3245,7 +3245,7 @@ static void syn_cmd_iskeyword(exarg_T *eap, int syncing)
   if (*arg == NUL) {
     msg_puts("\n");
     if (curwin->w_s->b_syn_isk != empty_option) {
-      msg_puts(_("syntax iskeyword "));
+      msg_puts("syntax iskeyword ");
       msg_outtrans(curwin->w_s->b_syn_isk);
     } else {
       msg_outtrans((char_u *)_("syntax iskeyword not set"));
@@ -6712,6 +6712,90 @@ int lookup_color(const int idx, const bool foreground, TriState *const boldp)
     color = color_numbers_256[idx];
   }
   return color;
+}
+
+void set_hl_group(int id, HlAttrs attrs, Dict(highlight) *dict, int link_id)
+{
+  int idx = id - 1;  // Index is ID minus one.
+
+  bool is_default = attrs.rgb_ae_attr & HL_DEFAULT;
+
+  // Return if "default" was used and the group already has settings
+  if (is_default && hl_has_settings(idx, true)) {
+    return;
+  }
+
+  HlGroup *g = &HL_TABLE()[idx];
+
+  if (link_id > 0) {
+    g->sg_cleared = false;
+    g->sg_link = link_id;
+    g->sg_script_ctx = current_sctx;
+    g->sg_script_ctx.sc_lnum += sourcing_lnum;
+    g->sg_set |= SG_LINK;
+    if (is_default) {
+      g->sg_deflink = link_id;
+      g->sg_deflink_sctx = current_sctx;
+      g->sg_deflink_sctx.sc_lnum += sourcing_lnum;
+    }
+    return;
+  }
+
+  g->sg_cleared = false;
+  g->sg_link = 0;
+  g->sg_gui = attrs.rgb_ae_attr;
+
+  g->sg_rgb_fg = attrs.rgb_fg_color;
+  g->sg_rgb_bg = attrs.rgb_bg_color;
+  g->sg_rgb_sp = attrs.rgb_sp_color;
+
+  struct {
+    char **dest; RgbValue val; Object name;
+  } cattrs[] = {
+    { &g->sg_rgb_fg_name, g->sg_rgb_fg, HAS_KEY(dict->fg) ? dict->fg : dict->foreground },
+    { &g->sg_rgb_bg_name, g->sg_rgb_bg, HAS_KEY(dict->bg) ? dict->bg : dict->background },
+    { &g->sg_rgb_sp_name, g->sg_rgb_sp, HAS_KEY(dict->sp) ? dict->sp : dict->special },
+    { NULL, -1, NIL },
+  };
+
+  for (int j = 0; cattrs[j].dest; j++) {
+    if (cattrs[j].val != -1) {
+      xfree(*cattrs[j].dest);
+      if (cattrs[j].name.type == kObjectTypeString && cattrs[j].name.data.string.size) {
+        *cattrs[j].dest = xstrdup(cattrs[j].name.data.string.data);
+      } else {
+        char hex_name[8];
+        snprintf(hex_name, sizeof(hex_name), "#%06x", cattrs[j].val);
+        *cattrs[j].dest = xstrdup(hex_name);
+      }
+    }
+  }
+
+  g->sg_cterm = attrs.cterm_ae_attr;
+  g->sg_cterm_bg = attrs.cterm_bg_color;
+  g->sg_cterm_fg = attrs.cterm_fg_color;
+  g->sg_cterm_bold = g->sg_cterm & HL_BOLD;
+  g->sg_blend = attrs.hl_blend;
+
+  g->sg_script_ctx = current_sctx;
+  g->sg_script_ctx.sc_lnum += sourcing_lnum;
+
+  // 'Normal' is special
+  if (STRCMP(g->sg_name_u, "NORMAL") == 0) {
+    cterm_normal_fg_color = g->sg_cterm_fg;
+    cterm_normal_bg_color = g->sg_cterm_bg;
+    normal_fg = g->sg_rgb_fg;
+    normal_bg = g->sg_rgb_bg;
+    normal_sp = g->sg_rgb_sp;
+    ui_default_colors_set();
+  } else {
+    g->sg_attr = hl_get_syn_attr(0, id, attrs);
+
+    // a cursor style uses this syn_id, make sure its attribute is updated.
+    if (cursor_mode_uses_syn_id(id)) {
+      ui_mode_info_set();
+    }
+  }
 }
 
 

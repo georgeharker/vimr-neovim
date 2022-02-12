@@ -69,6 +69,7 @@ static char *e_nowhitespace
 static char *e_invalwindow = N_("E957: Invalid window number");
 static char *e_lock_unlock = N_("E940: Cannot lock or unlock variable %s");
 static char *e_write2 = N_("E80: Error while writing: %s");
+static char *e_string_list_or_blob_required = N_("E1098: String, List or Blob required");
 
 // TODO(ZyX-I): move to eval/executor
 static char *e_letwrong = N_("E734: Wrong variable type for %s=");
@@ -112,9 +113,11 @@ typedef struct {
   int fi_semicolon;             // TRUE if ending in '; var]'
   int fi_varcount;              // nr of variables in the list
   listwatch_T fi_lw;            // keep an eye on the item used.
-  list_T *fi_list;         // list being used
+  list_T *fi_list;              // list being used
   int fi_bi;                    // index of blob
   blob_T *fi_blob;              // blob being used
+  char_u *fi_string;            // copy of string being used
+  int fi_byte_idx;              // byte index in fi_string
 } forinfo_T;
 
 // values for vv_flags:
@@ -761,6 +764,15 @@ static int eval1_emsg(char_u **arg, typval_T *rettv, bool evaluate)
     }
   }
   return ret;
+}
+
+/// @return whether a typval is a valid expression to pass to eval_expr_typval()
+/// or eval_expr_to_bool().  An empty string returns false;
+bool eval_expr_valid_arg(const typval_T *const tv)
+  FUNC_ATTR_NONNULL_ALL FUNC_ATTR_CONST
+{
+  return tv->v_type != VAR_UNKNOWN
+         && (tv->v_type != VAR_STRING || (tv->vval.v_string != NULL && *tv->vval.v_string != NUL));
 }
 
 int eval_expr_typval(const typval_T *expr, typval_T *argv, int argc, typval_T *rettv)
@@ -2641,8 +2653,15 @@ void *eval_for_line(const char_u *arg, bool *errp, char_u **nextcmdp, int skip)
           fi->fi_blob = btv.vval.v_blob;
         }
         tv_clear(&tv);
+      } else if (tv.v_type == VAR_STRING) {
+        fi->fi_byte_idx = 0;
+        fi->fi_string = tv.vval.v_string;
+        tv.vval.v_string = NULL;
+        if (fi->fi_string == NULL) {
+          fi->fi_string = vim_strsave((char_u *)"");
+        }
       } else {
-        emsg(_(e_listblobreq));
+        emsg(_(e_string_list_or_blob_required));
         tv_clear(&tv);
       }
     }
@@ -2679,6 +2698,22 @@ bool next_for_item(void *fi_void, char_u *arg)
                        fi->fi_semicolon, fi->fi_varcount, false, NULL) == OK;
   }
 
+  if (fi->fi_string != NULL) {
+    const int len = utfc_ptr2len(fi->fi_string + fi->fi_byte_idx);
+    if (len == 0) {
+      return false;
+    }
+    typval_T tv;
+    tv.v_type = VAR_STRING;
+    tv.v_lock = VAR_FIXED;
+    tv.vval.v_string = vim_strnsave(fi->fi_string + fi->fi_byte_idx, len);
+    fi->fi_byte_idx += len;
+    const int result
+        = ex_let_vars(arg, &tv, true, fi->fi_semicolon, fi->fi_varcount, false, NULL) == OK;
+    xfree(tv.vval.v_string);
+    return result;
+  }
+
   listitem_T *item = fi->fi_lw.lw_item;
   if (item == NULL) {
     return false;
@@ -2698,12 +2733,16 @@ void free_for_info(void *fi_void)
 {
   forinfo_T *fi = (forinfo_T *)fi_void;
 
-  if (fi != NULL && fi->fi_list != NULL) {
+  if (fi == NULL) {
+    return;
+  }
+  if (fi->fi_list != NULL) {
     tv_list_watch_remove(fi->fi_list, &fi->fi_lw);
     tv_list_unref(fi->fi_list);
-  }
-  if (fi != NULL && fi->fi_blob != NULL) {
+  } else if (fi->fi_blob != NULL) {
     tv_blob_unref(fi->fi_blob);
+  } else {
+    xfree(fi->fi_string);
   }
   xfree(fi);
 }
@@ -3218,9 +3257,8 @@ char_u *get_user_var_name(expand_T *xp, int idx)
 
   // b: variables
   // In cmdwin, the alternative buffer should be used.
-  hashtab_T *ht = (cmdwin_type != 0 && get_cmdline_type() == NUL)
-    ? &prevwin->w_buffer->b_vars->dv_hashtab
-    : &curbuf->b_vars->dv_hashtab;
+  hashtab_T *ht
+      = is_in_cmdwin() ? &prevwin->w_buffer->b_vars->dv_hashtab : &curbuf->b_vars->dv_hashtab;
   if (bdone < ht->ht_used) {
     if (bdone++ == 0) {
       hi = ht->ht_array;
@@ -3235,9 +3273,7 @@ char_u *get_user_var_name(expand_T *xp, int idx)
 
   // w: variables
   // In cmdwin, the alternative window should be used.
-  ht = (cmdwin_type != 0 && get_cmdline_type() == NUL)
-    ? &prevwin->w_vars->dv_hashtab
-    : &curwin->w_vars->dv_hashtab;
+  ht = is_in_cmdwin() ? &prevwin->w_vars->dv_hashtab : &curwin->w_vars->dv_hashtab;
   if (wdone < ht->ht_used) {
     if (wdone++ == 0) {
       hi = ht->ht_array;
@@ -4402,7 +4438,7 @@ static int eval_lambda(char_u **const arg, typval_T *const rettv, const bool eva
   rettv->v_type = VAR_UNKNOWN;
 
   int ret = get_lambda_tv(arg, rettv, evaluate);
-  if (ret == NOTDONE) {
+  if (ret != OK) {
     return FAIL;
   } else if (**arg != '(') {
     if (verbose) {
@@ -6468,6 +6504,10 @@ void filter_map(typval_T *argvars, typval_T *rettv, int map)
     if (argvars[0].v_type == VAR_DICT) {
       vimvars[VV_KEY].vv_type = VAR_STRING;
 
+      const VarLockStatus prev_lock = d->dv_lock;
+      if (map && d->dv_lock == VAR_UNLOCKED) {
+        d->dv_lock = VAR_LOCKED;
+      }
       ht = &d->dv_hashtab;
       hash_lock(ht);
       todo = (int)ht->ht_used;
@@ -6498,6 +6538,7 @@ void filter_map(typval_T *argvars, typval_T *rettv, int map)
         }
       }
       hash_unlock(ht);
+      d->dv_lock = prev_lock;
     } else if (argvars[0].v_type == VAR_BLOB) {
       vimvars[VV_KEY].vv_type = VAR_NUMBER;
 
@@ -6530,6 +6571,10 @@ void filter_map(typval_T *argvars, typval_T *rettv, int map)
       assert(argvars[0].v_type == VAR_LIST);
       vimvars[VV_KEY].vv_type = VAR_NUMBER;
 
+      const VarLockStatus prev_lock = tv_list_locked(l);
+      if (map && tv_list_locked(l) == VAR_UNLOCKED) {
+        tv_list_set_lock(l, VAR_LOCKED);
+      }
       for (listitem_T *li = tv_list_first(l); li != NULL;) {
         if (map
             && var_check_lock(TV_LIST_ITEM_TV(li)->v_lock, arg_errmsg,
@@ -6548,6 +6593,7 @@ void filter_map(typval_T *argvars, typval_T *rettv, int map)
         }
         idx++;
       }
+      tv_list_set_lock(l, prev_lock);
     }
 
     restore_vimvar(VV_KEY, &save_key);
@@ -6956,10 +7002,9 @@ win_T *find_tabwin(typval_T *wvp, typval_T *tvp)
 /// @param off  1 for gettabwinvar()
 void getwinvar(typval_T *argvars, typval_T *rettv, int off)
 {
-  win_T *win, *oldcurwin;
+  win_T *win;
   dictitem_T *v;
   tabpage_T *tp = NULL;
-  tabpage_T *oldtabpage = NULL;
   bool done = false;
 
   if (off == 1) {
@@ -6979,8 +7024,8 @@ void getwinvar(typval_T *argvars, typval_T *rettv, int off)
     // otherwise the window is not valid. Only do this when needed,
     // autocommands get blocked.
     bool need_switch_win = tp != curtab || win != curwin;
-    if (!need_switch_win
-        || switch_win(&oldcurwin, &oldtabpage, win, tp, true) == OK) {
+    switchwin_T switchwin;
+    if (!need_switch_win || switch_win(&switchwin, win, tp, true) == OK) {
       if (*varname == '&') {
         if (varname[1] == NUL) {
           // get all window-local options in a dict
@@ -7008,7 +7053,7 @@ void getwinvar(typval_T *argvars, typval_T *rettv, int off)
 
     if (need_switch_win) {
       // restore previous notion of curwin
-      restore_win(oldcurwin, oldtabpage, true);
+      restore_win(&switchwin, true);
     }
   }
   emsg_off--;
@@ -7510,11 +7555,9 @@ void setwinvar(typval_T *argvars, typval_T *rettv, int off)
   typval_T *varp = &argvars[off + 2];
 
   if (win != NULL && varname != NULL && varp != NULL) {
-    win_T *save_curwin;
-    tabpage_T *save_curtab;
     bool need_switch_win = tp != curtab || win != curwin;
-    if (!need_switch_win
-        || switch_win(&save_curwin, &save_curtab, win, tp, true) == OK) {
+    switchwin_T switchwin;
+    if (!need_switch_win || switch_win(&switchwin, win, tp, true) == OK) {
       if (*varname == '&') {
         long numval;
         bool error = false;
@@ -7536,7 +7579,7 @@ void setwinvar(typval_T *argvars, typval_T *rettv, int off)
       }
     }
     if (need_switch_win) {
-      restore_win(save_curwin, save_curtab, true);
+      restore_win(&switchwin, true);
     }
   }
 }
@@ -8147,6 +8190,52 @@ char *save_tv_as_string(typval_T *tv, ptrdiff_t *const len, bool endnl)
   return ret;
 }
 
+/// Convert the specified byte index of line 'lnum' in buffer 'buf' to a
+/// character index.  Works only for loaded buffers. Returns -1 on failure.
+/// The index of the first character is one.
+int buf_byteidx_to_charidx(buf_T *buf, int lnum, int byteidx)
+{
+  if (buf == NULL || buf->b_ml.ml_mfp == NULL) {
+    return -1;
+  }
+
+  if (lnum > buf->b_ml.ml_line_count) {
+    lnum = buf->b_ml.ml_line_count;
+  }
+
+  char_u *str = ml_get_buf(buf, lnum, false);
+
+  if (*str == NUL) {
+    return 1;
+  }
+
+  return mb_charlen_len(str, byteidx + 1);
+}
+
+/// Convert the specified character index of line 'lnum' in buffer 'buf' to a
+/// byte index.  Works only for loaded buffers. Returns -1 on failure. The index
+/// of the first byte and the first character is one.
+int buf_charidx_to_byteidx(buf_T *buf, int lnum, int charidx)
+{
+  if (buf == NULL || buf->b_ml.ml_mfp == NULL) {
+    return -1;
+  }
+
+  if (lnum > buf->b_ml.ml_line_count) {
+    lnum = buf->b_ml.ml_line_count;
+  }
+
+  char_u *str = ml_get_buf(buf, lnum, false);
+
+  // Convert the character offset to a byte offset
+  char_u *t = str;
+  while (*t != NUL && --charidx > 0) {
+    t += utfc_ptr2len(t);
+  }
+
+  return t - str + 1;
+}
+
 /// Translate a VimL object into a position
 ///
 /// Accepts VAR_LIST and VAR_STRING objects. Does not give an error for invalid
@@ -8155,9 +8244,11 @@ char *save_tv_as_string(typval_T *tv, ptrdiff_t *const len, bool endnl)
 /// @param[in]  tv  Object to translate.
 /// @param[in]  dollar_lnum  True when "$" is last line.
 /// @param[out]  ret_fnum  Set to fnum for marks.
+/// @param[in]  charcol  True to return character column.
 ///
 /// @return Pointer to position or NULL in case of error (e.g. invalid type).
-pos_T *var2fpos(const typval_T *const tv, const bool dollar_lnum, int *const ret_fnum)
+pos_T *var2fpos(const typval_T *const tv, const bool dollar_lnum, int *const ret_fnum,
+                const bool charcol)
   FUNC_ATTR_WARN_UNUSED_RESULT FUNC_ATTR_NONNULL_ALL
 {
   static pos_T pos;
@@ -8187,7 +8278,11 @@ pos_T *var2fpos(const typval_T *const tv, const bool dollar_lnum, int *const ret
     if (error) {
       return NULL;
     }
-    len = (long)STRLEN(ml_get(pos.lnum));
+    if (charcol) {
+      len = mb_charlen(ml_get(pos.lnum));
+    } else {
+      len = STRLEN(ml_get(pos.lnum));
+    }
 
     // We accept "$" for the column number: last column.
     li = tv_list_find(l, 1L);
@@ -8218,18 +8313,30 @@ pos_T *var2fpos(const typval_T *const tv, const bool dollar_lnum, int *const ret
     return NULL;
   }
   if (name[0] == '.') {  // Cursor.
-    return &curwin->w_cursor;
+    pos = curwin->w_cursor;
+    if (charcol) {
+      pos.col = buf_byteidx_to_charidx(curbuf, pos.lnum, pos.col) - 1;
+    }
+    return &pos;
   }
   if (name[0] == 'v' && name[1] == NUL) {  // Visual start.
     if (VIsual_active) {
-      return &VIsual;
+      pos = VIsual;
+    } else {
+      pos = curwin->w_cursor;
     }
-    return &curwin->w_cursor;
+    if (charcol) {
+      pos.col = buf_byteidx_to_charidx(curbuf, pos.lnum, pos.col) - 1;
+    }
+    return &pos;
   }
   if (name[0] == '\'') {  // Mark.
     pp = getmark_buf_fnum(curbuf, (uint8_t)name[1], false, ret_fnum);
     if (pp == NULL || pp == (pos_T *)-1 || pp->lnum <= 0) {
       return NULL;
+    }
+    if (charcol) {
+      pp->col = buf_byteidx_to_charidx(curbuf, pp->lnum, pp->col) - 1;
     }
     return pp;
   }
@@ -8256,22 +8363,24 @@ pos_T *var2fpos(const typval_T *const tv, const bool dollar_lnum, int *const ret
       pos.col = 0;
     } else {
       pos.lnum = curwin->w_cursor.lnum;
-      pos.col = (colnr_T)STRLEN(get_cursor_line_ptr());
+      if (charcol) {
+        pos.col = (colnr_T)mb_charlen(get_cursor_line_ptr());
+      } else {
+        pos.col = (colnr_T)STRLEN(get_cursor_line_ptr());
+      }
     }
     return &pos;
   }
   return NULL;
 }
 
-/*
- * Convert list in "arg" into a position and optional file number.
- * When "fnump" is NULL there is no file number, only 3 items.
- * Note that the column is passed on as-is, the caller may want to decrement
- * it to use 1 for the first column.
- * Return FAIL when conversion is not possible, doesn't check the position for
- * validity.
- */
-int list2fpos(typval_T *arg, pos_T *posp, int *fnump, colnr_T *curswantp)
+/// Convert list in "arg" into a position and optional file number.
+/// When "fnump" is NULL there is no file number, only 3 items.
+/// Note that the column is passed on as-is, the caller may want to decrement
+/// it to use 1 for the first column.
+/// Return FAIL when conversion is not possible, doesn't check the position for
+/// validity.
+int list2fpos(typval_T *arg, pos_T *posp, int *fnump, colnr_T *curswantp, bool charcol)
 {
   list_T *l;
   long i = 0;
@@ -8306,6 +8415,15 @@ int list2fpos(typval_T *arg, pos_T *posp, int *fnump, colnr_T *curswantp)
   n = tv_list_find_nr(l, i++, NULL);  // col
   if (n < 0) {
     return FAIL;
+  }
+  // If character position is specified, then convert to byte position
+  if (charcol) {
+    // Get the text for the specified line in a loaded buffer
+    buf_T *buf = buflist_findnr(fnump == NULL ? curbuf->b_fnum : *fnump);
+    if (buf == NULL || buf->b_ml.ml_mfp == NULL) {
+      return FAIL;
+    }
+    n = buf_charidx_to_byteidx(buf, posp->lnum, n);
   }
   posp->col = n;
 
@@ -8946,7 +9064,7 @@ static bool tv_is_luafunc(typval_T *tv)
 const char *skip_luafunc_name(const char *p)
   FUNC_ATTR_NONNULL_ALL FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT
 {
-  while (ASCII_ISALNUM(*p) || *p == '_' || *p == '.' || *p == '\'') {
+  while (ASCII_ISALNUM(*p) || *p == '_' || *p == '-' || *p == '.' || *p == '\'') {
     p++;
   }
   return p;
@@ -10515,12 +10633,13 @@ int modify_fname(char_u *src, bool tilde_file, size_t *usedlen, char_u **fnamep,
   char_u *s, *p, *pbuf;
   char_u dirname[MAXPATHL];
   int c;
-  int has_fullname = 0;
+  bool has_fullname = false;
+  bool has_homerelative = false;
 
 repeat:
   // ":p" - full path/file_name
   if (src[*usedlen] == ':' && src[*usedlen + 1] == 'p') {
-    has_fullname = 1;
+    has_fullname = true;
 
     valid |= VALID_PATH;
     *usedlen += 2;
@@ -10589,8 +10708,8 @@ repeat:
     }
     pbuf = NULL;
     // Need full path first (use expand_env() to remove a "~/")
-    if (!has_fullname) {
-      if (c == '.' && **fnamep == '~') {
+    if (!has_fullname && !has_homerelative) {
+      if (**fnamep == '~') {
         p = pbuf = expand_env_save(*fnamep);
       } else {
         p = pbuf = (char_u *)FullName_save((char *)*fnamep, FALSE);
@@ -10599,18 +10718,33 @@ repeat:
       p = *fnamep;
     }
 
-    has_fullname = 0;
+    has_fullname = false;
 
     if (p != NULL) {
       if (c == '.') {
         os_dirname(dirname, MAXPATHL);
-        s = path_shorten_fname(p, dirname);
-        if (s != NULL) {
-          *fnamep = s;
-          if (pbuf != NULL) {
-            xfree(*bufp);               // free any allocated file name
-            *bufp = pbuf;
-            pbuf = NULL;
+        if (has_homerelative) {
+          s = vim_strsave(dirname);
+          home_replace(NULL, s, dirname, MAXPATHL, true);
+          xfree(s);
+        }
+        size_t namelen = STRLEN(dirname);
+
+        // Do not call shorten_fname() here since it removes the prefix
+        // even though the path does not have a prefix.
+        if (fnamencmp(p, dirname, namelen) == 0) {
+          p += namelen;
+          if (vim_ispathsep(*p)) {
+            while (*p && vim_ispathsep(*p)) {
+              p++;
+            }
+            *fnamep = p;
+            if (pbuf != NULL) {
+              // free any allocated file name
+              xfree(*bufp);
+              *bufp = pbuf;
+              pbuf = NULL;
+            }
           }
         }
       } else {
@@ -10621,6 +10755,7 @@ repeat:
           *fnamep = s;
           xfree(*bufp);
           *bufp = s;
+          has_homerelative = true;
         }
       }
       xfree(pbuf);
@@ -10997,10 +11132,7 @@ typval_T eval_call_provider(char *provider, char *method, list_T *arguments, boo
 bool eval_has_provider(const char *feat)
 {
   if (!strequal(feat, "clipboard")
-      && !strequal(feat, "python")
       && !strequal(feat, "python3")
-      && !strequal(feat, "python_compiled")
-      && !strequal(feat, "python_dynamic")
       && !strequal(feat, "python3_compiled")
       && !strequal(feat, "python3_dynamic")
       && !strequal(feat, "perl")

@@ -285,7 +285,7 @@ void aubuflocal_remove(buf_T *buf)
 }
 
 // Add an autocmd group name.
-// Return its ID.  Returns AUGROUP_ERROR (< 0) for error.
+// Return its ID.
 static int au_new_group(char_u *name)
 {
   int i = au_find_group(name);
@@ -379,10 +379,7 @@ void do_augroup(char_u *arg, int del_group)
   } else if (STRICMP(arg, "end") == 0) {  // ":aug end": back to group 0
     current_augroup = AUGROUP_DEFAULT;
   } else if (*arg) {  // ":aug xxx": switch to group xxx
-    int i = au_new_group(arg);
-    if (i != AUGROUP_ERROR) {
-      current_augroup = i;
-    }
+    current_augroup = au_new_group(arg);
   } else {  // ":aug": list the group names
     msg_start();
     for (int i = 0; i < augroups.ga_len; i++) {
@@ -1069,8 +1066,6 @@ void ex_doautoall(exarg_T *eap)
       do_modelines(0);
     }
   }
-
-  check_cursor();  // just in case lines got deleted
 }
 
 /// Check *argp for <nomodeline>.  When it is present return false, otherwise
@@ -1160,7 +1155,10 @@ void aucmd_prepbuf(aco_save_T *aco, buf_T *buf)
     // Prevent chdir() call in win_enter_ext(), through do_autochdir()
     int save_acd = p_acd;
     p_acd = false;
+    // no redrawing and don't set the window title
+    RedrawingDisabled++;
     win_enter(aucmd_win, false);
+    RedrawingDisabled--;
     p_acd = save_acd;
     unblock_autocmds();
     curwin = aucmd_win;
@@ -1168,6 +1166,10 @@ void aucmd_prepbuf(aco_save_T *aco, buf_T *buf)
   curbuf = buf;
   aco->new_curwin_handle = curwin->handle;
   set_bufref(&aco->new_curbuf, curbuf);
+
+  // disable the Visual area, the position may be invalid in another buffer
+  aco->save_VIsual_active = VIsual_active;
+  VIsual_active = false;
 }
 
 /// Cleanup after executing autocommands for a (hidden) buffer.
@@ -1263,6 +1265,12 @@ win_found:
       // exist in curbuf
       check_cursor();
     }
+  }
+
+  check_cursor();  // just in case lines got deleted
+  VIsual_active = aco->save_VIsual_active;
+  if (VIsual_active) {
+    check_pos(curbuf, &VIsual);
   }
 }
 
