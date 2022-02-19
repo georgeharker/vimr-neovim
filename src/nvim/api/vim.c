@@ -499,8 +499,12 @@ ArrayOf(String) nvim_get_runtime_file(String name, Boolean all, Error *err)
 
   int flags = DIP_DIRFILE | (all ? DIP_ALL : 0);
 
-  do_in_runtimepath((char_u *)(name.size ? name.data : ""),
-                    flags, find_runtime_cb, &rv);
+  TRY_WRAP({
+    try_start();
+    do_in_runtimepath((char_u *)(name.size ? name.data : ""),
+                      flags, find_runtime_cb, &rv);
+    try_end(err);
+  });
   return rv;
 }
 
@@ -603,7 +607,19 @@ void nvim_del_current_line(Error *err)
 Object nvim_get_var(String name, Error *err)
   FUNC_API_SINCE(1)
 {
-  return dict_get_value(&globvardict, name, err);
+  dictitem_T *di = tv_dict_find(&globvardict, name.data, (ptrdiff_t)name.size);
+  if (di == NULL) {  // try to autoload script
+    if (!script_autoload(name.data, name.size, false) || aborting()) {
+      api_set_error(err, kErrorTypeValidation, "Key not found: %s", name.data);
+      return (Object)OBJECT_INIT;
+    }
+    di = tv_dict_find(&globvardict, name.data, (ptrdiff_t)name.size);
+  }
+  if (di == NULL) {
+    api_set_error(err, kErrorTypeValidation, "Key not found: %s", name.data);
+    return (Object)OBJECT_INIT;
+  }
+  return vim_to_object(&di->di_tv);
 }
 
 /// Sets a global (g:) variable.
@@ -1580,7 +1596,7 @@ ArrayOf(Dictionary) nvim_get_keymap(uint64_t channel_id, String mode)
 /// @param  rhs   Right-hand-side |{rhs}| of the mapping.
 /// @param  opts  Optional parameters map. Accepts all |:map-arguments|
 ///               as keys excluding |<buffer>| but including |noremap| and "desc".
-///               |desc| can be used to give a description to keymap.
+///               "desc" can be used to give a description to keymap.
 ///               When called from Lua, also accepts a "callback" key that takes
 ///               a Lua function to call when the mapping is executed.
 ///               Values are Booleans. Unknown key is an error.
