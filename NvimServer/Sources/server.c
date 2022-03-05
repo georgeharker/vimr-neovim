@@ -23,7 +23,7 @@
 #include <nvim/ui.h>
 #include <ui.h.generated.h>
 #include <fileio.h.generated.h>
-#include <nvim/aucmd.h>
+#include <nvim/autocmd.h>
 #include "server_ui_bridge.h"
 
 bool uses_custom_tabline;
@@ -384,7 +384,7 @@ static void focus_gained(void **argv) {
   work_async(argv, ^(CFDataRef data) {
     const bool *values = (const bool *) CFDataGetBytePtr(data);
 
-    aucmd_schedule_focusgained(values[0]);
+    autocmd_schedule_focusgained(values[0]);
   });
 }
 
