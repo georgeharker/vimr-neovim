@@ -894,6 +894,7 @@ static void f_call(typval_T *argvars, typval_T *rettv, FunPtr fptr)
     partial = argvars[0].vval.v_partial;
     func = partial_name(partial);
   } else if (nlua_is_table_from_lua(&argvars[0])) {
+    // TODO(tjdevries): UnifiedCallback
     func = nlua_register_table_as_callable(&argvars[0]);
     owned = true;
   } else {
@@ -3225,7 +3226,7 @@ static void getchar_common(typval_T *argvars, typval_T *rettv)
   set_vim_var_nr(VV_MOUSE_COL, 0);
 
   rettv->vval.v_number = n;
-  if (IS_SPECIAL(n) || mod_mask != 0) {
+  if (n != 0 && (IS_SPECIAL(n) || mod_mask != 0)) {
     char_u temp[10];                // modifier: 3, mbyte-char: 6, NUL: 1
     int i = 0;
 
@@ -4242,7 +4243,7 @@ static void win_move_into_split(win_T *wp, win_T *targetwin, int size, int flags
   int height = wp->w_height;
   win_T *oldwin = curwin;
 
-  if (wp == targetwin) {
+  if (wp == targetwin || wp == aucmd_win) {
     return;
   }
 

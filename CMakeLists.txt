@@ -397,7 +397,7 @@ if(DISABLE_TUI MATCHES DISABLE)
   option(FEAT_TUI "Enable the Terminal UI" OFF)
 endif()
 
-find_package(LibLUV 1.30.0 REQUIRED)
+find_package(LibLUV 1.43.0 REQUIRED)
 include_directories(SYSTEM ${LIBLUV_INCLUDE_DIRS})
 
 find_package(TreeSitter REQUIRED)
@@ -746,17 +746,6 @@ else()
     COMMENT "lualint: LUACHECK_PRG not defined")
 endif()
 
-set(CPACK_PACKAGE_NAME "Neovim")
-set(CPACK_PACKAGE_VENDOR "neovim.io")
-set(CPACK_PACKAGE_VERSION ${NVIM_VERSION_MEDIUM})
-set(CPACK_PACKAGE_INSTALL_DIRECTORY "Neovim")
-# Set toplevel directory/installer name as Neovim
-set(CPACK_PACKAGE_FILE_NAME "Neovim")
-set(CPACK_TOPLEVEL_TAG "Neovim")
-set(CPACK_RESOURCE_FILE_LICENSE "${PROJECT_SOURCE_DIR}/LICENSE")
-set(CPACK_NSIS_MODIFY_PATH ON)
-set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
-include(CPack)
 
 #add uninstall target
 if(NOT TARGET uninstall)
@@ -767,4 +756,9 @@ if(NOT TARGET uninstall)
 
     add_custom_target(uninstall
         COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_DIR}/UninstallHelper.cmake)
+endif()
+
+
+if(${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_CURRENT_SOURCE_DIR})
+  add_subdirectory(packaging)
 endif()
