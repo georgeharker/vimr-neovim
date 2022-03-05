@@ -30,7 +30,6 @@ let package = Package(
         .headerSearchPath("../../.deps/usr/include"),
         .headerSearchPath("../../build/config"),
         .headerSearchPath("../../build/src/nvim/auto/"),
-        .headerSearchPath("../../NvimServer/third-party/include"),
       ],
       linkerSettings: [
         .linkedFramework("CoreFoundation"),
