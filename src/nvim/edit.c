@@ -7778,7 +7778,7 @@ int hkmap(int c)
     case ';':
       c = 't'; break;
     default: {
-      static char str[] = "zqbcxlsjphmkwonu ydafe rig";
+      static char_u str[] = "zqbcxlsjphmkwonu ydafe rig";
 
       if (c < 'a' || c > 'z') {
         return c;

@@ -15,8 +15,8 @@
 #include "nvim/buffer_defs.h"
 #include "nvim/change.h"
 #include "nvim/cursor.h"
-#include "nvim/eval/userfunc.h"
 #include "nvim/eval/typval.h"
+#include "nvim/eval/userfunc.h"
 #include "nvim/event/loop.h"
 #include "nvim/event/time.h"
 #include "nvim/ex_cmds2.h"
@@ -139,17 +139,17 @@ static void nlua_luv_error_event(void **argv)
   luv_err_t type = (luv_err_t)(intptr_t)argv[1];
   msg_ext_set_kind("lua_error");
   switch (type) {
-    case kCallback:
-      semsg_multiline("Error executing luv callback:\n%s", error);
-      break;
-    case kThread:
-      semsg_multiline("Error in luv thread:\n%s", error);
-      break;
-    case kThreadCallback:
-      semsg_multiline("Error in luv callback, thread:\n%s", error);
-      break;
-    default:
-      break;
+  case kCallback:
+    semsg_multiline("Error executing luv callback:\n%s", error);
+    break;
+  case kThread:
+    semsg_multiline("Error in luv thread:\n%s", error);
+    break;
+  case kThreadCallback:
+    semsg_multiline("Error in luv callback, thread:\n%s", error);
+    break;
+  default:
+    break;
   }
   xfree(error);
 }
@@ -189,21 +189,18 @@ static int nlua_luv_cfpcall(lua_State *lstate, int nargs, int nresult, int flags
   return retval;
 }
 
-static int nlua_luv_thread_cb_cfpcall(lua_State *lstate, int nargs, int nresult,
-                                      int flags)
+static int nlua_luv_thread_cb_cfpcall(lua_State *lstate, int nargs, int nresult, int flags)
 {
   return nlua_luv_thread_common_cfpcall(lstate, nargs, nresult, flags, true);
 }
 
-static int nlua_luv_thread_cfpcall(lua_State *lstate, int nargs, int nresult,
-                                   int flags)
+static int nlua_luv_thread_cfpcall(lua_State *lstate, int nargs, int nresult, int flags)
   FUNC_ATTR_NONNULL_ALL
 {
   return nlua_luv_thread_common_cfpcall(lstate, nargs, nresult, flags, false);
 }
 
-static int nlua_luv_thread_cfcpcall(lua_State *lstate, lua_CFunction func,
-                                    void *ud, int flags)
+static int nlua_luv_thread_cfcpcall(lua_State *lstate, lua_CFunction func, void *ud, int flags)
   FUNC_ATTR_NONNULL_ARG(1, 2)
 {
   lua_pushcfunction(lstate, func);
@@ -212,8 +209,8 @@ static int nlua_luv_thread_cfcpcall(lua_State *lstate, lua_CFunction func,
   return retval;
 }
 
-static int nlua_luv_thread_common_cfpcall(lua_State *lstate, int nargs, int nresult,
-                                          int flags, bool is_callback)
+static int nlua_luv_thread_common_cfpcall(lua_State *lstate, int nargs, int nresult, int flags,
+                                          bool is_callback)
   FUNC_ATTR_NONNULL_ALL
 {
   int retval;
@@ -228,9 +225,9 @@ static int nlua_luv_thread_common_cfpcall(lua_State *lstate, int nargs, int nres
       mch_errmsg("\n");
       lua_close(lstate);
 #ifdef WIN32
-    ExitThread(0);
+      ExitThread(0);
 #else
-    pthread_exit(0);
+      pthread_exit(0);
 #endif
     }
     const char *error = lua_tostring(lstate, -1);
@@ -525,24 +522,6 @@ static void nlua_common_vim_init(lua_State *lstate, bool is_thread)
   lua_pop(lstate, 3);
 }
 
-static void nlua_preload_modules(lua_State *lstate)
-{
-  lua_getglobal(lstate, "package");  // [package]
-  lua_getfield(lstate, -1, "preload");  // [package, preload]
-  for (size_t i = 0; i < ARRAY_SIZE(builtin_modules); i++) {
-    ModuleDef def = builtin_modules[i];
-    lua_pushinteger(lstate, (long)i);  // [package, preload, i]
-    lua_pushcclosure(lstate, nlua_module_preloader, 1);  // [package, preload, cclosure]
-    lua_setfield(lstate, -2, def.name);  // [package, preload]
-
-    if (nlua_disable_preload && strequal(def.name, "vim")) {
-      break;
-    }
-  }
-
-  lua_pop(lstate, 2);  // []
-}
-
 static int nlua_module_preloader(lua_State *lstate)
 {
   size_t i = (size_t)lua_tointeger(lstate, lua_upvalueindex(1));
@@ -561,25 +540,31 @@ static int nlua_module_preloader(lua_State *lstate)
   return 1;
 }
 
-static bool nlua_common_package_init(lua_State *lstate)
+static bool nlua_init_packages(lua_State *lstate)
   FUNC_ATTR_NONNULL_ALL
 {
-  nlua_preload_modules(lstate);
+  // put builtin packages in preload
+  lua_getglobal(lstate, "package");  // [package]
+  lua_getfield(lstate, -1, "preload");  // [package, preload]
+  for (size_t i = 0; i < ARRAY_SIZE(builtin_modules); i++) {
+    ModuleDef def = builtin_modules[i];
+    lua_pushinteger(lstate, (long)i);  // [package, preload, i]
+    lua_pushcclosure(lstate, nlua_module_preloader, 1);  // [package, preload, cclosure]
+    lua_setfield(lstate, -2, def.name);  // [package, preload]
 
-  lua_getglobal(lstate, "require");
-  lua_pushstring(lstate, "vim._load_package");
-  if (nlua_pcall(lstate, 1, 0)) {
-      nlua_error(lstate, _("E5106: Error while creating _load_package module: %.*s\n"));
-      return false;
+    if (nlua_disable_preload && strequal(def.name, "vim.inspect")) {
+      break;
+    }
   }
 
-  // TODO(bfredl): ideally all initialization should be done as a single require
-  // call.
+  lua_pop(lstate, 2);  // []
+
   lua_getglobal(lstate, "require");
-  lua_pushstring(lstate, "vim.shared");
+  lua_pushstring(lstate, "vim._init_packages");
   if (nlua_pcall(lstate, 1, 0)) {
-      nlua_error(lstate, _("E5106: Error while creating shared module: %.*s\n"));
-      return false;
+    mch_errmsg(lua_tostring(lstate, -1));
+    mch_errmsg("\n");
+    return false;
   }
 
   return true;
@@ -654,14 +639,7 @@ static bool nlua_state_init(lua_State *const lstate) FUNC_ATTR_NONNULL_ALL
 
   lua_setglobal(lstate, "vim");
 
-  if (!nlua_common_package_init(lstate)) {
-    return false;
-  }
-
-  lua_getglobal(lstate, "require");
-  lua_pushstring(lstate, "vim");
-  if (nlua_pcall(lstate, 1, 0)) {
-    nlua_error(lstate, _("E5106: Error while creating vim module: %.*s\n"));
+  if (!nlua_init_packages(lstate)) {
     return false;
   }
 
@@ -732,7 +710,7 @@ static lua_State *nlua_thread_acquire_vm(void)
 
   lua_setglobal(lstate, "vim");
 
-  nlua_common_package_init(lstate);
+  nlua_init_packages(lstate);
 
   lua_getglobal(lstate, "package");
   lua_getfield(lstate, -1, "loaded");

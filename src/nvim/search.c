@@ -13,8 +13,8 @@
 
 #include "nvim/ascii.h"
 #include "nvim/buffer.h"
-#include "nvim/charset.h"
 #include "nvim/change.h"
+#include "nvim/charset.h"
 #include "nvim/cursor.h"
 #include "nvim/edit.h"
 #include "nvim/eval.h"
@@ -1071,7 +1071,7 @@ int do_search(oparg_T *oap, int dirc, int search_delim, char_u *pat, long count,
    * Find out the direction of the search.
    */
   if (dirc == 0) {
-    dirc = spats[0].off.dir;
+    dirc = (char_u)spats[0].off.dir;
   } else {
     spats[0].off.dir = dirc;
     set_vv_searchforward();
@@ -5048,8 +5048,8 @@ bool fuzzy_match(char_u *const str, const char_u *const pat_arg, const bool matc
     int score = 0;
     int recursionCount = 0;
     const int matchCount
-        = fuzzy_match_recursive(pat, str, 0, &score, str, len, NULL, matches + numMatches,
-                                maxMatches - numMatches, 0, &recursionCount);
+      = fuzzy_match_recursive(pat, str, 0, &score, str, len, NULL, matches + numMatches,
+                              maxMatches - numMatches, 0, &recursionCount);
     if (matchCount == 0) {
       numMatches = 0;
       break;

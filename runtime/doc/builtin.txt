@@ -4900,7 +4900,7 @@ matchfuzzy({list}, {str} [, {dict}])			*matchfuzzy()*
 		empty list is returned. If length of {str} is greater than
 		256, then returns an empty list.
 
-		Refer to |fuzzy-match| for more information about fuzzy
+		Refer to |fuzzy-matching| for more information about fuzzy
 		matching strings.
 
 		Example: >
@@ -7937,8 +7937,11 @@ synIDattr({synID}, {what} [, {mode}])			*synIDattr()*
 		"inverse"	"1" if inverse (= reverse)
 		"standout"	"1" if standout
 		"underline"	"1" if underlined
+		"underlineline"	"1" if double underlined
 		"undercurl"	"1" if undercurled
-		"strikethrough"	"1" if struckthrough
+		"underdot"	"1" if dotted underlined
+		"underdash"	"1" if dashed underlined
+		"strikethrough" "1" if struckthrough
 
 		Example (echoes the color of the syntax item under the
 		cursor): >

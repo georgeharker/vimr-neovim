@@ -430,7 +430,7 @@ char *get_exception_string(void *value, except_type_T type, char_u *cmdname, int
 
           STRCAT(val, p);
           p[-2] = NUL;
-          sprintf((char *)(val + STRLEN(p)), " (%s)", &mesg[1]);
+          snprintf(val + STRLEN(p), strlen(" (%s)"), " (%s)", &mesg[1]);
           p[-2] = '"';
         }
         break;
@@ -1602,7 +1602,7 @@ void ex_endtry(exarg_T *eap)
 {
   int idx;
   bool rethrow = false;
-  int pending = CSTP_NONE;
+  char pending = CSTP_NONE;
   void *rettv = NULL;
   cstack_T *const cstack = eap->cstack;
 

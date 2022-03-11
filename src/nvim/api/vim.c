@@ -22,6 +22,7 @@
 #include "nvim/charset.h"
 #include "nvim/context.h"
 #include "nvim/decoration.h"
+#include "nvim/decoration_provider.h"
 #include "nvim/edit.h"
 #include "nvim/eval.h"
 #include "nvim/eval/typval.h"
@@ -724,15 +725,15 @@ Object nvim_get_option_value(String name, Dict(option) *opts, Error *err)
     break;
   case 2:
     switch (numval) {
-      case 0:
-      case 1:
-        rv = BOOLEAN_OBJ(numval);
-        break;
-      default:
-        // Boolean options that return something other than 0 or 1 should return nil. Currently this
-        // only applies to 'autoread' which uses -1 as a local value to indicate "unset"
-        rv = NIL;
-        break;
+    case 0:
+    case 1:
+      rv = BOOLEAN_OBJ(numval);
+      break;
+    default:
+      // Boolean options that return something other than 0 or 1 should return nil. Currently this
+      // only applies to 'autoread' which uses -1 as a local value to indicate "unset"
+      rv = NIL;
+      break;
     }
     break;
   default:
@@ -2004,7 +2005,7 @@ Array nvim_get_proc_children(Integer pid, Error *err)
     DLOG("fallback to vim._os_proc_children()");
     Array a = ARRAY_DICT_INIT;
     ADD(a, INTEGER_OBJ(pid));
-    String s = cstr_to_string("return vim._os_proc_children(select(1, ...))");
+    String s = cstr_to_string("return vim._os_proc_children(...)");
     Object o = nlua_exec(s, a, err);
     api_free_string(s);
     api_free_array(a);
@@ -2249,7 +2250,7 @@ Array nvim_get_mark(String name, Dictionary opts, Error *err)
 ///           - winid: (number) |window-ID| of the window to use as context for statusline.
 ///           - maxwidth: (number) Maximum width of statusline.
 ///           - fillchar: (string) Character to fill blank spaces in the statusline (see
-///                                'fillchars').
+///                                'fillchars'). Treated as single-width even if it isn't.
 ///           - highlights: (boolean) Return highlight information.
 ///           - use_tabline: (boolean) Evaluate tabline instead of statusline. When |TRUE|, {winid}
 ///                                    is ignored.
@@ -2285,11 +2286,12 @@ Dictionary nvim_eval_statusline(String str, Dict(eval_statusline) *opts, Error *
 
   if (HAS_KEY(opts->fillchar)) {
     if (opts->fillchar.type != kObjectTypeString || opts->fillchar.data.string.size == 0
-        || char2cells(fillchar = utf_ptr2char((char_u *)opts->fillchar.data.string.data)) != 1
-        || (size_t)utf_char2len(fillchar) != opts->fillchar.data.string.size) {
-      api_set_error(err, kErrorTypeValidation, "fillchar must be a single-width character");
+        || ((size_t)utf_ptr2len((char_u *)opts->fillchar.data.string.data)
+            != opts->fillchar.data.string.size)) {
+      api_set_error(err, kErrorTypeValidation, "fillchar must be a single character");
       return result;
     }
+    fillchar = utf_ptr2char((char_u *)opts->fillchar.data.string.data);
   }
 
   if (HAS_KEY(opts->highlights)) {
