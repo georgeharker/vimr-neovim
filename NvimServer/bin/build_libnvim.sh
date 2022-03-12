@@ -13,7 +13,7 @@ build_libnvim() {
   make \
     SDKROOT="$(xcrun --show-sdk-path)" \
     MACOSX_DEPLOYMENT_TARGET="${deployment_target}" \
-    CMAKE_EXTRA_FLAGS="-DGETTEXT_SOURCE=CUSTOM -DCMAKE_OSX_DEPLOYMENT_TARGET=${deployment_target}" \
+    CMAKE_EXTRA_FLAGS="-DCMAKE_OSX_DEPLOYMENT_TARGET=${deployment_target}" \
     DEPS_CMAKE_FLAGS="-DCMAKE_OSX_DEPLOYMENT_TARGET=${deployment_target} -DCMAKE_CXX_COMPILER=$(xcrun -find c++)" \
     CMAKE_FLAGS="-DENABLE_LIBINTL=OFF -DCUSTOM_UI=1 -DFEAT_TUI=0 -DCMAKE_BUILD_TYPE=Release" \
     libnvim
