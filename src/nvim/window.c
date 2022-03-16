@@ -73,6 +73,15 @@ typedef enum {
 
 static char *m_onlyone = N_("Already only one window");
 
+/// @return the current window, unless in the cmdline window and "prevwin" is
+/// set, then return "prevwin".
+win_T *prevwin_curwin(void)
+  FUNC_ATTR_WARN_UNUSED_RESULT
+{
+  // In cmdwin, the alternative buffer should be used.
+  return is_in_cmdwin() && prevwin != NULL ? prevwin : curwin;
+}
+
 /// all CTRL-W window commands are handled here, called from normal_cmd().
 ///
 /// @param xchar  extra char from ":wincmd gx" or NUL
@@ -521,10 +530,6 @@ wingotofile:
       do_nv_ident('g', xchar);
       break;
 
-    case TAB:
-      goto_tabpage_lastused();
-      break;
-
     case 'f':                       // CTRL-W gf: "gf" in a new tab page
     case 'F':                       // CTRL-W gF: "gF" in a new tab page
       cmdmod.tab = tabpage_index(curtab) + 1;
@@ -536,6 +541,12 @@ wingotofile:
 
     case 'T':                       // CTRL-W gT: go to previous tab page
       goto_tabpage(-(int)Prenum1);
+      break;
+
+    case TAB:                       // CTRL-W g<Tab>: go to last used tab page
+      if (!goto_tabpage_lastused()) {
+        beep_flush();
+      }
       break;
 
     case 'e':
@@ -1420,12 +1431,10 @@ int win_split_ins(int size, int flags, win_T *new_wp, int dir)
     p_wh = i;
   }
 
-  if (!win_valid(oldwin)) {
-    return FAIL;
+  if (win_valid(oldwin)) {
+    // Send the window positions to the UI
+    oldwin->w_pos_changed = true;
   }
-
-  // Send the window positions to the UI
-  oldwin->w_pos_changed = true;
 
   return OK;
 }
@@ -2598,6 +2607,13 @@ int win_close(win_T *win, bool free_buf, bool force)
     reset_synblock(win);
   }
 
+  // When a quickfix/location list window is closed and the buffer is
+  // displayed in only one window, then unlist the buffer.
+  if (win->w_buffer != NULL && bt_quickfix(win->w_buffer)
+      && win->w_buffer->b_nwindows == 1) {
+    win->w_buffer->b_p_bl = false;
+  }
+
   /*
    * Close the link to the buffer.
    */
@@ -2889,6 +2905,9 @@ static win_T *win_free_mem(win_T *win, int *dirp, tabpage_T *tp)
 void win_free_all(void)
 {
   int dummy;
+
+  // avoid an error for switching tabpage with the cmdline window open
+  cmdwin_type = 0;
 
   while (first_tabpage->tp_next != NULL) {
     tabpage_close(TRUE);
@@ -3852,6 +3871,11 @@ int win_new_tabpage(int after, char_u *filename)
   tabpage_T *newtp;
   int n;
 
+  if (cmdwin_type != 0) {
+    emsg(_(e_cmdwin));
+    return FAIL;
+  }
+
   newtp = alloc_tabpage();
 
   // Remember the current windows in this Tab page.
@@ -4097,8 +4121,8 @@ static void enter_tabpage(tabpage_T *tp, buf_T *old_curbuf, bool trigger_enter_a
 {
   int old_off = tp->tp_firstwin->w_winrow;
   win_T *next_prevwin = tp->tp_prevwin;
-
   tabpage_T *old_curtab = curtab;
+
   curtab = tp;
   firstwin = tp->tp_firstwin;
   lastwin = tp->tp_lastwin;
@@ -4250,6 +4274,10 @@ void goto_tabpage(int n)
 /// @param trigger_leave_autocmds  when true trigger *Leave autocommands.
 void goto_tabpage_tp(tabpage_T *tp, bool trigger_enter_autocmds, bool trigger_leave_autocmds)
 {
+  if (trigger_enter_autocmds || trigger_leave_autocmds) {
+    CHECK_CMDWIN;
+  }
+
   // Don't repeat a message in another tab page.
   set_keep_msg(NULL, 0);
 
@@ -4265,13 +4293,15 @@ void goto_tabpage_tp(tabpage_T *tp, bool trigger_enter_autocmds, bool trigger_le
   }
 }
 
-// Go to the last accessed tab page, if there is one.
-void goto_tabpage_lastused(void)
+/// Go to the last accessed tab page, if there is one.
+/// @return true if the tab page is valid, false otherwise.
+bool goto_tabpage_lastused(void)
 {
-  int index = tabpage_index(lastused_tabpage);
-  if (index < tabpage_index(NULL)) {
-    goto_tabpage(index);
+  if (valid_tabpage(lastused_tabpage)) {
+    goto_tabpage_tp(lastused_tabpage, true, true);
+    return true;
   }
+  return false;
 }
 
 /*
@@ -7197,16 +7227,14 @@ void win_id2tabwin(typval_T *const argvars, typval_T *const rettv)
   tv_list_append_number(list, winnr);
 }
 
-win_T *win_id2wp(typval_T *argvars)
+win_T *win_id2wp(int id)
 {
-  return win_id2wp_tp(argvars, NULL);
+  return win_id2wp_tp(id, NULL);
 }
 
 // Return the window and tab pointer of window "id".
-win_T *win_id2wp_tp(typval_T *argvars, tabpage_T **tpp)
+win_T *win_id2wp_tp(int id, tabpage_T **tpp)
 {
-  int id = tv_get_number(&argvars[0]);
-
   FOR_ALL_TAB_WINDOWS(tp, wp) {
     if (wp->handle == id) {
       if (tpp != NULL) {
