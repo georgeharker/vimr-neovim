@@ -31,6 +31,7 @@
 #include "nvim/fileio.h"
 #include "nvim/fold.h"
 #include "nvim/globals.h"
+#include "nvim/highlight_group.h"
 #include "nvim/if_cscope.h"
 #include "nvim/indent.h"
 #include "nvim/indent_c.h"
@@ -1500,7 +1501,7 @@ static void f_ctxsize(typval_T *argvars, typval_T *rettv, FunPtr fptr)
 }
 
 /// Set the cursor position.
-/// If 'charcol' is true, then use the column number as a character offet.
+/// If 'charcol' is true, then use the column number as a character offset.
 /// Otherwise use the column number as a byte offset.
 static void set_cursorpos(typval_T *argvars, typval_T *rettv, bool charcol)
 {
@@ -3745,7 +3746,7 @@ static void f_getmousepos(typval_T *argvars, typval_T *rettv, FunPtr fptr)
 
   wp = mouse_find_win(&grid, &row, &col);
   if (wp != NULL) {
-    int height = wp->w_height + wp->w_status_height;
+    int height = wp->w_height + wp->w_hsep_height + wp->w_status_height;
     // The height is adjusted by 1 when there is a bottom border. This is not
     // necessary for a top border since `row` starts at -1 in that case.
     if (row < height + wp->w_border_adj[2]) {
@@ -7785,7 +7786,7 @@ static void f_reverse(typval_T *argvars, typval_T *rettv, FunPtr fptr)
   }
 }
 
-/// "reduce(list, { accumlator, element -> value } [, initial])" function
+/// "reduce(list, { accumulator, element -> value } [, initial])" function
 static void f_reduce(typval_T *argvars, typval_T *rettv, FunPtr fptr)
 {
   if (argvars[0].v_type != VAR_LIST && argvars[0].v_type != VAR_BLOB) {
@@ -8889,7 +8890,7 @@ static void f_setbufvar(typval_T *argvars, typval_T *rettv, FunPtr fptr)
 }
 
 /// Set the cursor or mark position.
-/// If 'charpos' is TRUE, then use the column number as a character offet.
+/// If 'charpos' is TRUE, then use the column number as a character offset.
 /// Otherwise use the column number as a byte offset.
 static void set_position(typval_T *argvars, typval_T *rettv, bool charpos)
 {

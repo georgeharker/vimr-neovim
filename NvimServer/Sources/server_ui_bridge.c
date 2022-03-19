@@ -17,6 +17,7 @@
 #include <nvim/undo.h>
 #include <nvim/syntax.h>
 #include <nvim/highlight.h>
+#include <nvim/highlight_group.h>
 #include <nvim/msgpack_rpc/helpers.h>
 #include "server_ui_bridge.h"
 
