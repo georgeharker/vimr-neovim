@@ -2033,6 +2033,7 @@ char_u *getnextac(int c, void *cookie, int indent, bool do_concat)
   }
 
   AutoCmd *ac = acp->nextcmd;
+  bool oneshot = ac->once;
 
   if (p_verbose >= 9) {
     verbose_enter_scroll();
@@ -2044,7 +2045,13 @@ char_u *getnextac(int c, void *cookie, int indent, bool do_concat)
   if (ac->exec.type == CALLABLE_CB) {
     typval_T argsin = TV_INITIAL_VALUE;
     typval_T rettv = TV_INITIAL_VALUE;
-    callback_call(&ac->exec.callable.cb, 0, &argsin, &rettv);
+    if (callback_call(&ac->exec.callable.cb, 0, &argsin, &rettv)) {
+      if (ac->exec.callable.cb.type == kCallbackLua) {
+        // If a Lua callback returns 'true' then the autocommand is removed
+        oneshot = true;
+      }
+    }
+
 
     // TODO(tjdevries):
     //
@@ -2062,7 +2069,7 @@ char_u *getnextac(int c, void *cookie, int indent, bool do_concat)
   }
 
   // Remove one-shot ("once") autocmd in anticipation of its execution.
-  if (ac->once) {
+  if (oneshot) {
     aucmd_del(ac);
   }
   autocmd_nested = ac->nested;
