@@ -44,6 +44,7 @@
 #include "nvim/keymap.h"
 #include "nvim/lua/executor.h"
 #include "nvim/main.h"
+#include "nvim/match.h"
 #include "nvim/mark.h"
 #include "nvim/mbyte.h"
 #include "nvim/memline.h"
@@ -6628,6 +6629,7 @@ static void ex_quit(exarg_T *eap)
 
 /// ":cquit".
 static void ex_cquit(exarg_T *eap)
+  FUNC_ATTR_NORETURN
 {
   // this does not always pass on the exit code to the Manx compiler. why?
   getout(eap->addr_count > 0 ? (int)eap->line2 : EXIT_FAILURE);
@@ -7158,7 +7160,6 @@ void alist_slash_adjust(void)
 /// ":preserve".
 static void ex_preserve(exarg_T *eap)
 {
-  curbuf->b_flags |= BF_PRESERVED;
   ml_preserve(curbuf, true, true);
 }
 
