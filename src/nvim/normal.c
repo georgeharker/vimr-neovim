@@ -1233,12 +1233,9 @@ static void normal_check_window_scrolled(NormalState *s)
 static void normal_check_cursor_moved(NormalState *s)
 {
   // Trigger CursorMoved if the cursor moved.
-  if (!finish_op && (has_event(EVENT_CURSORMOVED) || curwin->w_p_cole > 0)
+  if (!finish_op && has_event(EVENT_CURSORMOVED)
       && !equalpos(curwin->w_last_cursormoved, curwin->w_cursor)) {
-    if (has_event(EVENT_CURSORMOVED)) {
-      apply_autocmds(EVENT_CURSORMOVED, NULL, NULL, false, curbuf);
-    }
-
+    apply_autocmds(EVENT_CURSORMOVED, NULL, NULL, false, curbuf);
     curwin->w_last_cursormoved = curwin->w_cursor;
   }
 }
@@ -1520,9 +1517,12 @@ bool do_mouse(oparg_T *oap, int c, int dir, long count, bool fixindent)
   for (;;) {
     which_button = get_mouse_button(KEY2TERMCAP1(c), &is_click, &is_drag);
     if (is_drag) {
-      /* If the next character is the same mouse event then use that
-       * one. Speeds up dragging the status line. */
-      if (vpeekc() != NUL) {
+      // If the next character is the same mouse event then use that
+      // one. Speeds up dragging the status line.
+      // Note: Since characters added to the stuff buffer in the code
+      // below need to come before the next character, do not do this
+      // when the current character was stuffed.
+      if (!KeyStuffed && vpeekc() != NUL) {
         int nc;
         int save_mouse_grid = mouse_grid;
         int save_mouse_row = mouse_row;
@@ -2619,7 +2619,7 @@ void may_clear_cmdline(void)
 }
 
 // Routines for displaying a partly typed command
-#define SHOWCMD_BUFLEN SHOWCMD_COLS + 1 + 30
+#define SHOWCMD_BUFLEN (SHOWCMD_COLS + 1 + 30)
 static char_u showcmd_buf[SHOWCMD_BUFLEN];
 static char_u old_showcmd_buf[SHOWCMD_BUFLEN];    // For push_showcmd()
 static bool showcmd_is_clear = true;

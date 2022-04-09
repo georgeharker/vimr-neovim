@@ -3151,7 +3151,7 @@ nvim_tabpage_set_var({tabpage}, {name}, {value})
 ==============================================================================
 Autocmd Functions                                                *api-autocmd*
 
-nvim_clear_autocmd({*opts})                             *nvim_clear_autocmd()*
+nvim_clear_autocmds({*opts})                           *nvim_clear_autocmds()*
                 Clear all autocommands that match the corresponding {opts}. To
                 delete a particular autocmd, see |nvim_del_autocmd|.
 
@@ -3240,7 +3240,7 @@ nvim_create_autocmd({event}, {*opts})                  *nvim_create_autocmd()*
 <
 
                 Parameters: ~
-                    {event}  (String|Array) The event or events to register
+                    {event}  (string|array) The event or events to register
                              this autocommand
                     {opts}   Dictionary of autocommand options:
                              • group (string|integer) optional: the
@@ -3252,9 +3252,26 @@ nvim_create_autocmd({event}, {*opts})                  *nvim_create_autocmd()*
                                Cannot be used with {pattern}.
                              • desc (string) optional: description of the
                                autocommand.
-                             • callback (function|string) optional: Lua
-                               function or Vim function (as string) to execute
-                               on event. Cannot be used with {command}
+                             • callback (function|string) optional: if a
+                               string, the name of a Vimscript function to
+                               call when this autocommand is triggered.
+                               Otherwise, a Lua function which is called when
+                               this autocommand is triggered. Cannot be used
+                               with {command}. Lua callbacks can return true
+                               to delete the autocommand; in addition, they
+                               accept a single table argument with the
+                               following keys:
+                               • id: (number) the autocommand id
+                               • event: (string) the name of the event that
+                                 triggered the autocommand |autocmd-events|
+                               • group: (number|nil) the autocommand group id,
+                                 if it exists
+                               • match: (string) the expanded value of
+                                 |<amatch>|
+                               • buf: (number) the expanded value of |<abuf>|
+                               • file: (string) the expanded value of
+                                 |<afile>|
+
                              • command (string) optional: Vim command to
                                execute on event. Cannot be used with
                                {callback}
@@ -3310,8 +3327,9 @@ nvim_del_autocmd({id})                                    *nvim_del_autocmd()*
                 See also: ~
                     |nvim_create_autocmd()|
 
-nvim_exec_autocmd({event}, {*opts})                      *nvim_exec_autocmd()*
-                Execute an autocommand |autocmd-execute|.
+nvim_exec_autocmds({event}, {*opts})                    *nvim_exec_autocmds()*
+                Execute all autocommands for {event} that match the
+                corresponding {opts} |autocmd-execute|.
 
                 Parameters: ~
                     {event}  (String|Array) The event or events to execute
@@ -3333,7 +3351,7 @@ nvim_exec_autocmd({event}, {*opts})                      *nvim_exec_autocmd()*
                     |:doautocmd|
 
 nvim_get_autocmds({*opts})                               *nvim_get_autocmds()*
-                Get autocommands that match the requirements passed to {opts}.
+                Get all autocommands that match the corresponding {opts}.
 
                 These examples will get autocommands matching ALL the given
                 criteria: >

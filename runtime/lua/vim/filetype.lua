@@ -177,6 +177,7 @@ local extension = {
   leex = "eelixir",
   exs = "elixir",
   elm = "elm",
+  elv = "elvish",
   epp = "epuppet",
   erl = "erlang",
   hrl = "erlang",
@@ -438,6 +439,8 @@ local extension = {
   opam = "opam",
   ["or"] = "openroad",
   ora = "ora",
+  org = "org",
+  org_archive = "org",
   pxsl = "papp",
   papp = "papp",
   pxml = "papp",
@@ -454,6 +457,7 @@ local extension = {
   al = "perl",
   ctp = "php",
   php = "php",
+  phpt = "php",
   phtml = "php",
   pike = "pike",
   pmod = "pike",
@@ -1424,6 +1428,9 @@ local pattern = {
       return "git"
     end
   end,
+  [".*%.[Dd][Aa][Tt]"] = function() vim.fn["dist#ft#FTdat"]() end,
+  [".*%.[Ss][Rr][Cc]"] = function() vim.fn["dist#ft#FTsrc"]() end,
+  [".*%.[Ss][Uu][Bb]"] = "krl",
   -- Neovim only
   [".*/queries/.*%.scm"] = "query", -- tree-sitter queries
   -- END PATTERN

@@ -1,7 +1,7 @@
 " Vim support file to detect file types
 "
 " Maintainer:	Bram Moolenaar <Bram@vim.org>
-" Last Change:	2022 Jan 31
+" Last Change:	2022 Apr 07
 
 " Listen very carefully, I will say this only once
 if exists("did_load_filetypes")
@@ -415,6 +415,9 @@ au BufNewFile,BufRead *.ex call dist#ft#ExCheck()
 " Elixir
 au BufRead,BufNewFile mix.lock,*.exs setf elixir
 au BufRead,BufNewFile *.eex,*.leex setf eelixir
+
+" Elvish
+au BufRead,BufNewFile *.elv setf elvish
 
 " Euphoria 3 or 4
 au BufNewFile,BufRead *.eu,*.ew,*.exu,*.exw  call dist#ft#EuphoriaCheck()
@@ -944,6 +947,11 @@ au BufNewFile,BufRead *.jl			setf julia
 " Kixtart
 au BufNewFile,BufRead *.kix			setf kix
 
+" Kuka Robot Language
+au BufNewFile,BufRead *.src\c			call dist#ft#FTsrc()
+au BufNewFile,BufRead *.dat\c			call dist#ft#FTdat()
+au BufNewFile,BufRead *.sub\c			setf krl
+
 " Kimwitu[++]
 au BufNewFile,BufRead *.k			setf kwt
 
@@ -1273,6 +1281,9 @@ au BufNewFile,BufRead *.[Oo][Pp][Ll]		setf opl
 " Oracle config file
 au BufNewFile,BufRead *.ora			setf ora
 
+" Org
+au BufNewFile,BufRead *.org,*.org_archive	setf org
+
 " Packet filter conf
 au BufNewFile,BufRead pf.conf			setf pf
 
@@ -1337,9 +1348,10 @@ au BufNewFile,BufRead *.pm
 au BufNewFile,BufRead *.pod			setf pod
 
 " Php, php3, php4, etc.
-" Also Phtml (was used for PHP 2 in the past)
-" Also .ctp for Cake template file
-au BufNewFile,BufRead *.php,*.php\d,*.phtml,*.ctp	setf php
+" Also Phtml (was used for PHP 2 in the past).
+" Also .ctp for Cake template file.
+" Also .phpt for php tests.
+au BufNewFile,BufRead *.php,*.php\d,*.phtml,*.ctp,*.phpt	setf php
 
 " PHP config
 au BufNewFile,BufRead php.ini-*			setf dosini
@@ -1728,7 +1740,7 @@ au BufNewFile,BufRead .zshrc,.zshenv,.zlogin,.zlogout,.zcompdump setf zsh
 au BufNewFile,BufRead *.zsh			setf zsh
 
 " Scheme
-au BufNewFile,BufRead *.scm,*.ss,*.sld,*.rkt,*.rktd,*.rktl 	setf scheme
+au BufNewFile,BufRead *.scm,*.ss,*.sld,*.rkt,*.rktd,*.rktl	setf scheme
 
 " Screen RC
 au BufNewFile,BufRead .screenrc,screenrc	setf screen

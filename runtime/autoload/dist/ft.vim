@@ -1,7 +1,7 @@
 " Vim functions for file type detection
 "
 " Maintainer:	Bram Moolenaar <Bram@vim.org>
-" Last Change:	2022 Mar 05
+" Last Change:	2022 Apr 06
 
 " These functions are moved here from runtime/filetype.vim to make startup
 " faster.
@@ -899,6 +899,23 @@ func dist#ft#FTtf()
   setf tf
 endfunc
 
+" Determine if a *.src file is Kuka Robot Language
+func dist#ft#FTsrc()
+  if exists("g:filetype_src")
+    exe "setf " .. g:filetype_src
+  elseif getline(nextnonblank(1)) =~? '^\s*\%(&\w\+\|\%(global\s\+\)\?def\>\)'
+    setf krl
+  endif
+endfunc
+
+" Determine if a *.dat file is Kuka Robot Language
+func dist#ft#FTdat()
+  if exists("g:filetype_dat")
+    exe "setf " .. g:filetype_dat
+  elseif getline(nextnonblank(1)) =~? '^\s*\%(&\w\+\|defdat\>\)'
+    setf krl
+  endif
+endfunc
 
 " Restore 'cpoptions'
 let &cpo = s:cpo_save

@@ -36,7 +36,7 @@
 // Used to delete autocmds from nvim_del_autocmd
 static int64_t next_autocmd_id = 1;
 
-/// Get autocommands that match the requirements passed to {opts}.
+/// Get all autocommands that match the corresponding {opts}.
 ///
 /// These examples will get autocommands matching ALL the given criteria:
 /// <pre>
@@ -366,7 +366,7 @@ cleanup:
 ///   {"CursorHold", "BufPreWrite", "BufPostWrite"}
 /// </pre>
 ///
-/// @param event (String|Array) The event or events to register this autocommand
+/// @param event (string|array) The event or events to register this autocommand
 /// @param opts Dictionary of autocommand options:
 ///             - group (string|integer) optional: the autocommand group name or
 ///             id to match against.
@@ -375,8 +375,18 @@ cleanup:
 ///             - buffer (integer) optional: buffer number for buffer local autocommands
 ///             |autocmd-buflocal|. Cannot be used with {pattern}.
 ///             - desc (string) optional: description of the autocommand.
-///             - callback (function|string) optional: Lua function or Vim function (as string) to
-///             execute on event. Cannot be used with {command}
+///             - callback (function|string) optional: if a string, the name of a Vimscript function
+///             to call when this autocommand is triggered. Otherwise, a Lua function which is
+///             called when this autocommand is triggered. Cannot be used with {command}. Lua
+///             callbacks can return true to delete the autocommand; in addition, they accept a
+///             single table argument with the following keys:
+///                 - id: (number) the autocommand id
+///                 - event: (string) the name of the event that triggered the autocommand
+///                 |autocmd-events|
+///                 - group: (number|nil) the autocommand group id, if it exists
+///                 - match: (string) the expanded value of |<amatch>|
+///                 - buf: (number) the expanded value of |<abuf>|
+///                 - file: (string) the expanded value of |<afile>|
 ///             - command (string) optional: Vim command to execute on event. Cannot be used with
 ///             {callback}
 ///             - once (boolean) optional: defaults to false. Run the autocommand
@@ -568,7 +578,7 @@ void nvim_del_autocmd(Integer id, Error *err)
 ///         - group: (string|int) The augroup name or id.
 ///             - NOTE: If not passed, will only delete autocmds *not* in any group.
 ///
-void nvim_clear_autocmd(Dict(clear_autocmd) *opts, Error *err)
+void nvim_clear_autocmds(Dict(clear_autocmds) *opts, Error *err)
   FUNC_API_SINCE(9)
 {
   // TODO(tjdevries): Future improvements:
@@ -711,7 +721,8 @@ void nvim_del_augroup_by_name(String name, Error *err)
   });
 }
 
-/// Execute an autocommand |autocmd-execute|.
+/// Execute all autocommands for {event} that match the corresponding
+///  {opts} |autocmd-execute|.
 /// @param event (String|Array) The event or events to execute
 /// @param opts Dictionary of autocommand options:
 ///             - group (string|integer) optional: the autocommand group name or
@@ -723,7 +734,7 @@ void nvim_del_augroup_by_name(String name, Error *err)
 ///             - modeline (bool) optional: defaults to true. Process the
 ///             modeline after the autocommands |<nomodeline>|.
 /// @see |:doautocmd|
-void nvim_exec_autocmd(Object event, Dict(exec_autocmd) *opts, Error *err)
+void nvim_exec_autocmds(Object event, Dict(exec_autocmds) *opts, Error *err)
   FUNC_API_SINCE(9)
 {
   int au_group = AUGROUP_ALL;
