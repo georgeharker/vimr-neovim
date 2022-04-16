@@ -1083,14 +1083,22 @@ int autocmd_register(int64_t id, event_T event, char_u *pat, int patlen, int gro
 
     // need to initialize last_mode for the first ModeChanged autocmd
     if (event == EVENT_MODECHANGED && !has_event(EVENT_MODECHANGED)) {
-      xfree(last_mode);
-      last_mode = get_mode();
+      get_mode(last_mode);
     }
 
     // If the event is CursorMoved, update the last cursor position
     // position to avoid immediately triggering the autocommand
     if (event == EVENT_CURSORMOVED && !has_event(EVENT_CURSORMOVED)) {
       curwin->w_last_cursormoved = curwin->w_cursor;
+    }
+
+    // Initialize the fields checked by the WinScrolled trigger to
+    // stop it from firing right after the first autocmd is defined.
+    if (event == EVENT_WINSCROLLED && !has_event(EVENT_WINSCROLLED)) {
+      curwin->w_last_topline = curwin->w_topline;
+      curwin->w_last_leftcol = curwin->w_leftcol;
+      curwin->w_last_width = curwin->w_width;
+      curwin->w_last_height = curwin->w_height;
     }
 
     ap->cmds = NULL;
@@ -1739,7 +1747,7 @@ bool apply_autocmds_group(event_T event, char_u *fname, char_u *fname_io, bool f
         || event == EVENT_REMOTEREPLY || event == EVENT_SPELLFILEMISSING
         || event == EVENT_SYNTAX || event == EVENT_SIGNAL
         || event == EVENT_TABCLOSED || event == EVENT_USER
-        || event == EVENT_WINCLOSED) {
+        || event == EVENT_WINCLOSED || event == EVENT_WINSCROLLED) {
       fname = vim_strsave(fname);
     } else {
       fname = (char_u *)FullName_save((char *)fname, false);

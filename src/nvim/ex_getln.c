@@ -921,7 +921,7 @@ static uint8_t *command_line_enter(int firstc, long count, int indent, bool init
     }
     tl_ret = true;
   }
-  trigger_modechanged();
+  may_trigger_modechanged();
 
   state_enter(&s->state);
 
@@ -5852,7 +5852,7 @@ HistoryType get_histtype(const char *const name, const size_t len, const bool re
 static int last_maptick = -1;           // last seen maptick
 
 /// Add the given string to the given history.  If the string is already in the
-/// history then it is moved to the front.  "histype" may be one of he HIST_
+/// history then it is moved to the front.  "histype" may be one of the HIST_
 /// values.
 ///
 /// @parma in_map  consider maptick when inside a mapping
@@ -6556,7 +6556,7 @@ static int open_cmdwin(void)
   cmdmsg_rl = save_cmdmsg_rl;
 
   State = save_State;
-  trigger_modechanged();
+  may_trigger_modechanged();
   setmouse();
 
   return cmdwin_result;
