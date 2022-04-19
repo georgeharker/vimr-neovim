@@ -1,7 +1,7 @@
 " Vim support file to detect file types
 "
 " Maintainer:	Bram Moolenaar <Bram@vim.org>
-" Last Change:	2022 Apr 07
+" Last Change:	2022 Apr 13
 
 " Listen very carefully, I will say this only once
 if exists("did_load_filetypes")
@@ -1271,6 +1271,9 @@ au BufNewFile,BufRead *.or			setf openroad
 " OPL
 au BufNewFile,BufRead *.[Oo][Pp][Ll]		setf opl
 
+" OpenSCAD
+au BufNewFile,BufRead *.scad		setf openscad		
+
 " Oracle config file
 au BufNewFile,BufRead *.ora			setf ora
 
@@ -1280,13 +1283,13 @@ au BufNewFile,BufRead *.org,*.org_archive	setf org
 " Packet filter conf
 au BufNewFile,BufRead pf.conf			setf pf
 
-" Pacman Config (close enough to dosini)
-au BufNewFile,BufRead */etc/pacman.conf		setf dosini
+" Pacman config
+au BufNewFile,BufRead */etc/pacman.conf		setf conf
 
 " Pacman hooks
 au BufNewFile,BufRead *.hook
 	\ if getline(1) == '[Trigger]' |
-	\   setf dosini |
+	\   setf conf |
 	\ endif
 
 " Pam conf
