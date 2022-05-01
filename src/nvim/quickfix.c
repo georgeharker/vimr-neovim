@@ -78,8 +78,7 @@ struct qfline_S {
 #define INVALID_QFBUFNR (0)
 
 /// Quickfix list type.
-typedef enum
-{
+typedef enum {
   QFLT_QUICKFIX,  ///< Quickfix list - global list
   QFLT_LOCATION,  ///< Location list - per window list
   QFLT_INTERNAL,  ///< Internal - Temporary list used by
@@ -429,8 +428,7 @@ static char *scanf_fmt_to_regpat(const char **pefmp, const char *efm, int len, c
       }
       if (efmp < efm + len) {
         *regpat++ = *++efmp;  // could be ']'
-        while (efmp < efm + len && (*regpat++ = *++efmp) != ']') {
-        }
+        while (efmp < efm + len && (*regpat++ = *++efmp) != ']') {}
         if (efmp == efm + len) {
           emsg(_("E374: Missing ] in format string"));
           return NULL;
@@ -4396,7 +4394,7 @@ void ex_make(exarg_T *eap)
 
   char *const cmd = make_get_fullcmd((char *)eap->arg, fname);
 
-  do_shell((char_u *)cmd, 0);
+  do_shell(cmd, 0);
 
   incr_quickfix_busy();
 
@@ -5425,7 +5423,7 @@ static int vgr_process_args(exarg_T *eap, vgr_args_T *args)
   }
 
   // Get the search pattern: either white-separated or enclosed in //
-  char *p = (char *)skip_vimgrep_pat(eap->arg, (char_u **)&args->spat, &args->flags);
+  char *p = skip_vimgrep_pat((char *)eap->arg, &args->spat, &args->flags);
   if (p == NULL) {
     emsg(_(e_invalpat));
     return FAIL;
@@ -7240,7 +7238,7 @@ void ex_helpgrep(exarg_T *eap)
   incr_quickfix_busy();
 
   // Check for a specified language
-  char *const lang = (char *)check_help_lang(eap->arg);
+  char *const lang = check_help_lang((char *)eap->arg);
   regmatch_T regmatch = {
     .regprog = vim_regcomp(eap->arg, RE_MAGIC + RE_STRING),
     .rm_ic = false,
@@ -7300,4 +7298,3 @@ void ex_helpgrep(exarg_T *eap)
     }
   }
 }
-
