@@ -32,7 +32,7 @@ let package = Package(
         .headerSearchPath("../../build/src/nvim/auto/"),
       ],
       linkerSettings: [
-        .linkedFramework("CoreFoundation"),
+        .linkedFramework("CoreServices"),
         .linkedLibrary("util"),
         .linkedLibrary("m"),
         .linkedLibrary("dl"),
@@ -43,7 +43,7 @@ let package = Package(
           // folder where Package.swift is located.
           "build/lib/libnvim.a",
           ".deps/usr/lib/libmsgpackc.a",
-          ".deps/usr/lib/libluv_a.a",
+          ".deps/usr/lib/libluv.a",
           ".deps/usr/lib/libuv.a",
           ".deps/usr/lib/libvterm.a",
           ".deps/usr/lib/libluajit-5.1.a",

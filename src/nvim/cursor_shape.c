@@ -345,7 +345,7 @@ int cursor_get_mode_idx(void)
     } else {
       return SHAPE_IDX_V;
     }
-  } else if (State & TERM_FOCUS) {
+  } else if (State & MODE_TERMINAL) {
     return SHAPE_IDX_TERM;
   } else {
     return SHAPE_IDX_N;
