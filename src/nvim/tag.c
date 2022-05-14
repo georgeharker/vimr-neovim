@@ -1156,9 +1156,9 @@ static int find_tagfunc_tags(char_u *pat, garray_T *ga, int *match_count, int fl
   }
 
   args[0].v_type = VAR_STRING;
-  args[0].vval.v_string = pat;
+  args[0].vval.v_string = (char *)pat;
   args[1].v_type = VAR_STRING;
-  args[1].vval.v_string = flagString;
+  args[1].vval.v_string = (char *)flagString;
 
   // create 'info' dict argument
   dict_T *const d = tv_dict_alloc_lock(VAR_FIXED);
@@ -1182,7 +1182,7 @@ static int find_tagfunc_tags(char_u *pat, garray_T *ga, int *match_count, int fl
                flags & TAG_REGEXP   ? "r": "");
 
   save_pos = curwin->w_cursor;
-  result = call_vim_function(curbuf->b_p_tfu, 3, args, &rettv);
+  result = call_vim_function((char *)curbuf->b_p_tfu, 3, args, &rettv);
   curwin->w_cursor = save_pos;  // restore the cursor position
   d->dv_refcount--;
 
@@ -1229,20 +1229,20 @@ static int find_tagfunc_tags(char_u *pat, garray_T *ga, int *match_count, int fl
 
       len += STRLEN(tv->vval.v_string) + 1;   // Space for "\tVALUE"
       if (!STRCMP(dict_key, "name")) {
-        res_name = tv->vval.v_string;
+        res_name = (char_u *)tv->vval.v_string;
         continue;
       }
       if (!STRCMP(dict_key, "filename")) {
-        res_fname = tv->vval.v_string;
+        res_fname = (char_u *)tv->vval.v_string;
         continue;
       }
       if (!STRCMP(dict_key, "cmd")) {
-        res_cmd = tv->vval.v_string;
+        res_cmd = (char_u *)tv->vval.v_string;
         continue;
       }
       has_extra = 1;
       if (!STRCMP(dict_key, "kind")) {
-        res_kind = tv->vval.v_string;
+        res_kind = (char_u *)tv->vval.v_string;
         continue;
       }
       // Other elements will be stored as "\tKEY:VALUE"
@@ -2129,7 +2129,7 @@ parse_line:
               STRLCPY(mfp, tagp.tagname, len + 1);
 
               // if wanted, re-read line to get long form too
-              if (State & INSERT) {
+              if (State & MODE_INSERT) {
                 get_it_again = p_sft;
               }
             }
@@ -2308,9 +2308,9 @@ static garray_T tag_fnames = GA_EMPTY_INIT_VALUE;
  * Callback function for finding all "tags" and "tags-??" files in
  * 'runtimepath' doc directories.
  */
-static void found_tagfile_cb(char_u *fname, void *cookie)
+static void found_tagfile_cb(char *fname, void *cookie)
 {
-  char_u *const tag_fname = vim_strsave(fname);
+  char_u *const tag_fname = vim_strsave((char_u *)fname);
 
 #ifdef BACKSLASH_IN_FILENAME
   slash_adjust(tag_fname);
@@ -2357,7 +2357,7 @@ int get_tagfname(tagname_T *tnp, int first, char_u *buf)
     if (first) {
       ga_clear_strings(&tag_fnames);
       ga_init(&tag_fnames, (int)sizeof(char_u *), 10);
-      do_in_runtimepath((char_u *)"doc/tags doc/tags-??", DIP_ALL,
+      do_in_runtimepath("doc/tags doc/tags-??", DIP_ALL,
                         found_tagfile_cb, NULL);
     }
 
@@ -2369,7 +2369,7 @@ int get_tagfname(tagname_T *tnp, int first, char_u *buf)
       }
       ++tnp->tn_hf_idx;
       STRCPY(buf, p_hf);
-      STRCPY(path_tail(buf), "tags");
+      STRCPY(path_tail((char *)buf), "tags");
 #ifdef BACKSLASH_IN_FILENAME
       slash_adjust(buf);
 #endif
@@ -2428,7 +2428,7 @@ int get_tagfname(tagname_T *tnp, int first, char_u *buf)
       r_ptr = vim_findfile_stopdir(buf);
       // move the filename one char forward and truncate the
       // filepath with a NUL
-      filename = path_tail(buf);
+      filename = (char_u *)path_tail((char *)buf);
       STRMOVE(filename + 1, filename);
       *filename++ = NUL;
 
@@ -2583,7 +2583,7 @@ static int parse_match(char_u *lbuf, tagptrs_T *tagp)
       if (*p++ == TAB) {
         // Accept ASCII alphabetic kind characters and any multi-byte
         // character.
-        while (ASCII_ISALPHA(*p) || utfc_ptr2len(p) > 1) {
+        while (ASCII_ISALPHA(*p) || utfc_ptr2len((char *)p) > 1) {
           if (STRNCMP(p, "kind:", 5) == 0) {
             tagp->tagkind = p + 5;
           } else if (STRNCMP(p, "user_data:", 10) == 0) {
@@ -2715,7 +2715,7 @@ static int jumpto_tag(const char_u *lbuf_arg, int forceit, int keep_help)
    * autocommand event (e.g., http://sys/file).
    */
   if (!os_path_exists(fname)
-      && !has_autocmd(EVENT_BUFREADCMD, fname,
+      && !has_autocmd(EVENT_BUFREADCMD, (char *)fname,
                       NULL)) {
     retval = NOTAGFILE;
     xfree(nofile_fname);
@@ -2997,7 +2997,7 @@ static char_u *expand_tag_fname(char_u *fname, char_u *const tag_fname, const bo
   char_u *retval;
   if ((p_tr || curbuf->b_help)
       && !vim_isAbsName(fname)
-      && (p = path_tail(tag_fname)) != tag_fname) {
+      && (p = (char_u *)path_tail((char *)tag_fname)) != tag_fname) {
     retval = xmalloc(MAXPATHL);
     STRCPY(retval, tag_fname);
     STRLCPY(retval + (p - tag_fname), fname,
@@ -3054,7 +3054,7 @@ static int find_extra(char_u **pp)
   // Repeat for addresses separated with ';'
   for (;;) {
     if (ascii_isdigit(*str)) {
-      str = skipdigits(str + 1);
+      str = (char_u *)skipdigits((char *)str + 1);
     } else if (*str == '/' || *str == '?') {
       str = skip_regexp(str + 1, *str, false, NULL);
       if (*str != first_char) {

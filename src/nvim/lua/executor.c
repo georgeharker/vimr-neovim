@@ -881,7 +881,7 @@ static int nlua_debug(lua_State *lstate)
     {
       .v_lock = VAR_FIXED,
       .v_type = VAR_STRING,
-      .vval.v_string = (char_u *)"lua_debug> ",
+      .vval.v_string = "lua_debug> ",
     },
     {
       .v_type = VAR_UNKNOWN,
@@ -920,7 +920,7 @@ int nlua_call(lua_State *lstate)
 {
   Error err = ERROR_INIT;
   size_t name_len;
-  const char_u *name = (const char_u *)luaL_checklstring(lstate, 1, &name_len);
+  const char *name = luaL_checklstring(lstate, 1, &name_len);
   if (!nlua_is_deferred_safe()) {
     return luaL_error(lstate, e_luv_api_disabled, "vimL function");
   }
@@ -956,7 +956,7 @@ int nlua_call(lua_State *lstate)
     funcexe.evaluate = true;
     // call_func() retval is deceptive, ignore it.  Instead we set `msg_list`
     // (TRY_WRAP) to capture abort-causing non-exception errors.
-    (void)call_func(name, (int)name_len, &rettv, nargs, vim_args, &funcexe);
+    (void)call_func((char *)name, (int)name_len, &rettv, nargs, vim_args, &funcexe);
     if (!try_end(&err)) {
       nlua_push_typval(lstate, &rettv, false);
     }
@@ -1195,8 +1195,8 @@ void nlua_call_user_expand_func(expand_T *xp, typval_T *ret_tv)
   lua_State *const lstate = global_lstate;
 
   nlua_pushref(lstate, xp->xp_luaref);
-  lua_pushstring(lstate, (char *)xp->xp_pattern);
-  lua_pushstring(lstate, (char *)xp->xp_line);
+  lua_pushstring(lstate, xp->xp_pattern);
+  lua_pushstring(lstate, xp->xp_line);
   lua_pushinteger(lstate, xp->xp_col);
 
   if (nlua_pcall(lstate, 3, 1)) {
@@ -1249,7 +1249,7 @@ int nlua_source_using_linegetter(LineGetter fgetline, void *cookie, char *name)
   char_u *line = NULL;
 
   ga_init(&ga, (int)sizeof(char_u *), 10);
-  while ((line = fgetline(0, cookie, 0, false)) != NULL) {
+  while ((line = (char_u *)fgetline(0, cookie, 0, false)) != NULL) {
     GA_APPEND(char_u *, &ga, line);
   }
   char *code = ga_concat_strings_sep(&ga, "\n");
@@ -1495,7 +1495,7 @@ void ex_luado(exarg_T *const eap)
           new_line_transformed[i] = '\n';
         }
       }
-      ml_replace(l, (char_u *)new_line_transformed, false);
+      ml_replace(l, new_line_transformed, false);
       inserted_bytes(l, 0, (int)old_line_len, (int)new_line_len);
     }
     lua_pop(lstate, 1);
@@ -1647,9 +1647,7 @@ int nlua_expand_pat(expand_T *xp, char_u *pat, int *num_results, char_u ***resul
       goto cleanup_array;
     }
 
-    GA_APPEND(char_u *,
-              &result_array,
-              vim_strsave((char_u *)v.data.string.data));
+    GA_APPEND(char_u *, &result_array, (char_u *)string_to_cstr(v.data.string));
   }
 
   xp->xp_pattern += prefix_len;
@@ -1865,8 +1863,8 @@ void nlua_do_ucmd(ucmd_T *cmd, exarg_T *eap)
   if (cmd->uc_argt & EX_NOSPC) {
     // Commands where nargs = 1 or "?" fargs is the same as args
     lua_rawseti(lstate, -2, 1);
-  } else {
-    // Commands with more than one possible argument we split
+  } else if (eap->args == NULL) {
+    // For commands with more than one possible argument, split if argument list isn't available.
     lua_pop(lstate, 1);  // Pop the reference of opts.args
     size_t length = STRLEN(eap->arg);
     size_t end = 0;
@@ -1883,6 +1881,13 @@ void nlua_do_ucmd(ucmd_T *cmd, exarg_T *eap)
       }
     }
     xfree(buf);
+  } else {
+    // If argument list is available, just use it.
+    lua_pop(lstate, 1);
+    for (size_t i = 0; i < eap->argc; i++) {
+      lua_pushlstring(lstate, eap->args[i], eap->arglens[i]);
+      lua_rawseti(lstate, -2, (int)i + 1);
+    }
   }
   lua_setfield(lstate, -2, "fargs");
 

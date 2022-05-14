@@ -775,7 +775,7 @@ void clearFolding(win_T *win)
 /// The changes in lines from top to bot (inclusive).
 void foldUpdate(win_T *wp, linenr_T top, linenr_T bot)
 {
-  if (compl_busy || State & INSERT) {
+  if (compl_busy || State & MODE_INSERT) {
     return;
   }
 
@@ -1374,7 +1374,7 @@ void foldMarkAdjust(win_T *wp, linenr_T line1, linenr_T line2, long amount, long
   }
   // If appending a line in Insert mode, it should be included in the fold
   // just above the line.
-  if ((State & INSERT) && amount == (linenr_T)1 && line2 == MAXLNUM) {
+  if ((State & MODE_INSERT) && amount == (linenr_T)1 && line2 == MAXLNUM) {
     line1--;
   }
   foldMarkAdjustRecurse(wp, &wp->w_folds, line1, line2, amount, amount_after);
@@ -1394,7 +1394,7 @@ static void foldMarkAdjustRecurse(win_T *wp, garray_T *gap, linenr_T line1, line
 
   // In Insert mode an inserted line at the top of a fold is considered part
   // of the fold, otherwise it isn't.
-  if ((State & INSERT) && amount == (linenr_T)1 && line2 == MAXLNUM) {
+  if ((State & MODE_INSERT) && amount == (linenr_T)1 && line2 == MAXLNUM) {
     top = line1 + 1;
   } else {
     top = line1;
@@ -1774,7 +1774,9 @@ char_u *get_foldtext(win_T *wp, linenr_T lnum, linenr_T lnume, foldinfo_T foldin
       curbuf = wp->w_buffer;
 
       emsg_silent++;       // handle exceptions, but don't display errors
-      text = eval_to_string_safe(wp->w_p_fdt, NULL, was_set_insecurely(wp, "foldtext", OPT_LOCAL));
+      text =
+        (char_u *)eval_to_string_safe((char *)wp->w_p_fdt, NULL,
+                                      was_set_insecurely(wp, "foldtext", OPT_LOCAL));
       emsg_silent--;
 
       if (text == NULL || did_emsg) {
@@ -1796,10 +1798,10 @@ char_u *get_foldtext(win_T *wp, linenr_T lnum, linenr_T lnume, foldinfo_T foldin
       // Replace unprintable characters, if there are any.  But
       // replace a TAB with a space.
       for (p = text; *p != NUL; p++) {
-        int len = utfc_ptr2len(p);
+        int len = utfc_ptr2len((char *)p);
 
         if (len > 1) {
-          if (!vim_isprintc(utf_ptr2char(p))) {
+          if (!vim_isprintc(utf_ptr2char((char *)p))) {
             break;
           }
           p += len - 1;
@@ -1838,7 +1840,7 @@ void foldtext_cleanup(char_u *str)
   bool did2 = false;
 
   // Ignore leading and trailing white space in 'commentstring'.
-  char_u *cms_start = skipwhite(curbuf->b_p_cms);
+  char_u *cms_start = (char_u *)skipwhite((char *)curbuf->b_p_cms);
   size_t cms_slen = STRLEN(cms_start);
   while (cms_slen > 0 && ascii_iswhite(cms_start[cms_slen - 1])) {
     --cms_slen;
@@ -1857,7 +1859,7 @@ void foldtext_cleanup(char_u *str)
     }
 
     // skip "%s" and white space after it
-    s = skipwhite(cms_end + 2);
+    s = (char_u *)skipwhite((char *)cms_end + 2);
     cms_elen -= (size_t)(s - cms_end);
     cms_end = s;
   }
@@ -2905,7 +2907,7 @@ static void foldlevelIndent(fline_T *flp)
   linenr_T lnum = flp->lnum + flp->off;
 
   buf = flp->wp->w_buffer;
-  s = skipwhite(ml_get_buf(buf, lnum, false));
+  s = (char_u *)skipwhite((char *)ml_get_buf(buf, lnum, false));
 
   // empty line or lines starting with a character in 'foldignore': level
   // depends on surrounding lines
@@ -2962,7 +2964,7 @@ static void foldlevelExpr(fline_T *flp)
   // KeyTyped may be reset to 0 when calling a function which invokes
   // do_cmdline().  To make 'foldopen' work correctly restore KeyTyped.
   const bool save_keytyped = KeyTyped;
-  const int n = eval_foldexpr(flp->wp->w_p_fde, &c);
+  const int n = eval_foldexpr((char *)flp->wp->w_p_fde, &c);
   KeyTyped = save_keytyped;
 
   switch (c) {

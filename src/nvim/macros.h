@@ -95,10 +95,10 @@
 
 // MB_PTR_ADV(): advance a pointer to the next character, taking care of
 // multi-byte characters if needed. Skip over composing chars.
-#define MB_PTR_ADV(p)      (p += utfc_ptr2len((char_u *)p))
+#define MB_PTR_ADV(p)      (p += utfc_ptr2len((char *)p))
 
 // Advance multi-byte pointer, do not skip over composing chars.
-#define MB_CPTR_ADV(p)     (p += utf_ptr2len(p))
+#define MB_CPTR_ADV(p)     (p += utf_ptr2len((char *)p))
 
 // MB_PTR_BACK(): backup a pointer to the previous character, taking care of
 // multi-byte characters if needed. Only use with "p" > "s" !
@@ -106,7 +106,7 @@
   (p -= utf_head_off((char_u *)(s), (char_u *)(p) - 1) + 1)
 
 // MB_CHAR2BYTES(): convert character to bytes and advance pointer to bytes
-#define MB_CHAR2BYTES(c, b) ((b) += utf_char2bytes((c), (b)))
+#define MB_CHAR2BYTES(c, b) ((b) += utf_char2bytes((c), ((char *)b)))
 
 #define RESET_BINDING(wp) \
   do { \

@@ -39,7 +39,6 @@ set(DEPS_DOWNLOAD_DIR "${DEPS_BUILD_DIR}/downloads" CACHE PATH "Dependencies dow
 
 option(USE_BUNDLED "Use bundled dependencies." ON)
 
-option(USE_BUNDLED_GPERF "Use the bundled version of gperf." ${USE_BUNDLED})
 option(USE_BUNDLED_UNIBILIUM "Use the bundled unibilium." ${USE_BUNDLED})
 option(USE_BUNDLED_LIBTERMKEY "Use the bundled libtermkey." ${USE_BUNDLED})
 option(USE_BUNDLED_LIBVTERM "Use the bundled libvterm." ${USE_BUNDLED})
@@ -109,10 +108,6 @@ else()
   set(DEPS_C_COMPILER "${CMAKE_C_COMPILER}")
 endif()
 
-if(USE_BUNDLED_GPERF)
-  enable_language(CXX)
-endif()
-
 if(CMAKE_CXX_COMPILER)
   set(DEPS_CXX_COMPILER "${CMAKE_CXX_COMPILER}")
 endif()
@@ -147,12 +142,12 @@ include(ExternalProject)
 set(LIBUV_URL https://github.com/libuv/libuv/archive/v1.44.1.tar.gz)
 set(LIBUV_SHA256 e91614e6dc2dd0bfdd140ceace49438882206b7a6fb00b8750914e67a9ed6d6b)
 
-set(MSGPACK_URL https://github.com/msgpack/msgpack-c/releases/download/cpp-3.0.0/msgpack-3.0.0.tar.gz)
-set(MSGPACK_SHA256 bfbb71b7c02f806393bc3cbc491b40523b89e64f83860c58e3e54af47de176e4)
+set(MSGPACK_URL https://github.com/msgpack/msgpack-c/releases/download/c-4.0.0/msgpack-c-4.0.0.tar.gz)
+set(MSGPACK_SHA256 420fe35e7572f2a168d17e660ef981a589c9cbe77faa25eb34a520e1fcc032c8)
 
 # https://github.com/LuaJIT/LuaJIT/tree/v2.1
-set(LUAJIT_URL https://github.com/LuaJIT/LuaJIT/archive/5e3c45c43bb0e0f1f2917d432e9d2dba12c42a6e.tar.gz)
-set(LUAJIT_SHA256 72294770c73ff2ed03deb9c81a38253c45fd634917583c6ae39f5143c9adc1e1)
+set(LUAJIT_URL https://github.com/LuaJIT/LuaJIT/archive/91bc6b8ad1f373c1ce9003dc024b2e21fad0e444.tar.gz)
+set(LUAJIT_SHA256 81895031fdb87602c7dde52280259c60b1ffd1b5a8a3c2792d3e2390481163fa)
 
 set(LUA_URL https://www.lua.org/ftp/lua-5.1.5.tar.gz)
 set(LUA_SHA256 2640fc56a795f29d28ef15e13c34a47e223960b0240e8cb0a82d9b0738695333)
@@ -170,14 +165,11 @@ set(LIBVTERM_URL https://www.leonerd.org.uk/code/libvterm/libvterm-0.1.4.tar.gz)
 set(LIBVTERM_SHA256 bc70349e95559c667672fc8c55b9527d9db9ada0fb80a3beda533418d782d3dd)
 
 set(LUV_VERSION 1.43.0-0)
-set(LUV_URL https://github.com/luvit/luv/archive/${LUV_VERSION}.tar.gz)
-set(LUV_SHA256 a36865f34db029e2caa01245a41341a067038c09e94459b50db1346d9fdf82f0)
+set(LUV_URL https://github.com/luvit/luv/archive/c51e7052ec4f0a25058f70c1b4ee99dd36180e59.tar.gz)
+set(LUV_SHA256 cabb7e650f35992686eb95ae167c71614e281cd2979fc804e4e70f8051555728)
 
 set(LUA_COMPAT53_URL https://github.com/keplerproject/lua-compat-5.3/archive/v0.9.tar.gz)
 set(LUA_COMPAT53_SHA256 ad05540d2d96a48725bb79a1def35cf6652a4e2ec26376e2617c8ce2baa6f416)
-
-set(GPERF_URL https://github.com/neovim/deps/raw/ff5b4b18a87397a8564016071ae64f64bcd8c635/opt/gperf-3.1.tar.gz)
-set(GPERF_SHA256 588546b945bba4b70b6a3a616e80b4ab466e3f33024a352fc2198112cdbb3ae2)
 
 # cat.exe curl.exe curl-ca-bundle.crt diff.exe tee.exe xxd.exe
 set(WINTOOLS_URL https://github.com/neovim/deps/raw/d66e306abf5b846484b4f2adffd896bce7e065d2/opt/win32tools.zip)
@@ -240,10 +232,6 @@ endif()
 
 if(USE_BUNDLED_LUV)
   include(BuildLuv)
-endif()
-
-if(USE_BUNDLED_GPERF)
-  include(BuildGperf)
 endif()
 
 if(USE_BUNDLED_GETTEXT)

@@ -709,7 +709,7 @@ static int mouse_adjust_click(win_T *wp, int row, int col)
     vcol = 0;
     while (vcol < offset && *ptr != NUL) {
       vcol += win_chartabsize(curwin, ptr, vcol);
-      ptr += utfc_ptr2len(ptr);
+      ptr += utfc_ptr2len((char *)ptr);
     }
 
     ptr_row_offset = ptr;
@@ -720,7 +720,7 @@ static int mouse_adjust_click(win_T *wp, int row, int col)
   ptr_end = ptr_row_offset;
   while (vcol < col && *ptr_end != NUL) {
     vcol += win_chartabsize(curwin, ptr_end, vcol);
-    ptr_end += utfc_ptr2len(ptr_end);
+    ptr_end += utfc_ptr2len((char *)ptr_end);
   }
 
   int matchid;
@@ -730,8 +730,8 @@ static int mouse_adjust_click(win_T *wp, int row, int col)
 
   vcol = offset;
 
-#define INCR() nudge++; ptr_end += utfc_ptr2len(ptr_end)
-#define DECR() nudge--; ptr_end -= utfc_ptr2len(ptr_end)
+#define INCR() nudge++; ptr_end += utfc_ptr2len((char *)ptr_end)
+#define DECR() nudge--; ptr_end -= utfc_ptr2len((char *)ptr_end)
 
   while (ptr < ptr_end && *ptr != NUL) {
     cwidth = win_chartabsize(curwin, ptr, vcol);
@@ -762,7 +762,7 @@ static int mouse_adjust_click(win_T *wp, int row, int col)
 
         while (prev_matchid == matchid && *ptr != NUL) {
           INCR();
-          ptr += utfc_ptr2len(ptr);
+          ptr += utfc_ptr2len((char *)ptr);
           matchid = syn_get_concealed_id(wp, lnum, (colnr_T)(ptr - line));
         }
 
@@ -770,7 +770,7 @@ static int mouse_adjust_click(win_T *wp, int row, int col)
       }
     }
 
-    ptr += utfc_ptr2len(ptr);
+    ptr += utfc_ptr2len((char *)ptr);
   }
 
   return col + nudge;
@@ -805,8 +805,8 @@ int mouse_check_fold(void)
     // Remember the character under the mouse, might be one of foldclose or
     // foldopen fillchars in the fold column.
     if (gp->chars != NULL) {
-      mouse_char = utf_ptr2char(gp->chars[gp->line_offset[row]
-                                          + (unsigned)col]);
+      mouse_char = utf_ptr2char((char *)gp->chars[gp->line_offset[row]
+                                                  + (unsigned)col]);
     }
 
     // Check for position outside of the fold column.

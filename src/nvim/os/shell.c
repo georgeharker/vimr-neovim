@@ -188,7 +188,7 @@ int os_expand_wildcards(int num_pat, char_u **pat, int *num_file, char_u ***file
     }
   }
   if (shell_style == STYLE_ECHO
-      && strstr((char *)path_tail(p_sh), "sh") != NULL) {
+      && strstr(path_tail((char *)p_sh), "sh") != NULL) {
     shell_style = STYLE_VIMGLOB;
   }
 
@@ -405,7 +405,7 @@ int os_expand_wildcards(int num_pat, char_u **pat, int *num_file, char_u ***file
       while (*p != ' ' && *p != '\n') {
         p++;
       }
-      p = skipwhite(p);                 // skip to next entry
+      p = (char_u *)skipwhite((char *)p);                 // skip to next entry
     }
     // file names are separated with NL
   } else if (shell_style == STYLE_BT || shell_style == STYLE_VIMGLOB) {
@@ -418,7 +418,7 @@ int os_expand_wildcards(int num_pat, char_u **pat, int *num_file, char_u ***file
       if (*p != NUL) {
         p++;
       }
-      p = skipwhite(p);                 // skip leading white space
+      p = (char_u *)skipwhite((char *)p);                 // skip leading white space
     }
     // file names are separated with NUL
   } else {
@@ -483,7 +483,7 @@ int os_expand_wildcards(int num_pat, char_u **pat, int *num_file, char_u ***file
         *p = NUL;
       } else {
         *p++ = NUL;
-        p = skipwhite(p);                       // skip to next entry
+        p = (char_u *)skipwhite((char *)p);                       // skip to next entry
       }
     } else {          // NUL separates
       while (*p && p < buffer + len) {          // skip entry
@@ -644,7 +644,7 @@ int os_call_shell(char_u *cmd, ShellOpts opts, char_u *extra_args)
   if (opts & (kShellOptHideMess | kShellOptExpand)) {
     forward_output = false;
   } else {
-    State = EXTERNCMD;
+    State = MODE_EXTERNCMD;
 
     if (opts & kShellOptWrite) {
       read_input(&input);
@@ -1158,7 +1158,7 @@ static size_t tokenize(const char_u *const str, char **const argv)
     }
 
     argc++;
-    p = (const char *)skipwhite((char_u *)(p + len));
+    p = (const char *)skipwhite((p + len));
   }
 
   return argc;
@@ -1253,7 +1253,7 @@ static size_t write_output(char *output, size_t remaining, bool eof)
     if (output[off] == NL) {
       // Insert the line
       output[off] = NUL;
-      ml_append(curwin->w_cursor.lnum++, (char_u *)output, (int)off + 1,
+      ml_append(curwin->w_cursor.lnum++, output, (int)off + 1,
                 false);
       size_t skip = off + 1;
       output += skip;
@@ -1272,7 +1272,7 @@ static size_t write_output(char *output, size_t remaining, bool eof)
   if (eof) {
     if (remaining) {
       // append unfinished line
-      ml_append(curwin->w_cursor.lnum++, (char_u *)output, 0, false);
+      ml_append(curwin->w_cursor.lnum++, output, 0, false);
       // remember that the NL was missing
       curbuf->b_no_eol_lnum = curwin->w_cursor.lnum;
       output += remaining;

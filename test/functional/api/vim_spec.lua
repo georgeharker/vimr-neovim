@@ -1,5 +1,6 @@
 local helpers = require('test.functional.helpers')(after_each)
 local Screen = require('test.functional.ui.screen')
+local lfs = require('lfs')
 
 local fmt = string.format
 local assert_alive = helpers.assert_alive
@@ -25,6 +26,7 @@ local tmpname = helpers.tmpname
 local write_file = helpers.write_file
 local exec_lua = helpers.exec_lua
 local exc_exec = helpers.exc_exec
+local insert = helpers.insert
 
 local pcall_err = helpers.pcall_err
 local format_string = helpers.format_string
@@ -3104,8 +3106,9 @@ describe('API', function()
         cmd = 'echo',
         args = { 'foo' },
         bang = false,
-        line1 = 1,
-        line2 = 1,
+        range = {},
+        count = -1,
+        reg = '',
         addr = 'none',
         magic = {
             file = false,
@@ -3130,7 +3133,7 @@ describe('API', function()
           vertical = false,
           split = "",
           tab = 0,
-          verbose = 0
+          verbose = -1
         }
       }, meths.parse_cmd('echo foo', {}))
     end)
@@ -3139,8 +3142,9 @@ describe('API', function()
         cmd = 'substitute',
         args = { '/math.random/math.max/' },
         bang = false,
-        line1 = 4,
-        line2 = 6,
+        range = { 4, 6 },
+        count = -1,
+        reg = '',
         addr = 'line',
         magic = {
             file = false,
@@ -3165,17 +3169,126 @@ describe('API', function()
           vertical = false,
           split = "",
           tab = 0,
-          verbose = 0
+          verbose = -1
         }
       }, meths.parse_cmd('4,6s/math.random/math.max/', {}))
+    end)
+    it('works with count', function()
+      eq({
+        cmd = 'buffer',
+        args = {},
+        bang = false,
+        range = { 1 },
+        count = 1,
+        reg = '',
+        addr = 'buf',
+        magic = {
+            file = false,
+            bar = true
+        },
+        nargs = '*',
+        nextcmd = '',
+        mods = {
+          browse = false,
+          confirm = false,
+          emsg_silent = false,
+          hide = false,
+          keepalt = false,
+          keepjumps = false,
+          keepmarks = false,
+          keeppatterns = false,
+          lockmarks = false,
+          noautocmd = false,
+          noswapfile = false,
+          sandbox = false,
+          silent = false,
+          vertical = false,
+          split = "",
+          tab = 0,
+          verbose = -1
+        }
+      }, meths.parse_cmd('buffer 1', {}))
+    end)
+    it('works with register', function()
+      eq({
+        cmd = 'put',
+        args = {},
+        bang = false,
+        range = {},
+        count = -1,
+        reg = '+',
+        addr = 'line',
+        magic = {
+            file = false,
+            bar = true
+        },
+        nargs = '0',
+        nextcmd = '',
+        mods = {
+          browse = false,
+          confirm = false,
+          emsg_silent = false,
+          hide = false,
+          keepalt = false,
+          keepjumps = false,
+          keepmarks = false,
+          keeppatterns = false,
+          lockmarks = false,
+          noautocmd = false,
+          noswapfile = false,
+          sandbox = false,
+          silent = false,
+          vertical = false,
+          split = "",
+          tab = 0,
+          verbose = -1
+        }
+      }, meths.parse_cmd('put +', {}))
+    end)
+    it('works with range, count and register', function()
+      eq({
+        cmd = 'delete',
+        args = {},
+        bang = false,
+        range = { 3, 7 },
+        count = 7,
+        reg = '*',
+        addr = 'line',
+        magic = {
+            file = false,
+            bar = true
+        },
+        nargs = '0',
+        nextcmd = '',
+        mods = {
+          browse = false,
+          confirm = false,
+          emsg_silent = false,
+          hide = false,
+          keepalt = false,
+          keepjumps = false,
+          keepmarks = false,
+          keeppatterns = false,
+          lockmarks = false,
+          noautocmd = false,
+          noswapfile = false,
+          sandbox = false,
+          silent = false,
+          vertical = false,
+          split = "",
+          tab = 0,
+          verbose = -1
+        }
+      }, meths.parse_cmd('1,3delete * 5', {}))
     end)
     it('works with bang', function()
       eq({
         cmd = 'write',
         args = {},
         bang = true,
-        line1 = 1,
-        line2 = 1,
+        range = {},
+        count = -1,
+        reg = '',
         addr = 'line',
         magic = {
             file = true,
@@ -3200,7 +3313,7 @@ describe('API', function()
           vertical = false,
           split = "",
           tab = 0,
-          verbose = 0
+          verbose = -1
         },
       }, meths.parse_cmd('w!', {}))
     end)
@@ -3209,8 +3322,9 @@ describe('API', function()
         cmd = 'split',
         args = { 'foo.txt' },
         bang = false,
-        line1 = 1,
-        line2 = 1,
+        range = {},
+        count = -1,
+        reg = '',
         addr = '?',
         magic = {
             file = true,
@@ -3245,8 +3359,9 @@ describe('API', function()
         cmd = 'MyCommand',
         args = { 'test', 'it' },
         bang = true,
-        line1 = 4,
-        line2 = 6,
+        range = { 4, 6 },
+        count = -1,
+        reg = '',
         addr = 'line',
         magic = {
             file = false,
@@ -3271,7 +3386,7 @@ describe('API', function()
           vertical = false,
           split = "",
           tab = 0,
-          verbose = 0
+          verbose = -1
         }
       }, meths.parse_cmd('4,6MyCommand! test it', {}))
     end)
@@ -3280,8 +3395,9 @@ describe('API', function()
         cmd = 'argadd',
         args = { 'a.txt' },
         bang = false,
-        line1 = 0,
-        line2 = 0,
+        range = {},
+        count = -1,
+        reg = '',
         addr = 'arg',
         magic = {
             file = true,
@@ -3306,7 +3422,7 @@ describe('API', function()
           vertical = false,
           split = "",
           tab = 0,
-          verbose = 0
+          verbose = -1
         }
       }, meths.parse_cmd('argadd a.txt | argadd b.txt', {}))
     end)
@@ -3316,8 +3432,9 @@ describe('API', function()
         cmd = 'MyCommand',
         args = { 'test it' },
         bang = false,
-        line1 = 1,
-        line2 = 1,
+        range = {},
+        count = -1,
+        reg = '',
         addr = 'none',
         magic = {
             file = false,
@@ -3342,52 +3459,165 @@ describe('API', function()
           vertical = false,
           split = "",
           tab = 0,
-          verbose = 0
+          verbose = -1
         }
       }, meths.parse_cmd('MyCommand test it', {}))
     end)
-    it('sets correct default range', function()
-      command('command -range=% -addr=buffers MyCommand echo foo')
-      command('new')
-      eq({
-        cmd = 'MyCommand',
-        args = {},
-        bang = false,
-        line1 = 1,
-        line2 = 2,
-        addr = 'buf',
-        magic = {
-            file = false,
-            bar = false
-        },
-        nargs = '0',
-        nextcmd = '',
-        mods = {
-          browse = false,
-          confirm = false,
-          emsg_silent = false,
-          hide = false,
-          keepalt = false,
-          keepjumps = false,
-          keepmarks = false,
-          keeppatterns = false,
-          lockmarks = false,
-          noautocmd = false,
-          noswapfile = false,
-          sandbox = false,
-          silent = false,
-          vertical = false,
-          split = "",
-          tab = 0,
-          verbose = 0
-        }
-      }, meths.parse_cmd('MyCommand', {}))
-    end)
     it('errors for invalid command', function()
-      eq('Error while parsing command line', pcall_err(meths.parse_cmd, 'Fubar', {}))
+      eq('Error while parsing command line', pcall_err(meths.parse_cmd, '', {}))
+      eq('Error while parsing command line', pcall_err(meths.parse_cmd, '" foo', {}))
+      eq('Error while parsing command line: E492: Not an editor command: Fubar',
+         pcall_err(meths.parse_cmd, 'Fubar', {}))
       command('command! Fubar echo foo')
-      eq('Error while parsing command line', pcall_err(meths.parse_cmd, 'Fubar!', {}))
-      eq('Error while parsing command line', pcall_err(meths.parse_cmd, '4,6Fubar', {}))
+      eq('Error while parsing command line: E477: No ! allowed',
+         pcall_err(meths.parse_cmd, 'Fubar!', {}))
+      eq('Error while parsing command line: E481: No range allowed',
+         pcall_err(meths.parse_cmd, '4,6Fubar', {}))
+    end)
+  end)
+  describe('nvim_cmd', function()
+    it('works', function ()
+      meths.cmd({ cmd = "set", args = { "cursorline" } }, {})
+      eq(true, meths.get_option_value("cursorline", {}))
+    end)
+    it('captures output', function()
+      eq("foo", meths.cmd({ cmd = "echo", args = { '"foo"' } }, { output = true }))
+    end)
+    it('sets correct script context', function()
+      meths.cmd({ cmd = "set", args = { "cursorline" } }, {})
+      local str = meths.exec([[verbose set cursorline?]], true)
+      neq(nil, str:find("cursorline\n\tLast set from API client %(channel id %d+%)"))
+    end)
+    it('works with range', function()
+      insert [[
+        line1
+        line2
+        line3
+        line4
+        you didn't expect this
+        line5
+        line6
+      ]]
+      meths.cmd({ cmd = "del", range = {2, 4} }, {})
+      expect [[
+        line1
+        you didn't expect this
+        line5
+        line6
+      ]]
+    end)
+    it('works with count', function()
+      insert [[
+        line1
+        line2
+        line3
+        line4
+        you didn't expect this
+        line5
+        line6
+      ]]
+      meths.cmd({ cmd = "del", range = { 2 }, count = 4 }, {})
+      expect [[
+        line1
+        line5
+        line6
+      ]]
+    end)
+    it('works with register', function()
+      insert [[
+        line1
+        line2
+        line3
+        line4
+        you didn't expect this
+        line5
+        line6
+      ]]
+      meths.cmd({ cmd = "del", range = { 2, 4 }, reg = 'a' }, {})
+      meths.exec("1put a", false)
+      expect [[
+        line1
+        line2
+        line3
+        line4
+        you didn't expect this
+        line5
+        line6
+      ]]
+    end)
+    it('works with bang', function ()
+      meths.create_user_command("Foo", 'echo "<bang>"', { bang = true })
+      eq("!", meths.cmd({ cmd = "Foo", bang = true }, { output = true }))
+      eq("", meths.cmd({ cmd = "Foo", bang = false }, { output = true }))
+    end)
+    it('works with modifiers', function()
+      meths.create_user_command("Foo", 'set verbose', {})
+      eq("  verbose=1", meths.cmd({ cmd = "Foo", mods = { verbose = 1 } }, { output = true }))
+      eq(0, meths.get_option_value("verbose", {}))
+    end)
+    it('works with magic.file', function()
+      exec_lua([[
+        vim.api.nvim_create_user_command("Foo", function(opts)
+          vim.api.nvim_echo({{ opts.fargs[1] }}, false, {})
+        end, { nargs = 1 })
+      ]])
+      eq(lfs.currentdir(),
+         meths.cmd({ cmd = "Foo", args = { '%:p:h' }, magic = { file = true } },
+                   { output = true }))
+    end)
+    it('splits arguments correctly', function()
+      meths.exec([[
+        function! FooFunc(...)
+          echo a:000
+        endfunction
+      ]], false)
+      meths.create_user_command("Foo", "call FooFunc(<f-args>)", { nargs = '+' })
+      eq([=[['a quick', 'brown fox', 'jumps over the', 'lazy dog']]=],
+         meths.cmd({ cmd = "Foo", args = { "a quick", "brown fox", "jumps over the", "lazy dog"}},
+                   { output = true }))
+      eq([=[['test \ \\ \"""\', 'more\ tests\"  ']]=],
+         meths.cmd({ cmd = "Foo", args = { [[test \ \\ \"""\]], [[more\ tests\"  ]] } },
+                   { output = true }))
+    end)
+    it('splits arguments correctly for Lua callback', function()
+      meths.exec_lua([[
+        local function FooFunc(opts)
+          vim.pretty_print(opts.fargs)
+        end
+
+        vim.api.nvim_create_user_command("Foo", FooFunc, { nargs = '+' })
+      ]], {})
+      eq([[{ "a quick", "brown fox", "jumps over the", "lazy dog" }]],
+         meths.cmd({ cmd = "Foo", args = { "a quick", "brown fox", "jumps over the", "lazy dog"}},
+                   { output = true }))
+      eq([[{ 'test \\ \\\\ \\"""\\', 'more\\ tests\\"  ' }]],
+         meths.cmd({ cmd = "Foo", args = { [[test \ \\ \"""\]], [[more\ tests\"  ]] } },
+                   { output = true }))
+    end)
+    it('works with buffer names', function()
+      command("edit foo.txt | edit bar.txt")
+      meths.cmd({ cmd = "buffer", args = { "foo.txt" } }, {})
+      eq("foo.txt", funcs.fnamemodify(meths.buf_get_name(0), ":t"))
+      meths.cmd({ cmd = "buffer", args = { "bar.txt" } }, {})
+      eq("bar.txt", funcs.fnamemodify(meths.buf_get_name(0), ":t"))
+    end)
+    it('triggers CmdUndefined event if command is not found', function()
+      meths.exec_lua([[
+        vim.api.nvim_create_autocmd("CmdUndefined",
+                                    { pattern = "Foo",
+                                      callback = function()
+                                        vim.api.nvim_create_user_command("Foo", "echo 'foo'", {})
+                                      end
+                                    })
+      ]], {})
+      eq("foo", meths.cmd({ cmd = "Foo" }, { output = true }))
+    end)
+    it('errors if command is not implemented', function()
+      eq("Command not implemented: popup", pcall_err(meths.cmd, { cmd = "popup" }, {}))
+    end)
+    it('works with empty arguments list', function()
+      meths.cmd({ cmd = "update" }, {})
+      meths.cmd({ cmd = "buffer", count = 0 }, {})
     end)
   end)
 end)

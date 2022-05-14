@@ -13,7 +13,7 @@
 #include "nvim/ex_cmds2.h"
 #include "nvim/fileio.h"
 #include "nvim/getchar.h"
-#include "nvim/keymap.h"
+#include "nvim/keycodes.h"
 #include "nvim/main.h"
 #include "nvim/mbyte.h"
 #include "nvim/memory.h"
@@ -81,7 +81,7 @@ void input_stop(void)
 
 static void cursorhold_event(void **argv)
 {
-  event_T event = State & INSERT ? EVENT_CURSORHOLDI : EVENT_CURSORHOLD;
+  event_T event = State & MODE_INSERT ? EVENT_CURSORHOLDI : EVENT_CURSORHOLD;
   apply_autocmds(event, NULL, NULL, false, curbuf);
   did_cursorhold = true;
 }
@@ -247,7 +247,7 @@ size_t input_enqueue(String keys)
     uint8_t buf[19] = { 0 };
     // Do not simplify the keys here. Simplification will be done later.
     unsigned int new_size
-      = trans_special((const uint8_t **)&ptr, (size_t)(end - ptr), buf, FSK_KEYCODE, NULL);
+      = trans_special((const uint8_t **)&ptr, (size_t)(end - ptr), buf, FSK_KEYCODE, true, NULL);
 
     if (new_size) {
       new_size = handle_mouse_event(&ptr, buf, new_size);

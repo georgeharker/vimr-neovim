@@ -56,7 +56,7 @@
 #include "nvim/getchar.h"
 #include "nvim/highlight.h"
 #include "nvim/highlight_group.h"
-#include "nvim/keymap.h"
+#include "nvim/keycodes.h"
 #include "nvim/log.h"
 #include "nvim/macros.h"
 #include "nvim/main.h"
@@ -179,6 +179,13 @@ static void term_output_callback(const char *s, size_t len, void *user_data)
 
 // public API {{{
 
+/// Initializes terminal properties, and triggers TermOpen.
+///
+/// The PTY process (TerminalOptions.data) was already started by termopen(),
+/// via ex_terminal() or the term:// BufReadCmd.
+///
+/// @param buf Buffer used for presentation of the terminal.
+/// @param opts PTY process channel, various terminal properties and callbacks.
 Terminal *terminal_open(buf_T *buf, TerminalOptions opts)
 {
   // Create a new terminal instance and configure it
@@ -374,6 +381,7 @@ void terminal_check_size(Terminal *term)
   invalidate_terminal(term, -1, -1);
 }
 
+/// Implements MODE_TERMINAL state. :help Terminal-mode
 void terminal_enter(void)
 {
   buf_T *buf = curbuf;
@@ -390,13 +398,13 @@ void terminal_enter(void)
 
   int save_state = State;
   s->save_rd = RedrawingDisabled;
-  State = TERM_FOCUS;
-  mapped_ctrl_c |= TERM_FOCUS;  // Always map CTRL-C to avoid interrupt.
+  State = MODE_TERMINAL;
+  mapped_ctrl_c |= MODE_TERMINAL;  // Always map CTRL-C to avoid interrupt.
   RedrawingDisabled = false;
 
   // Disable these options in terminal-mode. They are nonsense because cursor is
   // placed at end of buffer to "follow" output. #11072
-  win_T *save_curwin = curwin;
+  handle_T save_curwin = curwin->handle;
   bool save_w_p_cul = curwin->w_p_cul;
   char_u *save_w_p_culopt = NULL;
   char_u save_w_p_culopt_flags = curwin->w_p_culopt_flags;
@@ -436,7 +444,7 @@ void terminal_enter(void)
   RedrawingDisabled = s->save_rd;
   apply_autocmds(EVENT_TERMLEAVE, NULL, NULL, false, curbuf);
 
-  if (save_curwin == curwin) {  // save_curwin may be invalid (window closed)!
+  if (save_curwin == curwin->handle) {  // Else: window was closed.
     curwin->w_p_cul = save_w_p_cul;
     if (save_w_p_culopt) {
       xfree(curwin->w_p_culopt);
@@ -506,6 +514,7 @@ static int terminal_check(VimState *state)
   return 1;
 }
 
+/// Processes one char of terminal-mode input.
 static int terminal_execute(VimState *state, int key)
 {
   TerminalState *s = (TerminalState *)state;
@@ -668,8 +677,8 @@ void terminal_paste(long count, char_u **y_array, size_t y_size)
       char_u *dst = buff;
       char_u *src = y_array[j];
       while (*src != '\0') {
-        len = (size_t)utf_ptr2len(src);
-        int c = utf_ptr2char(src);
+        len = (size_t)utf_ptr2len((char *)src);
+        int c = utf_ptr2char((char *)src);
         if (!is_filter_char(c)) {
           memcpy(dst, src, len);
           dst += len;
@@ -1372,8 +1381,7 @@ static void fetch_row(Terminal *term, int row, int end_col)
     int cell_len = 0;
     if (cell.chars[0]) {
       for (int i = 0; cell.chars[i]; i++) {
-        cell_len += utf_char2bytes((int)cell.chars[i],
-                                   (uint8_t *)ptr + cell_len);
+        cell_len += utf_char2bytes((int)cell.chars[i], ptr + cell_len);
       }
     } else {
       *ptr = ' ';
@@ -1452,7 +1460,8 @@ static void refresh_terminal(Terminal *term)
   long ml_added = buf->b_ml.ml_line_count - ml_before;
   adjust_topline(term, buf, ml_added);
 }
-// Calls refresh_terminal() on all invalidated_terminals.
+
+/// Calls refresh_terminal() on all invalidated_terminals.
 static void refresh_timer_cb(TimeWatcher *watcher, void *data)
 {
   refresh_pending = false;
@@ -1527,7 +1536,7 @@ static void refresh_scrollback(Terminal *term, buf_T *buf)
   int row_offset = term->sb_pending;
   while (term->sb_pending > 0 && buf->b_ml.ml_line_count < height) {
     fetch_row(term, term->sb_pending - row_offset - 1, width);
-    ml_append(0, (uint8_t *)term->textbuf, 0, false);
+    ml_append(0, term->textbuf, 0, false);
     appended_lines(0, 1);
     term->sb_pending--;
   }
@@ -1545,7 +1554,7 @@ static void refresh_scrollback(Terminal *term, buf_T *buf)
     }
     fetch_row(term, -term->sb_pending - row_offset, width);
     int buf_index = (int)buf->b_ml.ml_line_count - height;
-    ml_append(buf_index, (uint8_t *)term->textbuf, 0, false);
+    ml_append(buf_index, term->textbuf, 0, false);
     appended_lines(buf_index, 1);
     term->sb_pending--;
   }
@@ -1585,10 +1594,10 @@ static void refresh_screen(Terminal *term, buf_T *buf)
     fetch_row(term, r, width);
 
     if (linenr <= buf->b_ml.ml_line_count) {
-      ml_replace(linenr, (uint8_t *)term->textbuf, true);
+      ml_replace(linenr, term->textbuf, true);
       changed++;
     } else {
-      ml_append(linenr - 1, (uint8_t *)term->textbuf, 0, false);
+      ml_append(linenr - 1, term->textbuf, 0, false);
       added++;
     }
   }
@@ -1632,7 +1641,7 @@ static int linenr_to_row(Terminal *term, int linenr)
 
 static bool is_focused(Terminal *term)
 {
-  return State & TERM_FOCUS && curbuf->terminal == term;
+  return State & MODE_TERMINAL && curbuf->terminal == term;
 }
 
 static char *get_config_string(char *key)

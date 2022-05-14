@@ -2636,10 +2636,8 @@ describe('LSP', function()
         name = "prepare_rename_error",
         expected_handlers = {
           {NIL, {}, {method="shutdown", client_id=1}};
-          {NIL, NIL, {method="textDocument/rename", client_id=1, bufnr=1}};
           {NIL, {}, {method="start", client_id=1}};
         },
-        expected_text = "two", -- see test case
       },
     }) do
     it(test.it, function()
@@ -2755,12 +2753,33 @@ describe('LSP', function()
                 vim.lsp.commands['executed_preferred'] = function()
                 end
               end
+              vim.lsp.commands['quickfix_command'] = function(cmd)
+                vim.lsp.commands['executed_quickfix'] = function()
+                end
+              end
               local bufnr = vim.api.nvim_get_current_buf()
               vim.lsp.buf_attach_client(bufnr, TEST_RPC_CLIENT_ID)
               vim.lsp.buf.code_action({ filter = function(a) return a.isPreferred end, apply = true, })
+              vim.lsp.buf.code_action({
+                  -- expect to be returned actions 'quickfix' and 'quickfix.foo'
+                  context = { only = {'quickfix'}, },
+                  apply = true,
+                  filter = function(a)
+                      if a.kind == 'quickfix.foo' then
+                        vim.lsp.commands['filtered_quickfix_foo'] = function() end
+                        return false
+                      elseif a.kind == 'quickfix' then
+                        return true
+                      else
+                        assert(nil, 'unreachable')
+                      end
+                  end,
+              })
             ]])
           elseif ctx.method == 'shutdown' then
             eq('function', exec_lua[[return type(vim.lsp.commands['executed_preferred'])]])
+            eq('function', exec_lua[[return type(vim.lsp.commands['filtered_quickfix_foo'])]])
+            eq('function', exec_lua[[return type(vim.lsp.commands['executed_quickfix'])]])
             client.stop()
           end
         end
@@ -2827,6 +2846,85 @@ describe('LSP', function()
               return cmd_called
             ]], fake_uri)
          eq({ command = 'Dummy', title = 'Lens1' }, cmd)
+         elseif ctx.method == 'shutdown' then
+           client.stop()
+          end
+        end
+      }
+    end)
+
+    it('releases buffer refresh lock', function()
+      local client
+      local expected_handlers = {
+        {NIL, {}, {method="shutdown", client_id=1}};
+        {NIL, {}, {method="start", client_id=1}};
+      }
+      test_rpc_server {
+        test_name = 'codelens_refresh_lock',
+        on_init = function(client_)
+          client = client_
+        end,
+        on_setup = function()
+          exec_lua([=[
+              local bufnr = vim.api.nvim_get_current_buf()
+              vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {'One line'})
+              vim.lsp.buf_attach_client(bufnr, TEST_RPC_CLIENT_ID)
+
+              CALLED = false
+              RESPONSE = nil
+              local on_codelens = vim.lsp.codelens.on_codelens
+              vim.lsp.codelens.on_codelens = function (err, result, ...)
+                CALLED = true
+                RESPONSE = { err = err, result = result }
+                return on_codelens(err, result, ...)
+              end
+            ]=])
+        end,
+        on_exit = function(code, signal)
+          eq(0, code, "exit code", fake_lsp_logfile)
+          eq(0, signal, "exit signal", fake_lsp_logfile)
+        end,
+        on_handler = function(err, result, ctx)
+          eq(table.remove(expected_handlers), {err, result, ctx})
+          if ctx.method == 'start' then
+            -- 1. first codelens request errors
+            local response = exec_lua([=[
+              CALLED = false
+              vim.lsp.codelens.refresh()
+              vim.wait(100, function () return CALLED end)
+              return RESPONSE
+            ]=])
+            eq( { err = { code = -32002, message = "ServerNotInitialized" } }, response)
+
+            -- 2. second codelens request runs
+            response = exec_lua([=[
+              CALLED = false
+              local cmd_called = nil
+              vim.lsp.commands["Dummy"] = function (command)
+                cmd_called = command
+              end
+              vim.lsp.codelens.refresh()
+              vim.wait(100, function () return CALLED end)
+              vim.lsp.codelens.run()
+              vim.wait(100, function () return cmd_called end)
+              return cmd_called
+            ]=])
+            eq( { command = "Dummy", title = "Lens1" }, response)
+
+            -- 3. third codelens request runs
+            response = exec_lua([=[
+              CALLED = false
+              local cmd_called = nil
+              vim.lsp.commands["Dummy"] = function (command)
+                cmd_called = command
+              end
+              vim.lsp.codelens.refresh()
+              vim.wait(100, function () return CALLED end)
+              vim.lsp.codelens.run()
+              vim.wait(100, function () return cmd_called end)
+              return cmd_called
+            ]=])
+            eq( { command = "Dummy", title = "Lens2" }, response)
          elseif ctx.method == 'shutdown' then
            client.stop()
           end

@@ -98,7 +98,7 @@ char_u *vim_strsave_escaped_ext(const char_u *string, const char_u *esc_chars, c
    */
   size_t length = 1;                    // count the trailing NUL
   for (const char_u *p = string; *p; p++) {
-    const size_t l = (size_t)(utfc_ptr2len(p));
+    const size_t l = (size_t)(utfc_ptr2len((char *)p));
     if (l > 1) {
       length += l;                      // count a multibyte char
       p += l - 1;
@@ -113,7 +113,7 @@ char_u *vim_strsave_escaped_ext(const char_u *string, const char_u *esc_chars, c
   char_u *escaped_string = xmalloc(length);
   char_u *p2 = escaped_string;
   for (const char_u *p = string; *p; p++) {
-    const size_t l = (size_t)(utfc_ptr2len(p));
+    const size_t l = (size_t)(utfc_ptr2len((char *)p));
     if (l > 1) {
       memcpy(p2, p, l);
       p2 += l;
@@ -357,8 +357,8 @@ char *strcase_save(const char *const orig, bool upper)
 
   char *p = res;
   while (*p != NUL) {
-    int c = utf_ptr2char((const char_u *)p);
-    int l = utf_ptr2len((const char_u *)p);
+    int c = utf_ptr2char(p);
+    int l = utf_ptr2len(p);
     if (c == 0) {
       // overlong sequence, use only the first byte
       c = (char_u)(*p);
@@ -379,7 +379,7 @@ char *strcase_save(const char *const orig, bool upper)
       res = s;
     }
 
-    utf_char2bytes(uc, (char_u *)p);
+    utf_char2bytes(uc, p);
     p += newl;
   }
 
@@ -408,7 +408,7 @@ size_t xstrnlen(const char *s, size_t n)
   if (end == NULL) {
     return n;
   }
-  return end - s;
+  return (size_t)(end - s);
 }
 #endif
 
@@ -482,7 +482,7 @@ char_u *vim_strchr(const char_u *const string, const int c)
     return (char_u *)strchr((const char *)string, c);
   } else {
     char u8char[MB_MAXBYTES + 1];
-    const int len = utf_char2bytes(c, (char_u *)u8char);
+    const int len = utf_char2bytes(c, u8char);
     u8char[len] = NUL;
     return (char_u *)strstr((const char *)string, u8char);
   }
@@ -1011,8 +1011,8 @@ int vim_vsnprintf_typval(char *str, size_t str_m, const char *fmt, va_list ap, t
             char_u *p1;
             size_t i;
 
-            for (i = 0, p1 = (char_u *)str_arg; *p1; p1 += utfc_ptr2len(p1)) {
-              size_t cell = (size_t)utf_ptr2cells(p1);
+            for (i = 0, p1 = (char_u *)str_arg; *p1; p1 += utfc_ptr2len((char *)p1)) {
+              size_t cell = (size_t)utf_ptr2cells((char *)p1);
               if (precision_specified && i + cell > precision) {
                 break;
               }
@@ -1479,4 +1479,33 @@ int vim_vsnprintf_typval(char *str, size_t str_m, const char *fmt, va_list ap, t
   // character); that is, the number of characters that would have been
   // written to the buffer if it were large enough.
   return (int)str_l;
+}
+
+int kv_do_printf(StringBuilder *str, const char *fmt, ...)
+  FUNC_ATTR_PRINTF(2, 3)
+{
+  size_t remaining = str->capacity - str->size;
+
+  va_list ap;
+  va_start(ap, fmt);
+  int printed = vsnprintf(str->items ? str->items + str->size : NULL, remaining, fmt, ap);
+  va_end(ap);
+
+  if (printed < 0) {
+    return -1;
+  }
+
+  // printed string didn't fit, resize and try again
+  if ((size_t)printed >= remaining) {
+    kv_ensure_space(*str, (size_t)printed + 1);  // include space for NUL terminator at the end
+    va_start(ap, fmt);
+    printed = vsnprintf(str->items + str->size, str->capacity - str->size, fmt, ap);
+    va_end(ap);
+    if (printed < 0) {
+      return -1;
+    }
+  }
+
+  str->size += (size_t)printed;
+  return printed;
 }

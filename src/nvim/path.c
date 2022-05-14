@@ -92,15 +92,15 @@ FileComparison path_full_compare(char_u *const s1, char_u *const s2, const bool 
 ///
 /// @return pointer just past the last path separator (empty string, if fname
 ///         ends in a slash), or empty string if fname is NULL.
-char_u *path_tail(const char_u *fname)
+char *path_tail(const char *fname)
   FUNC_ATTR_NONNULL_RET
 {
   if (fname == NULL) {
-    return (char_u *)"";
+    return "";
   }
 
-  const char_u *tail = get_past_head(fname);
-  const char_u *p = tail;
+  const char *tail = (char *)get_past_head((char_u *)fname);
+  const char *p = tail;
   // Find last part of path.
   while (*p != NUL) {
     if (vim_ispathsep_nocolon(*p)) {
@@ -108,7 +108,7 @@ char_u *path_tail(const char_u *fname)
     }
     MB_PTR_ADV(p);
   }
-  return (char_u *)tail;
+  return (char *)tail;
 }
 
 /// Get pointer to tail of "fname", including path separators.
@@ -126,7 +126,7 @@ char_u *path_tail_with_sep(char_u *fname)
 
   // Don't remove the '/' from "c:/file".
   char_u *past_head = get_past_head(fname);
-  char_u *tail = path_tail(fname);
+  char_u *tail = (char_u *)path_tail((char *)fname);
   while (tail > past_head && after_pathsep((char *)fname, (char *)tail)) {
     tail--;
   }
@@ -275,7 +275,7 @@ int vim_ispathlistsep(int c)
 /// It's done in-place.
 void shorten_dir_len(char_u *str, int trim_len)
 {
-  char_u *tail = path_tail(str);
+  char_u *tail = (char_u *)path_tail((char *)str);
   char_u *d = str;
   bool skip = false;
   int dirchunk_len = 0;
@@ -299,7 +299,7 @@ void shorten_dir_len(char_u *str, int trim_len)
           skip = true;
         }
       }
-      int l = utfc_ptr2len(s);
+      int l = utfc_ptr2len((char *)s);
       while (--l > 0) {
         *d++ = *++s;
       }
@@ -503,7 +503,7 @@ char *save_abs_path(const char *name)
   if (!path_is_absolute((char_u *)name)) {
     return FullName_save(name, true);
   }
-  return (char *)vim_strsave((char_u *)name);
+  return xstrdup(name);
 }
 
 /// Checks if a path has a wildcard character including '~', unless at the end.
@@ -642,12 +642,12 @@ static size_t do_path_expand(garray_T *gap, const char_u *path, size_t wildoff, 
     } else if (path_end >= path + wildoff
                && (vim_strchr((char_u *)"*?[{~$", *path_end) != NULL
 #ifndef WIN32
-                   || (!p_fic && (flags & EW_ICASE) && mb_isalpha(utf_ptr2char(path_end)))
+                   || (!p_fic && (flags & EW_ICASE) && mb_isalpha(utf_ptr2char((char *)path_end)))
 #endif
                    )) {
       e = p;
     }
-    len = (size_t)(utfc_ptr2len(path_end));
+    len = (size_t)(utfc_ptr2len((char *)path_end));
     memcpy(p, path_end, len);
     p += len;
     path_end += len;
@@ -849,7 +849,7 @@ static void expand_path_option(char_u *curdir, garray_T *gap)
       if (curbuf->b_ffname == NULL) {
         continue;
       }
-      char_u *p = path_tail(curbuf->b_ffname);
+      char_u *p = (char_u *)path_tail((char *)curbuf->b_ffname);
       size_t len = (size_t)(p - curbuf->b_ffname);
       if (len + STRLEN(buf) >= MAXPATHL) {
         continue;
@@ -1375,17 +1375,18 @@ static int vim_backtick(char_u *p)
 /// @param flags  EW_* flags
 static int expand_backtick(garray_T *gap, char_u *pat, int flags)
 {
-  char_u *p;
-  char_u *buffer;
+  char *p;
+  char *buffer;
   int cnt = 0;
 
   // Create the command: lop off the backticks.
-  char_u *cmd = vim_strnsave(pat + 1, STRLEN(pat) - 2);
+  char *cmd = (char *)vim_strnsave(pat + 1, STRLEN(pat) - 2);
 
   if (*cmd == '=') {          // `={expr}`: Expand expression
     buffer = eval_to_string(cmd + 1, &p, true);
   } else {
-    buffer = get_cmd_output(cmd, NULL, (flags & EW_SILENT) ? kShellOptSilent : 0, NULL);
+    buffer = (char *)get_cmd_output((char_u *)cmd, NULL, (flags & EW_SILENT) ? kShellOptSilent : 0,
+                                    NULL);
   }
   xfree(cmd);
   if (buffer == NULL) {
@@ -1401,9 +1402,9 @@ static int expand_backtick(garray_T *gap, char_u *pat, int flags)
     }
     // add an entry if it is not empty
     if (p > cmd) {
-      char_u i = *p;
+      char i = *p;
       *p = NUL;
-      addfile(gap, cmd, flags);
+      addfile(gap, (char_u *)cmd, flags);
       *p = i;
       ++cnt;
     }
@@ -1678,8 +1679,8 @@ void simplify_filename(char_u *filename)
 static char *eval_includeexpr(const char *const ptr, const size_t len)
 {
   set_vim_var_string(VV_FNAME, ptr, (ptrdiff_t)len);
-  char *res = (char *)eval_to_string_safe(curbuf->b_p_inex, NULL,
-                                          was_set_insecurely(curwin, "includeexpr", OPT_LOCAL));
+  char *res = eval_to_string_safe((char *)curbuf->b_p_inex, NULL,
+                                  was_set_insecurely(curwin, "includeexpr", OPT_LOCAL));
   set_vim_var_string(VV_FNAME, NULL, 0);
   return res;
 }
@@ -1980,8 +1981,8 @@ int pathcmp(const char *p, const char *q, int maxlen)
   const char *s = NULL;
 
   for (i = 0, j = 0; maxlen < 0 || (i < maxlen && j < maxlen);) {
-    c1 = utf_ptr2char((char_u *)p + i);
-    c2 = utf_ptr2char((char_u *)q + j);
+    c1 = utf_ptr2char(p + i);
+    c2 = utf_ptr2char(q + j);
 
     // End of "p": check if "q" also ends or just has a slash.
     if (c1 == NUL) {
@@ -2016,15 +2017,15 @@ int pathcmp(const char *p, const char *q, int maxlen)
                    : c1 - c2;  // no match
     }
 
-    i += utfc_ptr2len((char_u *)p + i);
-    j += utfc_ptr2len((char_u *)q + j);
+    i += utfc_ptr2len(p + i);
+    j += utfc_ptr2len(q + j);
   }
   if (s == NULL) {  // "i" or "j" ran into "maxlen"
     return 0;
   }
 
-  c1 = utf_ptr2char((char_u *)s + i);
-  c2 = utf_ptr2char((char_u *)s + i + utfc_ptr2len((char_u *)s + i));
+  c1 = utf_ptr2char(s + i);
+  c2 = utf_ptr2char(s + i + utfc_ptr2len(s + i));
   // ignore a trailing slash, but not "//" or ":/"
   if (c2 == NUL
       && i > 0
@@ -2244,7 +2245,7 @@ int match_suffix(char_u *fname)
   for (char_u *setsuf = p_su; *setsuf;) {
     setsuflen = copy_option_part(&setsuf, suf_buf, MAXSUFLEN, ".,");
     if (setsuflen == 0) {
-      char_u *tail = path_tail(fname);
+      char_u *tail = (char_u *)path_tail((char *)fname);
 
       // empty entry: match name without a '.'
       if (vim_strchr(tail, '.') == NULL) {

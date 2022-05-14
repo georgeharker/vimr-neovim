@@ -95,11 +95,11 @@ Array mode_style_array(void)
 /// @returns error message for an illegal option, NULL otherwise.
 char *parse_shape_opt(int what)
 {
-  char_u *colonp;
-  char_u *commap;
-  char_u *slashp;
-  char_u *p = NULL;
-  char_u *endp;
+  char *colonp;
+  char *commap;
+  char *slashp;
+  char *p = NULL;
+  char *endp;
   int idx = 0;                          // init for GCC
   int all_idx;
   int len;
@@ -119,10 +119,10 @@ char *parse_shape_opt(int what)
       }
     }
     // Repeat for all comma separated parts.
-    char_u *modep = p_guicursor;
+    char *modep = (char *)p_guicursor;
     while (modep != NULL && *modep != NUL) {
-      colonp = vim_strchr(modep, ':');
-      commap = vim_strchr(modep, ',');
+      colonp = (char *)vim_strchr((char_u *)modep, ':');
+      commap = (char *)vim_strchr((char_u *)modep, ',');
 
       if (colonp == NULL || (commap != NULL && commap < colonp)) {
         return N_("E545: Missing colon");
@@ -170,7 +170,7 @@ char *parse_shape_opt(int what)
         for (p = colonp + 1; *p && *p != ',';) {
           {
             // First handle the ones with a number argument.
-            i = *p;
+            i = (uint8_t)(*p);
             len = 0;
             if (STRNICMP(p, "ver", 3) == 0) {
               len = 3;
@@ -188,7 +188,7 @@ char *parse_shape_opt(int what)
               if (!ascii_isdigit(*p)) {
                 return N_("E548: digit expected");
               }
-              int n = getdigits_int(&p, false, 0);
+              int n = getdigits_int((char_u **)&p, false, 0);
               if (len == 3) {               // "ver" or "hor"
                 if (n == 0) {
                   return N_("E549: Illegal percentage");
@@ -216,7 +216,7 @@ char *parse_shape_opt(int what)
               }
               p += 5;
             } else {          // must be a highlight group name then
-              endp = vim_strchr(p, '-');
+              endp = (char *)vim_strchr((char_u *)p, '-');
               if (commap == NULL) {                       // last part
                 if (endp == NULL) {
                   endp = p + STRLEN(p);                  // find end of part
@@ -224,14 +224,14 @@ char *parse_shape_opt(int what)
               } else if (endp > commap || endp == NULL) {
                 endp = commap;
               }
-              slashp = vim_strchr(p, '/');
+              slashp = (char *)vim_strchr((char_u *)p, '/');
               if (slashp != NULL && slashp < endp) {
                 // "group/langmap_group"
-                i = syn_check_group((char *)p, (size_t)(slashp - p));
+                i = syn_check_group(p, (size_t)(slashp - p));
                 p = slashp + 1;
               }
               if (round == 2) {
-                shape_table[idx].id = syn_check_group((char *)p, (size_t)(endp - p));
+                shape_table[idx].id = syn_check_group(p, (size_t)(endp - p));
                 shape_table[idx].id_lm = shape_table[idx].id;
                 if (slashp != NULL && slashp < endp) {
                   shape_table[idx].id = i;
@@ -321,15 +321,15 @@ bool cursor_mode_uses_syn_id(int syn_id)
 int cursor_get_mode_idx(void)
   FUNC_ATTR_PURE
 {
-  if (State == SHOWMATCH) {
+  if (State == MODE_SHOWMATCH) {
     return SHAPE_IDX_SM;
   } else if (State & VREPLACE_FLAG) {
     return SHAPE_IDX_R;
   } else if (State & REPLACE_FLAG) {
     return SHAPE_IDX_R;
-  } else if (State & INSERT) {
+  } else if (State & MODE_INSERT) {
     return SHAPE_IDX_I;
-  } else if (State & CMDLINE) {
+  } else if (State & MODE_CMDLINE) {
     if (cmdline_at_end()) {
       return SHAPE_IDX_C;
     } else if (cmdline_overstrike()) {

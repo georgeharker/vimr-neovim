@@ -569,8 +569,8 @@ static void prt_header(prt_settings_T *const psettings, const int pagenum, const
     printer_page_num = pagenum;
 
     use_sandbox = was_set_insecurely(curwin, "printheader", 0);
-    build_stl_str_hl(curwin, tbuf, (size_t)width + IOSIZE,
-                     p_header, use_sandbox,
+    build_stl_str_hl(curwin, (char *)tbuf, (size_t)width + IOSIZE,
+                     (char *)p_header, use_sandbox,
                      ' ', width, NULL, NULL);
 
     // Reset line numbers
@@ -589,7 +589,7 @@ static void prt_header(prt_settings_T *const psettings, const int pagenum, const
   int page_line = 0 - prt_header_height();
   mch_print_start_line(true, page_line);
   for (char_u *p = tbuf; *p != NUL;) {
-    const int l = utfc_ptr2len(p);
+    const int l = utfc_ptr2len((char *)p);
     assert(l >= 0);
     if (mch_print_text_out(p, (size_t)l)) {
       page_line++;
@@ -641,15 +641,15 @@ void ex_hardcopy(exarg_T *eap)
     char *errormsg = NULL;
 
     // Expand things like "%.ps".
-    if (expand_filename(eap, eap->cmdlinep, &errormsg) == FAIL) {
+    if (expand_filename(eap, (char_u **)eap->cmdlinep, &errormsg) == FAIL) {
       if (errormsg != NULL) {
         emsg(errormsg);
       }
       return;
     }
-    settings.outfile = skipwhite(eap->arg + 1);
+    settings.outfile = (char_u *)skipwhite(eap->arg + 1);
   } else if (*eap->arg != NUL) {
-    settings.arguments = eap->arg;
+    settings.arguments = (char_u *)eap->arg;
   }
 
   /*
@@ -698,7 +698,7 @@ void ex_hardcopy(exarg_T *eap)
    * Estimate the total lines to be printed
    */
   for (lnum = eap->line1; lnum <= eap->line2; lnum++) {
-    bytes_to_print += STRLEN(skipwhite(ml_get(lnum)));
+    bytes_to_print += STRLEN(skipwhite((char *)ml_get(lnum)));
   }
   if (bytes_to_print == 0) {
     msg(_("No text to be printed"));
@@ -806,7 +806,7 @@ void ex_hardcopy(exarg_T *eap)
             if (prtpos.column == 0) {
               // finished a file line
               prtpos.bytes_printed +=
-                STRLEN(skipwhite(ml_get(prtpos.file_line)));
+                STRLEN(skipwhite((char *)ml_get(prtpos.file_line)));
               if (++prtpos.file_line > eap->line2) {
                 break;                 // reached the end
               }
@@ -896,7 +896,7 @@ static colnr_T hardcopy_line(prt_settings_T *psettings, int page_line, prt_pos_T
    * Loop over the columns until the end of the file line or right margin.
    */
   for (col = ppos->column; line[col] != NUL && !need_break; col += outputlen) {
-    if ((outputlen = utfc_ptr2len(line + col)) < 1) {
+    if ((outputlen = utfc_ptr2len((char *)line + col)) < 1) {
       outputlen = 1;
     }
     // syntax highlighting stuff.
@@ -949,7 +949,7 @@ static colnr_T hardcopy_line(prt_settings_T *psettings, int page_line, prt_pos_T
       need_break = 1;
     } else {
       need_break = mch_print_text_out(line + col, (size_t)outputlen);
-      print_pos += utf_ptr2cells(line + col);
+      print_pos += utf_ptr2cells((char *)line + col);
     }
   }
 
@@ -1563,7 +1563,7 @@ static void prt_flush_buffer(void)
   }
 }
 
-static void prt_resource_name(char_u *filename, void *cookie)
+static void prt_resource_name(char *filename, void *cookie)
 {
   char_u *resource_filename = cookie;
 
@@ -1576,7 +1576,7 @@ static void prt_resource_name(char_u *filename, void *cookie)
 
 static int prt_find_resource(char *name, struct prt_ps_resource_S *resource)
 {
-  char_u *buffer;
+  char *buffer;
   int retval;
 
   buffer = xmallocz(MAXPATHL);
@@ -1584,11 +1584,11 @@ static int prt_find_resource(char *name, struct prt_ps_resource_S *resource)
   STRLCPY(resource->name, name, 64);
   // Look for named resource file in runtimepath
   STRCPY(buffer, "print");
-  add_pathsep((char *)buffer);
+  add_pathsep(buffer);
   STRLCAT(buffer, name, MAXPATHL);
   STRLCAT(buffer, ".ps", MAXPATHL);
   resource->filename[0] = NUL;
-  retval = (do_in_runtimepath(buffer, 0, prt_resource_name, resource->filename)
+  retval = (do_in_runtimepath((char *)buffer, 0, prt_resource_name, resource->filename)
             && resource->filename[0] != NUL);
   xfree(buffer);
   return retval;
@@ -3002,7 +3002,7 @@ int mch_print_text_out(char_u *const textp, size_t len)
     }
   }
   if (prt_out_mbyte) {
-    const bool half_width = (utf_ptr2cells(p) == 1);
+    const bool half_width = (utf_ptr2cells((char *)p) == 1);
     if (half_width) {
       char_width /= 2;
     }

@@ -806,7 +806,7 @@ void win_config_float(win_T *wp, FloatConfig fconfig)
       col += parent->w_wincol;
       ScreenGrid *grid = &parent->w_grid;
       int row_off = 0, col_off = 0;
-      screen_adjust_grid(&grid, &row_off, &col_off);
+      grid_adjust(&grid, &row_off, &col_off);
       row += row_off;
       col += col_off;
     }
@@ -877,7 +877,7 @@ void ui_ext_win_position(win_T *wp)
       if (win) {
         grid = &win->w_grid;
         int row_off = 0, col_off = 0;
-        screen_adjust_grid(&grid, &row_off, &col_off);
+        grid_adjust(&grid, &row_off, &col_off);
         row += row_off;
         col += col_off;
         if (c.bufpos.lnum >= 0) {
@@ -2376,7 +2376,7 @@ static void leaving_window(win_T *const win)
   // When leaving the window (or closing the window) was done from a
   // callback we need to break out of the Insert mode loop and restart Insert
   // mode when entering the window again.
-  if (State & INSERT) {
+  if (State & MODE_INSERT) {
     stop_insert_mode = true;
     if (win->w_buffer->b_prompt_insert == NUL) {
       win->w_buffer->b_prompt_insert = 'A';
@@ -2400,7 +2400,7 @@ void entering_window(win_T *const win)
 
   // When entering the prompt window restart Insert mode if we were in Insert
   // mode when we left it and not already in Insert mode.
-  if ((State & INSERT) == 0) {
+  if ((State & MODE_INSERT) == 0) {
     restart_edit = win->w_buffer->b_prompt_insert;
   }
 }
@@ -2813,10 +2813,11 @@ int win_close(win_T *win, bool free_buf, bool force)
   wp = win_free_mem(win, &dir, NULL);
 
   if (help_window) {
-    // Closing the help window moves the cursor back to the original window.
-    win_T *tmpwp = get_snapshot_focus(SNAP_HELP_IDX);
-    if (tmpwp != NULL) {
-      wp = tmpwp;
+    // Closing the help window moves the cursor back to the current window
+    // of the snapshot.
+    win_T *prev_win = get_snapshot_curwin(SNAP_HELP_IDX);
+    if (win_valid(prev_win)) {
+      wp = prev_win;
     }
   }
 
@@ -5489,7 +5490,7 @@ void win_setheight_win(int height, win_T *win)
       }
     }
     cmdline_row = row;
-    p_ch = MAX(Rows - cmdline_row, 1);
+    p_ch = MAX(Rows - cmdline_row, ui_has(kUIMessages) ? 0 : 1);
     curtab->tp_ch_used = p_ch;
     msg_row = row;
     msg_col = 0;
@@ -5997,10 +5998,7 @@ void win_drag_status_line(win_T *dragwin, int offset)
     clear_cmdline = true;
   }
   cmdline_row = row;
-  p_ch = Rows - cmdline_row;
-  if (p_ch < 1) {
-    p_ch = 1;
-  }
+  p_ch = MAX(Rows - cmdline_row, ui_has(kUIMessages) ? 0 : 1);
   curtab->tp_ch_used = p_ch;
   redraw_all_later(SOME_VALID);
   showmode();
@@ -6479,7 +6477,7 @@ char_u *file_name_at_cursor(int options, long count, linenr_T *file_lnum)
 char_u *file_name_in_line(char_u *line, int col, int options, long count, char_u *rel_fname,
                           linenr_T *file_lnum)
 {
-  char_u *ptr;
+  char *ptr;
   size_t len;
   bool in_type = true;
   bool is_url = false;
@@ -6487,7 +6485,7 @@ char_u *file_name_in_line(char_u *line, int col, int options, long count, char_u
   /*
    * search forward for what could be the start of a file name
    */
-  ptr = line + col;
+  ptr = (char *)line + col;
   while (*ptr != NUL && !vim_isfilec(*ptr)) {
     MB_PTR_ADV(ptr);
   }
@@ -6502,11 +6500,10 @@ char_u *file_name_in_line(char_u *line, int col, int options, long count, char_u
    * Search backward for first char of the file name.
    * Go one char back to ":" before "//" even when ':' is not in 'isfname'.
    */
-  while (ptr > line) {
-    if ((len = (size_t)(utf_head_off(line, ptr - 1))) > 0) {
+  while ((char_u *)ptr > line) {
+    if ((len = (size_t)(utf_head_off(line, (char_u *)ptr - 1))) > 0) {
       ptr -= len + 1;
-    } else if (vim_isfilec(ptr[-1])
-               || ((options & FNAME_HYP) && path_is_url((char *)ptr - 1))) {
+    } else if (vim_isfilec(ptr[-1]) || ((options & FNAME_HYP) && path_is_url(ptr - 1))) {
       ptr--;
     } else {
       break;
@@ -6519,13 +6516,13 @@ char_u *file_name_in_line(char_u *line, int col, int options, long count, char_u
    */
   len = 0;
   while (vim_isfilec(ptr[len]) || (ptr[len] == '\\' && ptr[len + 1] == ' ')
-         || ((options & FNAME_HYP) && path_is_url((char *)ptr + len))
+         || ((options & FNAME_HYP) && path_is_url(ptr + len))
          || (is_url && vim_strchr((char_u *)":?&=", ptr[len]) != NULL)) {
     // After type:// we also include :, ?, & and = as valid characters, so that
     // http://google.com:8080?q=this&that=ok works.
     if ((ptr[len] >= 'A' && ptr[len] <= 'Z')
         || (ptr[len] >= 'a' && ptr[len] <= 'z')) {
-      if (in_type && path_is_url((char *)ptr + len + 1)) {
+      if (in_type && path_is_url(ptr + len + 1)) {
         is_url = true;
       }
     } else {
@@ -6549,7 +6546,7 @@ char_u *file_name_in_line(char_u *line, int col, int options, long count, char_u
   }
 
   if (file_lnum != NULL) {
-    char_u *p;
+    char *p;
     const char *line_english = " line ";
     const char *line_transl = _(line_msg);
 
@@ -6570,12 +6567,12 @@ char_u *file_name_in_line(char_u *line, int col, int options, long count, char_u
       }
       p = skipwhite(p);
       if (isdigit(*p)) {
-        *file_lnum = getdigits_long(&p, false, 0);
+        *file_lnum = getdigits_long((char_u **)&p, false, 0);
       }
     }
   }
 
-  return find_file_name_in_path(ptr, len, options, count, rel_fname);
+  return find_file_name_in_path((char_u *)ptr, len, options, count, rel_fname);
 }
 
 /// Add or remove a status line from window(s), according to the
@@ -6827,6 +6824,35 @@ static void clear_snapshot_rec(frame_T *fr)
   }
 }
 
+/// Traverse a snapshot to find the previous curwin.
+static win_T *get_snapshot_curwin_rec(frame_T *ft)
+{
+  win_T *wp;
+
+  if (ft->fr_next != NULL) {
+    if ((wp = get_snapshot_curwin_rec(ft->fr_next)) != NULL) {
+      return wp;
+    }
+  }
+  if (ft->fr_child != NULL) {
+    if ((wp = get_snapshot_curwin_rec(ft->fr_child)) != NULL) {
+      return wp;
+    }
+  }
+
+  return ft->fr_win;
+}
+
+/// @return  the current window stored in the snapshot or NULL.
+static win_T *get_snapshot_curwin(int idx)
+{
+  if (curtab->tp_snapshot[idx] == NULL) {
+    return NULL;
+  }
+
+  return get_snapshot_curwin_rec(curtab->tp_snapshot[idx]);
+}
+
 /// Restore a previously created snapshot, if there is any.
 /// This is only done if the screen size didn't change and the window layout is
 /// still the same.
@@ -6897,28 +6923,6 @@ static win_T *restore_snapshot_rec(frame_T *sn, frame_T *fr)
     }
   }
   return wp;
-}
-
-/// Gets the focused window (the one holding the cursor) of the snapshot.
-static win_T *get_snapshot_focus(int idx)
-{
-  if (curtab->tp_snapshot[idx] == NULL) {
-    return NULL;
-  }
-
-  frame_T *sn = curtab->tp_snapshot[idx];
-  // This should be equivalent to the recursive algorithm found in
-  // restore_snapshot as far as traveling nodes go.
-  while (sn->fr_child != NULL || sn->fr_next != NULL) {
-    while (sn->fr_child != NULL) {
-      sn = sn->fr_child;
-    }
-    if (sn->fr_next != NULL) {
-      sn = sn->fr_next;
-    }
-  }
-
-  return win_valid(sn->fr_win) ? sn->fr_win : NULL;
 }
 
 /// Set "win" to be the curwin and "tp" to be the current tab page.

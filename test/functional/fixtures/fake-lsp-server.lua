@@ -222,10 +222,6 @@ function tests.prepare_rename_error()
       expect_request('textDocument/prepareRename', function()
         return {}, nil
       end)
-      expect_request('textDocument/rename', function(params)
-        assert_eq(params.newName, 'renameto')
-        return nil, nil
-      end)
       notify('shutdown')
     end;
   }
@@ -770,8 +766,21 @@ function tests.code_action_filter()
         isPreferred = true,
         command = 'preferred_command',
       }
+      local quickfix_action = {
+        title = 'Action 3',
+        kind = 'quickfix',
+        command = 'quickfix_command',
+      }
+      local quickfix_foo_action = {
+        title = 'Action 4',
+        kind = 'quickfix.foo',
+        command = 'quickfix_foo_command',
+      }
       expect_request('textDocument/codeAction', function()
-        return nil, { action, preferred_action, }
+        return nil, { action, preferred_action, quickfix_action, quickfix_foo_action, }
+      end)
+      expect_request('textDocument/codeAction', function()
+        return nil, { action, preferred_action, quickfix_action, quickfix_foo_action, }
       end)
       notify('shutdown')
     end;
@@ -792,6 +801,48 @@ function tests.clientside_commands()
   }
 end
 
+function tests.codelens_refresh_lock()
+  skeleton {
+    on_init = function()
+      return {
+        capabilities = {
+          codeLensProvider = { resolveProvider = true; };
+        }
+      }
+    end;
+    body = function()
+      notify('start')
+      expect_request("textDocument/codeLens", function ()
+        return {code = -32002, message = "ServerNotInitialized"}, nil
+      end)
+      expect_request("textDocument/codeLens", function ()
+        local lenses = {
+          {
+            range = {
+              start = { line = 0, character = 0, },
+              ['end'] = { line = 0, character = 3 }
+            },
+            command = { title = 'Lens1', command = 'Dummy' }
+          },
+        }
+        return nil, lenses
+      end)
+      expect_request("textDocument/codeLens", function ()
+        local lenses = {
+          {
+            range = {
+              start = { line = 0, character = 0, },
+              ['end'] = { line = 0, character = 3 }
+            },
+            command = { title = 'Lens2', command = 'Dummy' }
+          },
+        }
+        return nil, lenses
+      end)
+      notify('shutdown')
+    end;
+  }
+end
 
 function tests.basic_formatting()
   skeleton {

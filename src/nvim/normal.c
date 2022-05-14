@@ -33,7 +33,7 @@
 #include "nvim/getchar.h"
 #include "nvim/globals.h"
 #include "nvim/indent.h"
-#include "nvim/keymap.h"
+#include "nvim/keycodes.h"
 #include "nvim/log.h"
 #include "nvim/main.h"
 #include "nvim/mark.h"
@@ -487,7 +487,7 @@ static void normal_prepare(NormalState *s)
   }
 
   s->mapped_len = typebuf_maplen();
-  State = NORMAL_BUSY;
+  State = MODE_NORMAL_BUSY;
 
   // Set v:count here, when called from main() and not a stuffed command, so
   // that v:count can be used in an expression mapping when there is no count.
@@ -594,7 +594,7 @@ static void normal_redraw_mode_message(NormalState *s)
 
   // Draw the cursor with the right shape here
   if (restart_edit != 0) {
-    State = INSERT;
+    State = MODE_INSERT;
   }
 
   // If need to redraw, and there is a "keep_msg", redraw before the
@@ -671,7 +671,7 @@ static void normal_get_additional_char(NormalState *s)
   // Get a second or third character.
   if (cp != NULL) {
     if (repl) {
-      State = REPLACE;                // pretend Replace mode
+      State = MODE_REPLACE;                // pretend Replace mode
       ui_cursor_shape();              // show different cursor shape
     }
     if (lang && curbuf->b_p_iminsert == B_IMODE_LMAP) {
@@ -679,9 +679,9 @@ static void normal_get_additional_char(NormalState *s)
       no_mapping--;
       allow_keys--;
       if (repl) {
-        State = LREPLACE;
+        State = MODE_LREPLACE;
       } else {
-        State = LANGMAP;
+        State = MODE_LANGMAP;
       }
       langmap_active = true;
     }
@@ -693,7 +693,7 @@ static void normal_get_additional_char(NormalState *s)
       no_mapping++;
       allow_keys++;
     }
-    State = NORMAL_BUSY;
+    State = MODE_NORMAL_BUSY;
     s->need_flushbuf |= add_to_showcmd(*cp);
 
     if (!lit) {
@@ -979,7 +979,7 @@ static int normal_execute(VimState *state, int key)
   s->old_col = curwin->w_curswant;
   s->c = key;
 
-  LANGMAP_ADJUST(s->c, get_real_state() != SELECTMODE);
+  LANGMAP_ADJUST(s->c, get_real_state() != MODE_SELECT);
 
   // If a mapping was started in Visual or Select mode, remember the length
   // of the mapping.  This is used below to not return to Insert mode for as
@@ -1122,7 +1122,7 @@ static int normal_execute(VimState *state, int key)
     did_cursorhold = false;
   }
 
-  State = NORMAL;
+  State = MODE_NORMAL;
 
   if (s->ca.nchar == ESC) {
     clearop(&s->oa);
@@ -1202,7 +1202,7 @@ static void normal_check_interrupt(NormalState *s)
       // Typed two CTRL-C in a row: go back to ex mode as if "Q" was
       // used and keep "got_int" set, so that it aborts ":g".
       exmode_active = true;
-      State = NORMAL;
+      State = MODE_NORMAL;
     } else if (!global_busy || !exmode_active) {
       if (!quit_more) {
         // flush all buffers
@@ -1559,7 +1559,7 @@ bool do_mouse(oparg_T *oap, int c, int dir, long count, bool fixindent)
 
   // CTRL right mouse button does CTRL-T
   if (is_click && (mod_mask & MOD_MASK_CTRL) && which_button == MOUSE_RIGHT) {
-    if (State & INSERT) {
+    if (State & MODE_INSERT) {
       stuffcharReadbuff(Ctrl_O);
     }
     if (count > 1) {
@@ -1607,7 +1607,7 @@ bool do_mouse(oparg_T *oap, int c, int dir, long count, bool fixindent)
 
   // Middle mouse button does a 'put' of the selected text
   if (which_button == MOUSE_MIDDLE) {
-    if (State == NORMAL) {
+    if (State == MODE_NORMAL) {
       // If an operator was pending, we don't know what the user wanted to do.
       // Go back to normal mode: Clear the operator and beep().
       if (oap != NULL && oap->op_type != OP_NOP) {
@@ -1629,7 +1629,7 @@ bool do_mouse(oparg_T *oap, int c, int dir, long count, bool fixindent)
         return false;
       }
       // The rest is below jump_to_mouse()
-    } else if ((State & INSERT) == 0) {
+    } else if ((State & MODE_INSERT) == 0) {
       return false;
     }
 
@@ -1638,7 +1638,7 @@ bool do_mouse(oparg_T *oap, int c, int dir, long count, bool fixindent)
     // with do_put().
     // Also paste at the cursor if the current mode isn't in 'mouse' (only
     // happens for the GUI).
-    if ((State & INSERT)) {
+    if ((State & MODE_INSERT)) {
       if (regname == '.') {
         insert_reg(regname, true);
       } else {
@@ -1747,24 +1747,24 @@ bool do_mouse(oparg_T *oap, int c, int dir, long count, bool fixindent)
             .v_lock = VAR_FIXED,
             .v_type = VAR_STRING,
             .vval = {
-              .v_string = (char_u *)(which_button == MOUSE_LEFT
-                                     ? "l"
-                                     : (which_button == MOUSE_RIGHT
-                                        ? "r"
-                                        : (which_button == MOUSE_MIDDLE
-                                           ? "m"
-                                           : "?")))
+              .v_string = (which_button == MOUSE_LEFT
+                           ? "l"
+                           : (which_button == MOUSE_RIGHT
+                              ? "r"
+                              : (which_button == MOUSE_MIDDLE
+                                 ? "m"
+                                 : "?")))
             },
           },
           {
             .v_lock = VAR_FIXED,
             .v_type = VAR_STRING,
             .vval = {
-              .v_string = (char_u[]) {
-                (char_u)(mod_mask & MOD_MASK_SHIFT ? 's' : ' '),
-                (char_u)(mod_mask & MOD_MASK_CTRL ? 'c' : ' '),
-                (char_u)(mod_mask & MOD_MASK_ALT ? 'a' : ' '),
-                (char_u)(mod_mask & MOD_MASK_META ? 'm' : ' '),
+              .v_string = (char[]) {
+                (char)(mod_mask & MOD_MASK_SHIFT ? 's' : ' '),
+                (char)(mod_mask & MOD_MASK_CTRL ? 'c' : ' '),
+                (char)(mod_mask & MOD_MASK_ALT ? 'a' : ' '),
+                (char)(mod_mask & MOD_MASK_META ? 'm' : ' '),
                 NUL
               }
             },
@@ -1775,7 +1775,7 @@ bool do_mouse(oparg_T *oap, int c, int dir, long count, bool fixindent)
         funcexe.firstline = curwin->w_cursor.lnum;
         funcexe.lastline = curwin->w_cursor.lnum;
         funcexe.evaluate = true;
-        (void)call_func((char_u *)tab_page_click_defs[mouse_col].func, -1,
+        (void)call_func(tab_page_click_defs[mouse_col].func, -1,
                         &rettv, ARRAY_SIZE(argv), argv, &funcexe);
         tv_clear(&rettv);
         break;
@@ -1807,7 +1807,7 @@ bool do_mouse(oparg_T *oap, int c, int dir, long count, bool fixindent)
     }
   }
 
-  if ((State & (NORMAL | INSERT))
+  if ((State & (MODE_NORMAL | MODE_INSERT))
       && !(mod_mask & (MOD_MASK_SHIFT | MOD_MASK_CTRL))) {
     if (which_button == MOUSE_LEFT) {
       if (is_click) {
@@ -1958,7 +1958,7 @@ bool do_mouse(oparg_T *oap, int c, int dir, long count, bool fixindent)
         }
       }
     }
-  } else if ((State & INSERT) && VIsual_active) {
+  } else if ((State & MODE_INSERT) && VIsual_active) {
     // If Visual mode started in insert mode, execute "CTRL-O"
     stuffcharReadbuff(Ctrl_O);
   }
@@ -2005,7 +2005,7 @@ bool do_mouse(oparg_T *oap, int c, int dir, long count, bool fixindent)
              || (curbuf->b_help && (mod_mask & MOD_MASK_MULTI_CLICK) == MOD_MASK_2CLICK)) {
     // Ctrl-Mouse click (or double click in a help window) jumps to the tag
     // under the mouse pointer.
-    if (State & INSERT) {
+    if (State & MODE_INSERT) {
       stuffcharReadbuff(Ctrl_O);
     }
     stuffcharReadbuff(Ctrl_RSB);
@@ -2013,7 +2013,7 @@ bool do_mouse(oparg_T *oap, int c, int dir, long count, bool fixindent)
   } else if ((mod_mask & MOD_MASK_SHIFT)) {
     // Shift-Mouse click searches for the next occurrence of the word under
     // the mouse pointer
-    if (State & INSERT
+    if (State & MODE_INSERT
         || (VIsual_active && VIsual_select)) {
       stuffcharReadbuff(Ctrl_O);
     }
@@ -2025,7 +2025,7 @@ bool do_mouse(oparg_T *oap, int c, int dir, long count, bool fixindent)
   } else if (in_status_line || in_sep_line) {
     // Do nothing if on status line or vertical separator
     // Handle double clicks otherwise
-  } else if ((mod_mask & MOD_MASK_MULTI_CLICK) && (State & (NORMAL | INSERT))) {
+  } else if ((mod_mask & MOD_MASK_MULTI_CLICK) && (State & (MODE_NORMAL | MODE_INSERT))) {
     if (is_click || !VIsual_active) {
       if (VIsual_active) {
         orig_cursor = VIsual;
@@ -2094,7 +2094,7 @@ bool do_mouse(oparg_T *oap, int c, int dir, long count, bool fixindent)
           find_start_of_word(&VIsual);
           if (*p_sel == 'e' && *get_cursor_pos_ptr() != NUL) {
             curwin->w_cursor.col +=
-              utfc_ptr2len(get_cursor_pos_ptr());
+              utfc_ptr2len((char *)get_cursor_pos_ptr());
           }
           find_end_of_word(&curwin->w_cursor);
         }
@@ -2157,7 +2157,7 @@ static void find_end_of_word(pos_T *pos)
   }
   cclass = get_mouse_class(line + pos->col);
   while (line[pos->col] != NUL) {
-    col = pos->col + utfc_ptr2len(line + pos->col);
+    col = pos->col + utfc_ptr2len((char *)line + pos->col);
     if (get_mouse_class(line + col) != cclass) {
       if (*p_sel == 'e') {
         pos->col = col;
@@ -2340,7 +2340,7 @@ size_t find_ident_at_pos(win_T *wp, linenr_T lnum, colnr_T startcol, char_u **te
       if (this_class != 0 && (i == 1 || this_class != 1)) {
         break;
       }
-      col += utfc_ptr2len(ptr + col);
+      col += utfc_ptr2len((char *)ptr + col);
     }
 
     // When starting on a ']' count it, so that we include the '['.
@@ -2408,7 +2408,7 @@ size_t find_ident_at_pos(win_T *wp, linenr_T lnum, colnr_T startcol, char_u **te
              || ((find_type & FIND_EVAL)
                  && col <= (int)startcol
                  && find_is_eval_item(ptr + col, &col, &bn, FORWARD)))) {
-    col += utfc_ptr2len(ptr + col);
+    col += utfc_ptr2len((char *)ptr + col);
   }
 
   assert(col >= 0);
@@ -2585,7 +2585,7 @@ void clear_showcmd(void)
         e = ml_get_pos(&VIsual);
       }
       while ((*p_sel != 'e') ? s <= e : s < e) {
-        l = utfc_ptr2len(s);
+        l = utfc_ptr2len((char *)s);
         if (l == 0) {
           bytes++;
           chars++;
@@ -3035,7 +3035,7 @@ bool find_decl(char_u *ptr, size_t len, bool locally, bool thisblock, int flags_
   } else {
     par_pos = curwin->w_cursor;
     while (curwin->w_cursor.lnum > 1
-           && *skipwhite(get_cursor_line_ptr()) != NUL) {
+           && *skipwhite((char *)get_cursor_line_ptr()) != NUL) {
       curwin->w_cursor.lnum--;
     }
   }
@@ -3262,7 +3262,7 @@ static bool nv_screengo(oparg_T *oap, int dir, long dist)
       virtcol -= vim_strsize(get_showbreak_value(curwin));
     }
 
-    int c = utf_ptr2char(get_cursor_pos_ptr());
+    int c = utf_ptr2char((char *)get_cursor_pos_ptr());
     if (dir == FORWARD && virtcol < curwin->w_curswant
         && (curwin->w_curswant <= (colnr_T)width1)
         && !vim_isprintc(c) && c > 255) {
@@ -4108,7 +4108,7 @@ static void nv_ident(cmdarg_T *cap)
   assert(*kp != NUL);  // option.c:do_set() should default to ":help" if empty.
   bool kp_ex = (*kp == ':');  // 'keywordprg' is an ex command
   bool kp_help = (STRCMP(kp, ":he") == 0 || STRCMP(kp, ":help") == 0);
-  if (kp_help && *skipwhite(ptr) == NUL) {
+  if (kp_help && *skipwhite((char *)ptr) == NUL) {
     emsg(_(e_noident));   // found white space only
     return;
   }
@@ -4239,7 +4239,7 @@ static void nv_ident(cmdarg_T *cap)
       }
       // When current byte is a part of multibyte character, copy all
       // bytes of that character.
-      const size_t len = (size_t)(utfc_ptr2len(ptr) - 1);
+      const size_t len = (size_t)(utfc_ptr2len((char *)ptr) - 1);
       for (size_t i = 0; i < len && n > 0; i++, n--) {
         *p++ = *ptr++;
       }
@@ -4268,7 +4268,7 @@ static void nv_ident(cmdarg_T *cap)
       // Start insert mode in terminal buffer
       restart_edit = 'i';
 
-      add_map((char_u *)"<buffer> <esc> <Cmd>bdelete!<CR>", TERM_FOCUS, true);
+      add_map((char_u *)"<buffer> <esc> <Cmd>bdelete!<CR>", MODE_TERMINAL, true);
     }
   }
 
@@ -4308,7 +4308,7 @@ bool get_visual_text(cmdarg_T *cap, char_u **pp, size_t *lenp)
     }
     if (*lenp > 0) {
       // Correct the length to include all bytes of the last character.
-      *lenp += (size_t)(utfc_ptr2len(*pp + (*lenp - 1)) - 1);
+      *lenp += (size_t)(utfc_ptr2len((char *)(*pp) + (*lenp - 1)) - 1);
     }
   }
   reset_VIsual_and_resel();
@@ -4470,7 +4470,7 @@ static void nv_right(cmdarg_T *cap)
       if (virtual_active()) {
         oneright();
       } else {
-        curwin->w_cursor.col += utfc_ptr2len(get_cursor_pos_ptr());
+        curwin->w_cursor.col += utfc_ptr2len((char *)get_cursor_pos_ptr());
       }
     }
   }
@@ -4521,7 +4521,7 @@ static void nv_left(cmdarg_T *cap)
           char_u *cp = get_cursor_pos_ptr();
 
           if (*cp != NUL) {
-            curwin->w_cursor.col += utfc_ptr2len(cp);
+            curwin->w_cursor.col += utfc_ptr2len((char *)cp);
           }
           cap->retval |= CA_NO_ADJ_OP_END;
         }
@@ -5269,7 +5269,7 @@ static void nv_replace(cmdarg_T *cap)
     // multi-byte and the other way around.  Also handles adding
     // composing characters for utf-8.
     for (long n = cap->count1; n > 0; n--) {
-      State = REPLACE;
+      State = MODE_REPLACE;
       if (cap->nchar == Ctrl_E || cap->nchar == Ctrl_Y) {
         int c = ins_copychar(curwin->w_cursor.lnum
                              + (cap->nchar == Ctrl_Y ? -1 : 1));
@@ -6811,7 +6811,7 @@ void set_cursor_for_append_to_line(void)
 
     // Pretend Insert mode here to allow the cursor on the
     // character past the end of the line
-    State = INSERT;
+    State = MODE_INSERT;
     coladvance(MAXCOL);
     State = save_State;
   } else {
@@ -6867,7 +6867,7 @@ static void nv_edit(cmdarg_T *cap)
 
       // Pretend Insert mode here to allow the cursor on the
       // character past the end of the line
-      State = INSERT;
+      State = MODE_INSERT;
       coladvance(getviscol());
       State = save_State;
     }
@@ -7112,7 +7112,7 @@ static void nv_put_opt(cmdarg_T *cap, bool fix_indent)
       // overwrites if the old contents is being put.
       was_visual = true;
       regname = cap->oap->regname;
-      bool save_unnamed = cap->cmdchar == 'P';
+      bool keep_registers = cap->cmdchar == 'P';
       // '+' and '*' could be the same selection
       bool clipoverwrite = (regname == '+' || regname == '*') && (cb_flags & CB_UNNAMEDMASK);
       if (regname == 0 || regname == '"' || clipoverwrite
@@ -7127,22 +7127,14 @@ static void nv_put_opt(cmdarg_T *cap, bool fix_indent)
       // do_put(), which requires the visual selection to still be active.
       if (!VIsual_active || VIsual_mode == 'V' || regname != '.') {
         // Now delete the selected text. Avoid messages here.
-        yankreg_T *old_y_previous;
-        if (save_unnamed) {
-          old_y_previous = get_y_previous();
-        }
         cap->cmdchar = 'd';
         cap->nchar = NUL;
-        cap->oap->regname = NUL;
+        cap->oap->regname = keep_registers ? '_' : NUL;
         msg_silent++;
         nv_operator(cap);
         do_pending_operator(cap, 0, false);
         empty = (curbuf->b_ml.ml_flags & ML_EMPTY);
         msg_silent--;
-
-        if (save_unnamed) {
-          set_y_previous(old_y_previous);
-        }
 
         // delete PUT_LINE_BACKWARD;
         cap->oap->regname = regname;

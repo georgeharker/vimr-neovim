@@ -28,6 +28,7 @@ return {
     "line_hl_group";
     "cursorline_hl_group";
     "conceal";
+    "ui_watched";
   };
   keymap = {
     "noremap";
@@ -153,6 +154,45 @@ return {
   };
   create_augroup = {
     "clear";
+  };
+  cmd = {
+    "cmd";
+    "range";
+    "count";
+    "reg";
+    "bang";
+    "args";
+    "magic";
+    "mods";
+    "nargs";
+    "addr";
+    "nextcmd";
+  };
+  cmd_magic = {
+    "file";
+    "bar";
+  };
+  cmd_mods = {
+    "silent";
+    "emsg_silent";
+    "sandbox";
+    "noautocmd";
+    "browse";
+    "confirm";
+    "hide";
+    "keepalt";
+    "keepjumps";
+    "keepmarks";
+    "keeppatterns";
+    "lockmarks";
+    "noswapfile";
+    "tab";
+    "verbose";
+    "vertical";
+    "split";
+  };
+  cmd_opts = {
+    "output";
   };
 }
 

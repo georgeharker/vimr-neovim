@@ -59,7 +59,7 @@ Nvim instance:
     # trailing '&' which is required since Nvim won't process events while
     # running a blocking command):
     #
-    #	:!./hello.rb &
+    #   :!./hello.rb &
     #
     # Or from another shell by setting NVIM_LISTEN_ADDRESS:
     # $ NVIM_LISTEN_ADDRESS=[address] ./hello.rb
@@ -425,6 +425,14 @@ Two ways to create a floating window:
 - |nvim_win_set_config()| reconfigures a normal window into a float
 
 To close it use |nvim_win_close()| or a command such as |:close|.
+
+To check whether a window is floating, check whether the `relative` option in
+its config is non-empty: >
+
+    if vim.api.nvim_win_get_config(window_id).relative ~= '' then
+      -- window with this window_id is floating
+    end
+>
 
 Buffer text can be highlighted by typical mechanisms (syntax highlighting,
 |api-highlights|). The |hl-NormalFloat| group highlights normal text;
@@ -1361,69 +1369,6 @@ nvim_out_write({str})                                       *nvim_out_write()*
                 Parameters: ~
                     {str}  Message
 
-nvim_parse_cmd({str}, {opts})                               *nvim_parse_cmd()*
-                Parse command line.
-
-                Doesn't check the validity of command arguments.
-
-                Attributes: ~
-                    |api-fast|
-
-                Parameters: ~
-                    {str}   Command line string to parse. Cannot contain "\n".
-                    {opts}  Optional parameters. Reserved for future use.
-
-                Return: ~
-                    Dictionary containing command information, with these
-                    keys:
-                    • cmd: (string) Command name.
-                    • line1: (number) Starting line of command range. Only
-                      applicable if command can take a range.
-                    • line2: (number) Final line of command range. Only
-                      applicable if command can take a range.
-                    • bang: (boolean) Whether command contains a bang (!)
-                      modifier.
-                    • args: (array) Command arguments.
-                    • addr: (string) Value of |:command-addr|. Uses short
-                      name.
-                    • nargs: (string) Value of |:command-nargs|.
-                    • nextcmd: (string) Next command if there are multiple
-                      commands separated by a |:bar|. Empty if there isn't a
-                      next command.
-                    • magic: (dictionary) Which characters have special
-                      meaning in the command arguments.
-                      • file: (boolean) The command expands filenames. Which
-                        means characters such as "%", "#" and wildcards are
-                        expanded.
-                      • bar: (boolean) The "|" character is treated as a
-                        command separator and the double quote character (")
-                        is treated as the start of a comment.
-
-                    • mods: (dictionary) |:command-modifiers|.
-                      • silent: (boolean) |:silent|.
-                      • emsg_silent: (boolean) |:silent!|.
-                      • sandbox: (boolean) |:sandbox|.
-                      • noautocmd: (boolean) |:noautocmd|.
-                      • browse: (boolean) |:browse|.
-                      • confirm: (boolean) |:confirm|.
-                      • hide: (boolean) |:hide|.
-                      • keepalt: (boolean) |:keepalt|.
-                      • keepjumps: (boolean) |:keepjumps|.
-                      • keepmarks: (boolean) |:keepmarks|.
-                      • keeppatterns: (boolean) |:keeppatterns|.
-                      • lockmarks: (boolean) |:lockmarks|.
-                      • noswapfile: (boolean) |:noswapfile|.
-                      • tab: (integer) |:tab|.
-                      • verbose: (integer) |:verbose|.
-                      • vertical: (boolean) |:vertical|.
-                      • split: (string) Split modifier string, is an empty
-                        string when there's no split modifier. If there is a
-                        split modifier it can be one of:
-                        • "aboveleft": |:aboveleft|.
-                        • "belowright": |:belowright|.
-                        • "topleft": |:topleft|.
-                        • "botright": |:botright|.
-
 nvim_paste({data}, {crlf}, {phase})                             *nvim_paste()*
                 Pastes at cursor, in any mode.
 
@@ -1774,17 +1719,49 @@ nvim_call_function({fn}, {args})                        *nvim_call_function()*
                 Return: ~
                     Result of the function call
 
+nvim_cmd({*cmd}, {*opts})                                         *nvim_cmd()*
+                Executes an Ex command.
+
+                Unlike |nvim_command()| this command takes a structured
+                Dictionary instead of a String. This allows for easier
+                construction and manipulation of an Ex command. This also
+                allows for things such as having spaces inside a command
+                argument, expanding filenames in a command that otherwise
+                doesn't expand filenames, etc.
+
+                Parameters: ~
+                    {cmd}   Command to execute. Must be a Dictionary that can
+                            contain the same values as the return value of
+                            |nvim_parse_cmd()| except "addr", "nargs" and
+                            "nextcmd" which are ignored if provided. All
+                            values except for "cmd" are optional.
+                    {opts}  Optional parameters.
+                            • output: (boolean, default false) Whether to
+                              return command output.
+
+                Return: ~
+                    Command output (non-error, non-shell |:!|) if `output` is
+                    true, else empty string.
+
+                See also: ~
+                    |nvim_exec()|
+                    |nvim_command()|
+
 nvim_command({command})                                       *nvim_command()*
-                Executes an ex-command.
+                Executes an Ex command.
 
                 On execution error: fails with VimL error, does not update
                 v:errmsg.
 
-                Parameters: ~
-                    {command}  Ex-command string
+                Prefer using |nvim_cmd()| or |nvim_exec()| over this. To
+                evaluate multiple lines of Vim script or an Ex command
+                directly, use |nvim_exec()|. To construct an Ex command using
+                a structured format and then execute it, use |nvim_cmd()|. To
+                modify an Ex command before evaluating it, use
+                |nvim_parse_cmd()| in conjunction with |nvim_cmd()|.
 
-                See also: ~
-                    |nvim_exec()|
+                Parameters: ~
+                    {command}  Ex command string
 
 nvim_eval({expr})                                                *nvim_eval()*
                 Evaluates a VimL |expression|. Dictionaries and Lists are
@@ -1800,7 +1777,7 @@ nvim_eval({expr})                                                *nvim_eval()*
                     Evaluation result or expanded object
 
 nvim_exec({src}, {output})                                       *nvim_exec()*
-                Executes Vimscript (multiline block of Ex-commands), like
+                Executes Vimscript (multiline block of Ex commands), like
                 anonymous |:source|.
 
                 Unlike |nvim_command()| this function supports heredocs,
@@ -1821,6 +1798,77 @@ nvim_exec({src}, {output})                                       *nvim_exec()*
                 See also: ~
                     |execute()|
                     |nvim_command()|
+                    |nvim_cmd()|
+
+nvim_parse_cmd({str}, {opts})                               *nvim_parse_cmd()*
+                Parse command line.
+
+                Doesn't check the validity of command arguments.
+
+                Attributes: ~
+                    |api-fast|
+
+                Parameters: ~
+                    {str}   Command line string to parse. Cannot contain "\n".
+                    {opts}  Optional parameters. Reserved for future use.
+
+                Return: ~
+                    Dictionary containing command information, with these
+                    keys:
+                    • cmd: (string) Command name.
+                    • range: (array) Command <range>. Can have 0-2 elements
+                      depending on how many items the range contains. Has no
+                      elements if command doesn't accept a range or if no
+                      range was specified, one element if only a single range
+                      item was specified and two elements if both range items
+                      were specified.
+                    • count: (number) Any |<count>| that was supplied to the
+                      command. -1 if command cannot take a count.
+                    • reg: (number) The optional command |<register>|, if
+                      specified. Empty string if not specified or if command
+                      cannot take a register.
+                    • bang: (boolean) Whether command contains a |<bang>| (!)
+                      modifier.
+                    • args: (array) Command arguments.
+                    • addr: (string) Value of |:command-addr|. Uses short
+                      name.
+                    • nargs: (string) Value of |:command-nargs|.
+                    • nextcmd: (string) Next command if there are multiple
+                      commands separated by a |:bar|. Empty if there isn't a
+                      next command.
+                    • magic: (dictionary) Which characters have special
+                      meaning in the command arguments.
+                      • file: (boolean) The command expands filenames. Which
+                        means characters such as "%", "#" and wildcards are
+                        expanded.
+                      • bar: (boolean) The "|" character is treated as a
+                        command separator and the double quote character (")
+                        is treated as the start of a comment.
+
+                    • mods: (dictionary) |:command-modifiers|.
+                      • silent: (boolean) |:silent|.
+                      • emsg_silent: (boolean) |:silent!|.
+                      • sandbox: (boolean) |:sandbox|.
+                      • noautocmd: (boolean) |:noautocmd|.
+                      • browse: (boolean) |:browse|.
+                      • confirm: (boolean) |:confirm|.
+                      • hide: (boolean) |:hide|.
+                      • keepalt: (boolean) |:keepalt|.
+                      • keepjumps: (boolean) |:keepjumps|.
+                      • keepmarks: (boolean) |:keepmarks|.
+                      • keeppatterns: (boolean) |:keeppatterns|.
+                      • lockmarks: (boolean) |:lockmarks|.
+                      • noswapfile: (boolean) |:noswapfile|.
+                      • tab: (integer) |:tab|.
+                      • verbose: (integer) |:verbose|. -1 when omitted.
+                      • vertical: (boolean) |:vertical|.
+                      • split: (string) Split modifier string, is an empty
+                        string when there's no split modifier. If there is a
+                        split modifier it can be one of:
+                        • "aboveleft": |:aboveleft|.
+                        • "belowright": |:belowright|.
+                        • "topleft": |:topleft|.
+                        • "botright": |:botright|.
 
                                                      *nvim_parse_expression()*
 nvim_parse_expression({expr}, {flags}, {highlight})
@@ -2190,7 +2238,7 @@ nvim_buf_get_lines({buffer}, {start}, {end}, {strict_indexing})
                 Parameters: ~
                     {buffer}           Buffer handle, or 0 for current buffer
                     {start}            First line index
-                    {end}              Last line index (exclusive)
+                    {end}              Last line index, exclusive
                     {strict_indexing}  Whether out-of-bounds should be an
                                        error.
 
@@ -2261,16 +2309,18 @@ nvim_buf_get_text({buffer}, {start_row}, {start_col}, {end_row}, {end_col},
                 This differs from |nvim_buf_get_lines()| in that it allows
                 retrieving only portions of a line.
 
-                Indexing is zero-based. Column indices are end-exclusive.
+                Indexing is zero-based. Row indices are end-inclusive, and
+                column indices are end-exclusive.
 
                 Prefer |nvim_buf_get_lines()| when retrieving entire lines.
 
                 Parameters: ~
                     {buffer}     Buffer handle, or 0 for current buffer
                     {start_row}  First line index
-                    {start_col}  Starting byte offset of first line
-                    {end_row}    Last line index
-                    {end_col}    Ending byte offset of last line (exclusive)
+                    {start_col}  Starting column (byte offset) on first line
+                    {end_row}    Last line index, inclusive
+                    {end_col}    Ending column (byte offset) on last line,
+                                 exclusive
                     {opts}       Optional parameters. Currently unused.
 
                 Return: ~
@@ -2350,7 +2400,7 @@ nvim_buf_set_lines({buffer}, {start}, {end}, {strict_indexing}, {replacement})
                 Parameters: ~
                     {buffer}           Buffer handle, or 0 for current buffer
                     {start}            First line index
-                    {end}              Last line index (exclusive)
+                    {end}              Last line index, exclusive
                     {strict_indexing}  Whether out-of-bounds should be an
                                        error.
                     {replacement}      Array of lines to use as replacement
@@ -2400,25 +2450,27 @@ nvim_buf_set_text({buffer}, {start_row}, {start_col}, {end_row}, {end_col},
                   {replacement})
                 Sets (replaces) a range in the buffer
 
-                This is recommended over nvim_buf_set_lines when only
+                This is recommended over |nvim_buf_set_lines()| when only
                 modifying parts of a line, as extmarks will be preserved on
                 non-modified parts of the touched lines.
 
-                Indexing is zero-based and end-exclusive.
+                Indexing is zero-based. Row indices are end-inclusive, and
+                column indices are end-exclusive.
 
-                To insert text at a given index, set `start` and `end` ranges
-                to the same index. To delete a range, set `replacement` to an
-                array containing an empty string, or simply an empty array.
+                To insert text at a given `(row, column)` location, use
+                `start_row = end_row = row` and `start_col = end_col = col`.
+                To delete the text in a range, use `replacement = {}`.
 
-                Prefer nvim_buf_set_lines when adding or deleting entire lines
-                only.
+                Prefer |nvim_buf_set_lines()| if you are only adding or
+                deleting entire lines.
 
                 Parameters: ~
                     {buffer}       Buffer handle, or 0 for current buffer
                     {start_row}    First line index
-                    {start_col}    First column
-                    {end_row}      Last line index
-                    {end_col}      Last column
+                    {start_col}    Starting column (byte offset) on first line
+                    {end_row}      Last line index, inclusive
+                    {end_col}      Ending column (byte offset) on last line,
+                                   exclusive
                     {replacement}  Array of lines to use as replacement
 
 nvim_buf_set_var({buffer}, {name}, {value})               *nvim_buf_set_var()*
@@ -2706,6 +2758,11 @@ nvim_buf_set_extmark({buffer}, {ns_id}, {line}, {col}, {*opts})
                                 "hl_group" is used as highlight for the cchar
                                 if provided, otherwise it defaults to
                                 |hl-Conceal|.
+                              • ui_watched: boolean that indicates the mark
+                                should be drawn by a UI. When set, the UI will
+                                receive win_extmark events. Note: the mark is
+                                positioned by virt_text attributes. Can be
+                                used together with virt_text.
 
                 Return: ~
                     Id of the created/updated extmark
@@ -3496,6 +3553,7 @@ nvim_get_autocmds({*opts})                               *nvim_get_autocmds()*
                     • id (number): the autocommand id (only when defined with
                       the API).
                     • group (integer): the autocommand group id.
+                    • group_name (string): the autocommand group name.
                     • desc (string): the autocommand description.
                     • event (string): the autocommand event.
                     • command (string): the autocommand command.

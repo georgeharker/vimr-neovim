@@ -992,7 +992,7 @@ void ml_recover(bool checkext)
    * 'fileencoding', etc.  Ignore errors.  The text itself is not used.
    */
   if (curbuf->b_ffname != NULL) {
-    orig_file_status = readfile(curbuf->b_ffname, NULL, (linenr_T)0,
+    orig_file_status = readfile((char *)curbuf->b_ffname, NULL, (linenr_T)0,
                                 (linenr_T)0, (linenr_T)MAXLNUM, NULL, READ_NEW, false);
   }
 
@@ -1035,8 +1035,8 @@ void ml_recover(bool checkext)
         semsg(_("E309: Unable to read block 1 from %s"), mfp->mf_fname);
         goto theend;
       }
-      ++error;
-      ml_append(lnum++, (char_u *)_("???MANY LINES MISSING"),
+      error++;
+      ml_append(lnum++, _("???MANY LINES MISSING"),
                 (colnr_T)0, true);
     } else {          // there is a block
       pp = hp->bh_data;
@@ -1047,14 +1047,14 @@ void ml_recover(bool checkext)
             line_count -= pp->pb_pointer[i].pe_line_count;
           }
           if (line_count != 0) {
-            ++error;
-            ml_append(lnum++, (char_u *)_("???LINE COUNT WRONG"),
+            error++;
+            ml_append(lnum++, _("???LINE COUNT WRONG"),
                       (colnr_T)0, true);
           }
         }
 
         if (pp->pb_count == 0) {
-          ml_append(lnum++, (char_u *)_("???EMPTY BLOCK"),
+          ml_append(lnum++, _("???EMPTY BLOCK"),
                     (colnr_T)0, true);
           error++;
         } else if (idx < (int)pp->pb_count) {         // go a block deeper
@@ -1066,7 +1066,7 @@ void ml_recover(bool checkext)
              */
             if (!cannot_open) {
               line_count = pp->pb_pointer[idx].pe_line_count;
-              if (readfile(curbuf->b_ffname, NULL, lnum,
+              if (readfile((char *)curbuf->b_ffname, NULL, lnum,
                            pp->pb_pointer[idx].pe_old_lnum - 1, line_count,
                            NULL, 0, false) != OK) {
                 cannot_open = true;
@@ -1075,8 +1075,8 @@ void ml_recover(bool checkext)
               }
             }
             if (cannot_open) {
-              ++error;
-              ml_append(lnum++, (char_u *)_("???LINES MISSING"),
+              error++;
+              ml_append(lnum++, _("???LINES MISSING"),
                         (colnr_T)0, true);
             }
             ++idx;                  // get same block again for next index
@@ -1105,8 +1105,8 @@ void ml_recover(bool checkext)
                   mfp->mf_fname);
             goto theend;
           }
-          ++error;
-          ml_append(lnum++, (char_u *)_("???BLOCK MISSING"),
+          error++;
+          ml_append(lnum++, _("???BLOCK MISSING"),
                     (colnr_T)0, true);
         } else {
           // it is a data block
@@ -1116,8 +1116,7 @@ void ml_recover(bool checkext)
           // if wrong, use length in pointer block
           if (page_count * mfp->mf_page_size != dp->db_txt_end) {
             ml_append(lnum++,
-                      (char_u *)_("??? from here until ???END lines"
-                                  " may be messed up"),
+                      _("??? from here until ???END lines" " may be messed up"),
                       (colnr_T)0, true);
             error++;
             has_error = true;
@@ -1133,8 +1132,8 @@ void ml_recover(bool checkext)
            */
           if (line_count != dp->db_line_count) {
             ml_append(lnum++,
-                      (char_u *)_("??? from here until ???END lines"
-                                  " may have been inserted/deleted"),
+                      _("??? from here until ???END lines"
+                        " may have been inserted/deleted"),
                       (colnr_T)0, true);
             error++;
             has_error = true;
@@ -1149,10 +1148,10 @@ void ml_recover(bool checkext)
             } else {
               p = (char_u *)dp + txt_start;
             }
-            ml_append(lnum++, p, (colnr_T)0, true);
+            ml_append(lnum++, (char *)p, (colnr_T)0, true);
           }
           if (has_error) {
-            ml_append(lnum++, (char_u *)_("???END"), (colnr_T)0, true);
+            ml_append(lnum++, _("???END"), (colnr_T)0, true);
           }
         }
       }
@@ -1339,8 +1338,8 @@ int recover_names(char_u *fname, int list, int nr, char_u **fname_out)
           tail = (char_u *)make_percent_swname((char *)dir_name,
                                                (char *)fname_res);
         } else {
-          tail = path_tail(fname_res);
-          tail = (char_u *)concat_fnames((char *)dir_name, (char *)tail, TRUE);
+          tail = (char_u *)path_tail((char *)fname_res);
+          tail = (char_u *)concat_fnames((char *)dir_name, (char *)tail, true);
         }
         num_names = recov_file_names(names, tail, FALSE);
         xfree(tail);
@@ -1419,7 +1418,7 @@ int recover_names(char_u *fname, int list, int nr, char_u **fname_out)
           // print the swap file name
           msg_outnum((long)++file_count);
           msg_puts(".    ");
-          msg_puts((const char *)path_tail(files[i]));
+          msg_puts((const char *)path_tail((char *)files[i]));
           msg_putchar('\n');
           (void)swapfile_info(files[i]);
         }
@@ -1824,7 +1823,7 @@ int gchar_pos(pos_T *pos)
   if (pos->col == MAXCOL) {
     return NUL;
   }
-  return utf_ptr2char(ml_get_pos(pos));
+  return utf_ptr2char((char *)ml_get_pos(pos));
 }
 
 /// @param will_change  true mark the buffer dirty (chars in the line will be changed)
@@ -1924,7 +1923,7 @@ int ml_line_alloced(void)
 /// @param newfile  flag, see above
 ///
 /// @return  FAIL for failure, OK otherwise
-int ml_append(linenr_T lnum, char_u *line, colnr_T len, bool newfile)
+int ml_append(linenr_T lnum, char *line, colnr_T len, bool newfile)
 {
   // When starting up, we might still need to create the memfile
   if (curbuf->b_ml.ml_mfp == NULL && open_buffer(FALSE, NULL, 0) == FAIL) {
@@ -1934,7 +1933,7 @@ int ml_append(linenr_T lnum, char_u *line, colnr_T len, bool newfile)
   if (curbuf->b_ml.ml_line_lnum != 0) {
     ml_flush_line(curbuf);
   }
-  return ml_append_int(curbuf, lnum, line, len, newfile, FALSE);
+  return ml_append_int(curbuf, lnum, (char_u *)line, len, newfile, false);
 }
 
 /// Like ml_append() but for an arbitrary buffer.  The buffer must already have
@@ -2448,9 +2447,9 @@ void ml_add_deleted_len_buf(buf_T *buf, char_u *ptr, ssize_t len)
 }
 
 
-int ml_replace(linenr_T lnum, char_u *line, bool copy)
+int ml_replace(linenr_T lnum, char *line, bool copy)
 {
-  return ml_replace_buf(curbuf, lnum, line, copy);
+  return ml_replace_buf(curbuf, lnum, (char_u *)line, copy);
 }
 
 /// Replace line "lnum", with buffering, in current buffer.
@@ -2546,7 +2545,7 @@ static int ml_delete_int(buf_T *buf, linenr_T lnum, bool message)
       set_keep_msg(_(no_lines_msg), 0);
     }
 
-    i = ml_replace((linenr_T)1, (char_u *)"", true);
+    i = ml_replace((linenr_T)1, "", true);
     buf->b_ml.ml_flags |= ML_EMPTY;
 
     return i;
@@ -3205,7 +3204,7 @@ int resolve_symlink(const char_u *fname, char_u *buf)
     if (path_is_absolute(buf)) {
       STRCPY(tmp, buf);
     } else {
-      char_u *tail = path_tail(tmp);
+      char_u *tail = (char_u *)path_tail((char *)tmp);
       if (STRLEN(tail) + STRLEN(buf) >= MAXPATHL) {
         return FAIL;
       }
@@ -3284,7 +3283,7 @@ char_u *get_file_in_dir(char_u *fname, char_u *dname)
   char_u *retval;
   int save_char;
 
-  tail = path_tail(fname);
+  tail = (char_u *)path_tail((char *)fname);
 
   if (dname[0] == '.' && dname[1] == NUL) {
     retval = vim_strsave(fname);
@@ -3483,8 +3482,8 @@ static char *findswapname(buf_T *buf, char **dirp, char *old_fname, bool *found_
             // buffer don't compare the directory names, they can
             // have a different mountpoint.
             if (b0.b0_flags & B0_SAME_DIR) {
-              if (FNAMECMP(path_tail(buf->b_ffname),
-                           path_tail(b0.b0_fname)) != 0
+              if (FNAMECMP(path_tail((char *)buf->b_ffname),
+                           path_tail((char *)b0.b0_fname)) != 0
                   || !same_directory((char_u *)fname, buf->b_ffname)) {
                 // Symlinks may point to the same file even
                 // when the name differs, need to check the
@@ -3529,7 +3528,7 @@ static char *findswapname(buf_T *buf, char **dirp, char *old_fname, bool *found_
           // response, trigger it.  It may return 0 to ask the user anyway.
           if (choice == 0
               && swap_exists_action != SEA_NONE
-              && has_autocmd(EVENT_SWAPEXISTS, (char_u *)buf_fname, buf)) {
+              && has_autocmd(EVENT_SWAPEXISTS, buf_fname, buf)) {
             choice = do_swapexists(buf, (char_u *)fname);
           }
 
@@ -4207,7 +4206,7 @@ int inc(pos_T *lp)
   if (lp->col != MAXCOL) {
     const char_u *const p = ml_get_pos(lp);
     if (*p != NUL) {  // still within line, move to next char (may be NUL)
-      const int l = utfc_ptr2len(p);
+      const int l = utfc_ptr2len((char *)p);
 
       lp->col += l;
       return ((p[l] != NUL) ? 0 : 2);

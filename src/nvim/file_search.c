@@ -298,7 +298,7 @@ void *vim_findfile_init(char_u *path, char_u *filename, char_u *stopdirs, int le
       && (vim_ispathsep(path[1]) || path[1] == NUL)
       && (!tagfile || vim_strchr(p_cpo, CPO_DOTTAG) == NULL)
       && rel_fname != NULL) {
-    size_t len = (size_t)(path_tail(rel_fname) - rel_fname);
+    size_t len = (size_t)((char_u *)path_tail((char *)rel_fname) - rel_fname);
 
     if (!vim_isAbsName(rel_fname) && len + 1 < MAXPATHL) {
       // Make the start dir an absolute path name.
@@ -477,7 +477,7 @@ void *vim_findfile_init(char_u *path, char_u *filename, char_u *stopdirs, int le
       STRCAT(ff_expand_buffer, search_ctx->ffsc_fix_path);
       add_pathsep((char *)ff_expand_buffer);
     } else {
-      char_u *p =  path_tail(search_ctx->ffsc_fix_path);
+      char_u *p = (char_u *)path_tail((char *)search_ctx->ffsc_fix_path);
       char_u *wc_path = NULL;
       char_u *temp = NULL;
       int len = 0;
@@ -1111,8 +1111,8 @@ static bool ff_wc_equal(char_u *s1, char_u *s2)
   }
 
   for (i = 0, j = 0; s1[i] != NUL && s2[j] != NUL;) {
-    c1 = utf_ptr2char(s1 + i);
-    c2 = utf_ptr2char(s2 + j);
+    c1 = utf_ptr2char((char *)s1 + i);
+    c2 = utf_ptr2char((char *)s2 + j);
 
     if ((p_fic ? mb_tolower(c1) != mb_tolower(c2) : c1 != c2)
         && (prev1 != '*' || prev2 != '*')) {
@@ -1121,8 +1121,8 @@ static bool ff_wc_equal(char_u *s1, char_u *s2)
     prev2 = prev1;
     prev1 = c1;
 
-    i += utfc_ptr2len(s1 + i);
-    j += utfc_ptr2len(s2 + j);
+    i += utfc_ptr2len((char *)s1 + i);
+    j += utfc_ptr2len((char *)s2 + j);
   }
   return s1[i] == s2[j];
 }
@@ -1481,7 +1481,7 @@ char_u *find_file_in_path_option(char_u *ptr, size_t len, int options, int first
             && rel_fname != NULL
             && STRLEN(rel_fname) + l < MAXPATHL) {
           STRCPY(NameBuff, rel_fname);
-          STRCPY(path_tail(NameBuff), ff_file_to_find);
+          STRCPY(path_tail((char *)NameBuff), ff_file_to_find);
           l = STRLEN(NameBuff);
         } else {
           STRCPY(NameBuff, ff_file_to_find);
