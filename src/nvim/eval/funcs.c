@@ -485,9 +485,7 @@ static buf_T *find_buffer(typval_T *avar)
        * buffer, these don't use the full path. */
       FOR_ALL_BUFFERS(bp) {
         if (bp->b_fname != NULL
-            && (path_with_url((char *)bp->b_fname)
-                || bt_nofile(bp)
-                )
+            && (path_with_url(bp->b_fname) || bt_nofile(bp))
             && STRCMP(bp->b_fname, avar->vval.v_string) == 0) {
           buf = bp;
           break;
@@ -557,7 +555,7 @@ static void f_bufname(typval_T *argvars, typval_T *rettv, FunPtr fptr)
     buf = tv_get_buf_from_arg(&argvars[0]);
   }
   if (buf != NULL && buf->b_fname != NULL) {
-    rettv->vval.v_string = xstrdup((char *)buf->b_fname);
+    rettv->vval.v_string = xstrdup(buf->b_fname);
   }
 }
 
@@ -638,7 +636,7 @@ buf_T *tv_get_buf(typval_T *tv, int curtab_only)
 {
   char_u *name = (char_u *)tv->vval.v_string;
   int save_magic;
-  char_u *save_cpo;
+  char *save_cpo;
   buf_T *buf;
 
   if (tv->v_type == VAR_NUMBER) {
@@ -658,7 +656,7 @@ buf_T *tv_get_buf(typval_T *tv, int curtab_only)
   save_magic = p_magic;
   p_magic = TRUE;
   save_cpo = p_cpo;
-  p_cpo = (char_u *)"";
+  p_cpo = "";
 
   buf = buflist_findnr(buflist_findpat(name, name + STRLEN(name),
                                        true, false, curtab_only));
@@ -2066,7 +2064,7 @@ static void f_exists(typval_T *argvars, typval_T *rettv, FunPtr fptr)
       n = true;
     } else {
       // Try expanding things like $VIM and ${HOME}.
-      char_u *const exp = expand_env_save((char_u *)p);
+      char *const exp = expand_env_save((char *)p);
       if (exp != NULL && *exp != '$') {
         n = true;
       }
@@ -3390,7 +3388,7 @@ static void f_getcwd(typval_T *argvars, typval_T *rettv, FunPtr fptr)
     FALLTHROUGH;
   case kCdScopeGlobal:
     if (globaldir) {        // `globaldir` is not always set.
-      from = globaldir;
+      from = (char_u *)globaldir;
       break;
     }
     FALLTHROUGH;            // In global directory, just need to get OS CWD.
@@ -4147,8 +4145,7 @@ static void f_glob2regpat(typval_T *argvars, typval_T *rettv, FunPtr fptr)
   const char *const pat = tv_get_string_chk(&argvars[0]);  // NULL on type error
 
   rettv->v_type = VAR_STRING;
-  rettv->vval.v_string =
-    (char *)((pat == NULL) ? NULL : file_pat_to_reg_pat((char_u *)pat, NULL, NULL, false));
+  rettv->vval.v_string = (pat == NULL) ? NULL : file_pat_to_reg_pat(pat, NULL, NULL, false);
 }
 
 /// "has()" function
@@ -5784,7 +5781,7 @@ static void find_some_match(typval_T *const argvars, typval_T *const rettv,
   long len = 0;
   char_u *expr = NULL;
   regmatch_T regmatch;
-  char_u *save_cpo;
+  char *save_cpo;
   long start = 0;
   long nth = 1;
   colnr_T startcol = 0;
@@ -5796,7 +5793,7 @@ static void find_some_match(typval_T *const argvars, typval_T *const rettv,
 
   // Make 'cpoptions' empty, the 'l' flag should not be used here.
   save_cpo = p_cpo;
-  p_cpo = (char_u *)"";
+  p_cpo = "";
 
   rettv->vval.v_number = -1;
   switch (type) {
@@ -5877,7 +5874,7 @@ static void find_some_match(typval_T *const argvars, typval_T *const rettv,
     }
   }
 
-  regmatch.regprog = vim_regcomp((char_u *)pat, RE_MAGIC + RE_STRING);
+  regmatch.regprog = vim_regcomp((char *)pat, RE_MAGIC + RE_STRING);
   if (regmatch.regprog != NULL) {
     regmatch.rm_ic = p_ic;
 
@@ -8310,7 +8307,7 @@ long do_searchpair(const char *spat, const char *mpat, const char *epat, int dir
                    long time_limit)
   FUNC_ATTR_NONNULL_ARG(1, 2, 3)
 {
-  char_u *save_cpo;
+  char *save_cpo;
   char_u *pat, *pat2 = NULL, *pat3 = NULL;
   long retval = 0;
   pos_T pos;
@@ -8326,7 +8323,7 @@ long do_searchpair(const char *spat, const char *mpat, const char *epat, int dir
 
   // Make 'cpoptions' empty, the 'l' flag should not be used here.
   save_cpo = p_cpo;
-  p_cpo = empty_option;
+  p_cpo = (char *)empty_option;
 
   // Set the time limit, if there is one.
   tm = profile_setlimit(time_limit);
@@ -8450,11 +8447,11 @@ long do_searchpair(const char *spat, const char *mpat, const char *epat, int dir
 
   xfree(pat2);
   xfree(pat3);
-  if (p_cpo == empty_option) {
+  if ((char_u *)p_cpo == empty_option) {
     p_cpo = save_cpo;
   } else {
     // Darn, evaluating the {skip} expression changed the value.
-    free_string_option(save_cpo);
+    free_string_option((char_u *)save_cpo);
   }
 
   return retval;
@@ -9715,25 +9712,23 @@ static void f_spellsuggest(typval_T *argvars, typval_T *rettv, FunPtr fptr)
     return;
   }
 
-  if (*curwin->w_s->b_p_spl != NUL) {
-    const char *const str = tv_get_string(&argvars[0]);
-    if (argvars[1].v_type != VAR_UNKNOWN) {
-      maxcount = tv_get_number_chk(&argvars[1], &typeerr);
-      if (maxcount <= 0) {
+  const char *const str = tv_get_string(&argvars[0]);
+  if (argvars[1].v_type != VAR_UNKNOWN) {
+    maxcount = tv_get_number_chk(&argvars[1], &typeerr);
+    if (maxcount <= 0) {
+      goto f_spellsuggest_return;
+    }
+    if (argvars[2].v_type != VAR_UNKNOWN) {
+      need_capital = tv_get_number_chk(&argvars[2], &typeerr);
+      if (typeerr) {
         goto f_spellsuggest_return;
       }
-      if (argvars[2].v_type != VAR_UNKNOWN) {
-        need_capital = tv_get_number_chk(&argvars[2], &typeerr);
-        if (typeerr) {
-          goto f_spellsuggest_return;
-        }
-      }
-    } else {
-      maxcount = 25;
     }
-
-    spell_suggest_list(&ga, (char_u *)str, maxcount, need_capital, false);
+  } else {
+    maxcount = 25;
   }
+
+  spell_suggest_list(&ga, (char_u *)str, maxcount, need_capital, false);
 
 f_spellsuggest_return:
   tv_list_alloc_ret(rettv, (ptrdiff_t)ga.ga_len);
@@ -9747,7 +9742,7 @@ f_spellsuggest_return:
 
 static void f_split(typval_T *argvars, typval_T *rettv, FunPtr fptr)
 {
-  char_u *save_cpo;
+  char *save_cpo;
   int match;
   colnr_T col = 0;
   bool keepempty = false;
@@ -9755,7 +9750,7 @@ static void f_split(typval_T *argvars, typval_T *rettv, FunPtr fptr)
 
   // Make 'cpoptions' empty, the 'l' flag should not be used here.
   save_cpo = p_cpo;
-  p_cpo = (char_u *)"";
+  p_cpo = "";
 
   const char *str = tv_get_string(&argvars[0]);
   const char *pat = NULL;
@@ -9780,7 +9775,7 @@ static void f_split(typval_T *argvars, typval_T *rettv, FunPtr fptr)
   }
 
   regmatch_T regmatch = {
-    .regprog = vim_regcomp((char_u *)pat, RE_MAGIC + RE_STRING),
+    .regprog = vim_regcomp((char *)pat, RE_MAGIC + RE_STRING),
     .startp = { NULL },
     .endp = { NULL },
     .rm_ic = false,
