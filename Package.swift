@@ -1,5 +1,4 @@
-// swift-tools-version:5.3
-// The swift-tools-version declares the minimum version of Swift required to build this package.
+// swift-tools-version:5.6
 
 import PackageDescription
 
@@ -16,7 +15,7 @@ let package = Package(
       dependencies: [],
       path: "NvimServerTypes/Sources"
     ),
-    .target(
+    .executableTarget(
       name: "NvimServer",
       dependencies: [],
       path: "NvimServer/Sources",
