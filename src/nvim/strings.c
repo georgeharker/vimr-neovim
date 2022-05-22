@@ -634,12 +634,12 @@ static const void *tv_ptr(const typval_T *const tvs, int *const idxp)
   FUNC_ATTR_NONNULL_ALL FUNC_ATTR_WARN_UNUSED_RESULT
 {
 #define OFF(attr) offsetof(union typval_vval_union, attr)
-  STATIC_ASSERT(OFF(v_string) == OFF(v_list)
+  STATIC_ASSERT(OFF(v_string) == OFF(v_list)  // -V568
                 && OFF(v_string) == OFF(v_dict)
                 && OFF(v_string) == OFF(v_partial)
-                && sizeof(tvs[0].vval.v_string) == sizeof(tvs[0].vval.v_list)      // -V568
-                && sizeof(tvs[0].vval.v_string) == sizeof(tvs[0].vval.v_dict)      // -V568
-                && sizeof(tvs[0].vval.v_string) == sizeof(tvs[0].vval.v_partial),  // -V568
+                && sizeof(tvs[0].vval.v_string) == sizeof(tvs[0].vval.v_list)
+                && sizeof(tvs[0].vval.v_string) == sizeof(tvs[0].vval.v_dict)
+                && sizeof(tvs[0].vval.v_string) == sizeof(tvs[0].vval.v_partial),
                 "Strings, dictionaries, lists and partials are expected to be pointers, "
                 "so that all three of them can be accessed via v_string");
 #undef OFF
@@ -1496,6 +1496,7 @@ int kv_do_printf(StringBuilder *str, const char *fmt, ...)
   // printed string didn't fit, resize and try again
   if ((size_t)printed >= remaining) {
     kv_ensure_space(*str, (size_t)printed + 1);  // include space for NUL terminator at the end
+    assert(str->items != NULL);
     va_start(ap, fmt);
     printed = vsnprintf(str->items + str->size, str->capacity - str->size, fmt, ap);
     va_end(ap);
@@ -1506,4 +1507,25 @@ int kv_do_printf(StringBuilder *str, const char *fmt, ...)
 
   str->size += (size_t)printed;
   return printed;
+}
+
+/// Reverse text into allocated memory.
+///
+/// @return  the allocated string.
+char_u *reverse_text(char_u *s)
+  FUNC_ATTR_NONNULL_RET
+{
+  // Reverse the pattern.
+  size_t len = STRLEN(s);
+  char_u *rev = xmalloc(len + 1);
+  size_t rev_i = len;
+  for (size_t s_i = 0; s_i < len; s_i++) {
+    const int mb_len = utfc_ptr2len((char *)s + s_i);
+    rev_i -= (size_t)mb_len;
+    memmove(rev + rev_i, s + s_i, (size_t)mb_len);
+    s_i += (size_t)mb_len - 1;
+  }
+  rev[len] = NUL;
+
+  return rev;
 }

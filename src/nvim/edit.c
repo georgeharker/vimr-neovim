@@ -1634,7 +1634,7 @@ void edit_putchar(int c, bool highlight)
     pc_col = 0;
     pc_status = PC_STATUS_UNSET;
     if (curwin->w_p_rl) {
-      pc_col += curwin->w_grid.Columns - 1 - curwin->w_wcol;
+      pc_col += curwin->w_grid.cols - 1 - curwin->w_wcol;
       const int fix_col = grid_fix_col(&curwin->w_grid, pc_col, pc_row);
 
       if (fix_col != pc_col) {
@@ -1761,7 +1761,7 @@ void display_dollar(colnr_T col)
   char_u *p = get_cursor_line_ptr();
   curwin->w_cursor.col -= utf_head_off(p, p + col);
   curs_columns(curwin, false);              // Recompute w_wrow and w_wcol
-  if (curwin->w_wcol < curwin->w_grid.Columns) {
+  if (curwin->w_wcol < curwin->w_grid.cols) {
     edit_putchar('$', false);
     dollar_vcol = curwin->w_virtcol;
   }
@@ -3801,6 +3801,7 @@ static bool ins_compl_prep(int c)
       }
 
       bool want_cindent = (can_cindent && cindent_on());
+
       // When completing whole lines: fix indent for 'cindent'.
       // Otherwise, break line if it's too long.
       if (compl_cont_mode == CTRL_X_WHOLE_LINE) {
@@ -8414,9 +8415,7 @@ static bool ins_bs(int c, int mode, int *inserted_space_p)
     mincol = 0;
     // keep indent
     if (mode == BACKSPACE_LINE
-        && (curbuf->b_p_ai
-            || cindent_on()
-            )
+        && (curbuf->b_p_ai || cindent_on())
         && !revins_on) {
       save_col = curwin->w_cursor.col;
       beginline(BL_WHITE);

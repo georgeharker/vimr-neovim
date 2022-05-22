@@ -1418,14 +1418,14 @@ bool set_mark(buf_T *buf, String name, Integer line, Integer col, Error *err)
 }
 
 /// Get default statusline highlight for window
-const char *get_default_stl_hl(win_T *wp)
+const char *get_default_stl_hl(win_T *wp, bool use_winbar)
 {
   if (wp == NULL) {
     return "TabLineFill";
-  } else if (wp == curwin) {
-    return "StatusLine";
+  } else if (use_winbar) {
+    return (wp == curwin) ? "WinBar" : "WinBarNC";
   } else {
-    return "StatusLineNC";
+    return (wp == curwin) ? "StatusLine" : "StatusLineNC";
   }
 }
 
@@ -1624,6 +1624,7 @@ void create_user_command(String name, Object command, Dict(user_command) *opts, 
 err:
   NLUA_CLEAR_REF(luaref);
   NLUA_CLEAR_REF(compl_luaref);
+  xfree(compl_arg);
 }
 
 int find_sid(uint64_t channel_id)

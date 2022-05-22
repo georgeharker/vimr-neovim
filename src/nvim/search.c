@@ -204,31 +204,6 @@ char_u *get_search_pat(void)
   return mr_pattern;
 }
 
-/*
- * Reverse text into allocated memory.
- * Returns the allocated string.
- *
- * TODO(philix): move reverse_text() to strings.c
- */
-char_u *reverse_text(char_u *s) FUNC_ATTR_NONNULL_RET
-{
-  /*
-   * Reverse the pattern.
-   */
-  size_t len = STRLEN(s);
-  char_u *rev = xmalloc(len + 1);
-  size_t rev_i = len;
-  for (size_t s_i = 0; s_i < len; s_i++) {
-    const int mb_len = utfc_ptr2len((char *)s + s_i);
-    rev_i -= mb_len;
-    memmove(rev + rev_i, s + s_i, mb_len);
-    s_i += mb_len - 1;
-  }
-  rev[len] = NUL;
-
-  return rev;
-}
-
 void save_re_pat(int idx, char_u *pat, int magic)
 {
   if (spats[idx].pat != pat) {
@@ -1990,13 +1965,13 @@ pos_T *findmatchlimit(oparg_T *oap, int initc, int flags, int64_t maxtravel)
   clearpos(&match_pos);
 
   // backward search: Check if this line contains a single-line comment
-  if ((backwards && comment_dir)
-      || lisp) {
+  if ((backwards && comment_dir) || lisp) {
     comment_col = check_linecomment(linep);
   }
   if (lisp && comment_col != MAXCOL && pos.col > (colnr_T)comment_col) {
     lispcomm = true;        // find match inside this comment
   }
+
   while (!got_int) {
     /*
      * Go to the next position, forward or backward. We could use
@@ -2023,8 +1998,7 @@ pos_T *findmatchlimit(oparg_T *oap, int initc, int flags, int64_t maxtravel)
         line_breakcheck();
 
         // Check if this line contains a single-line comment
-        if (comment_dir
-            || lisp) {
+        if (comment_dir || lisp) {
           comment_col = check_linecomment(linep);
         }
         // skip comment
@@ -2038,7 +2012,7 @@ pos_T *findmatchlimit(oparg_T *oap, int initc, int flags, int64_t maxtravel)
     } else {                          // forward search
       if (linep[pos.col] == NUL
           // at end of line, go to next one
-          // don't search for match in comment
+          // For lisp don't search for match in comment
           || (lisp && comment_col != MAXCOL
               && pos.col == (colnr_T)comment_col)) {
         if (pos.lnum == curbuf->b_ml.ml_line_count          // end of file
@@ -2348,8 +2322,8 @@ int check_linecomment(const char_u *line)
   } else {
     while ((p = (char_u *)vim_strchr((char *)p, '/')) != NULL) {
       // Accept a double /, unless it's preceded with * and followed by *,
-      // because * / / * is an end and start of a C comment.
-      // Only accept the position if it is not inside a string.
+      // because * / / * is an end and start of a C comment.  Only
+      // accept the position if it is not inside a string.
       if (p[1] == '/' && (p == line || p[-1] != '*' || p[2] != '*')
           && !is_pos_in_string(line, (colnr_T)(p - line))) {
         break;
