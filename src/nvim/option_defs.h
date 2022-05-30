@@ -49,7 +49,6 @@
 # define DFLT_FFS_VI  ""
 #endif
 
-
 // Possible values for 'encoding'
 #define ENC_UCSBOM     "ucs-bom"       // check for BOM at start of file
 
@@ -334,9 +333,9 @@ EXTERN unsigned bo_flags;
 #ifdef IN_OPTION_C
 static char *(p_bo_values[]) = { "all", "backspace", "cursor", "complete",
                                  "copy", "ctrlg", "error", "esc", "ex",
-                                 "hangul", "insertmode", "lang", "mess",
-                                 "showmatch", "operator", "register", "shell",
-                                 "spell", "wildmode", NULL };
+                                 "hangul", "lang", "mess", "showmatch",
+                                 "operator", "register", "shell", "spell",
+                                 "wildmode", NULL };
 #endif
 
 // values for the 'belloff' option
@@ -485,7 +484,6 @@ EXTERN char_u *p_iconstring;  // 'iconstring'
 EXTERN int p_ic;                // 'ignorecase'
 EXTERN int p_is;                // 'incsearch'
 EXTERN char_u *p_icm;         // 'inccommand'
-EXTERN int p_im;                // 'insertmode'
 EXTERN char_u *p_isf;         // 'isfname'
 EXTERN char_u *p_isi;         // 'isident'
 EXTERN char_u *p_isp;         // 'isprint'

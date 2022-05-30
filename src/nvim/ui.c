@@ -185,7 +185,6 @@ void ui_event(char *name, Array args)
   }
 }
 
-
 void ui_refresh(void)
 {
   if (!ui_active()) {
@@ -535,7 +534,6 @@ void ui_flush(void)
   }
   ui_call_flush();
 }
-
 
 /// Check if 'mouse' is active for the current mode
 ///
