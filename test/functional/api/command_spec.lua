@@ -16,8 +16,8 @@ local feed = helpers.feed
 local funcs = helpers.funcs
 
 describe('nvim_get_commands', function()
-  local cmd_dict  = { addr=NIL, bang=false, bar=false, complete=NIL, complete_arg=NIL, count=NIL, definition='echo "Hello World"', name='Hello', nargs='1', range=NIL, register=false, keepscript=false, script_id=0, }
-  local cmd_dict2 = { addr=NIL, bang=false, bar=false, complete=NIL, complete_arg=NIL, count=NIL, definition='pwd',                name='Pwd',   nargs='?', range=NIL, register=false, keepscript=false, script_id=0, }
+  local cmd_dict  = { addr=NIL, bang=false, bar=false, complete=NIL, complete_arg=NIL, count=NIL, definition='echo "Hello World"', name='Hello', nargs='1', preview=false, range=NIL, register=false, keepscript=false, script_id=0, }
+  local cmd_dict2 = { addr=NIL, bang=false, bar=false, complete=NIL, complete_arg=NIL, count=NIL, definition='pwd',                name='Pwd',   nargs='?', preview=false, range=NIL, register=false, keepscript=false, script_id=0, }
   before_each(clear)
 
   it('gets empty list if no commands were defined', function()
@@ -59,11 +59,11 @@ describe('nvim_get_commands', function()
   end)
 
   it('gets various command attributes', function()
-    local cmd0 = { addr='arguments', bang=false, bar=false, complete='dir',    complete_arg=NIL,         count='10', definition='pwd <args>',                    name='TestCmd', nargs='1', range='10', register=false, keepscript=false, script_id=0, }
-    local cmd1 = { addr=NIL,         bang=false, bar=false, complete='custom', complete_arg='ListUsers', count=NIL,  definition='!finger <args>',                name='Finger',  nargs='+', range=NIL,  register=false, keepscript=false, script_id=1, }
-    local cmd2 = { addr=NIL,         bang=true,  bar=false, complete=NIL,      complete_arg=NIL,         count=NIL,  definition='call \128\253R2_foo(<q-args>)', name='Cmd2',    nargs='*', range=NIL,  register=false, keepscript=false, script_id=2, }
-    local cmd3 = { addr=NIL,         bang=false, bar=true,  complete=NIL,      complete_arg=NIL,         count=NIL,  definition='call \128\253R3_ohyeah()',      name='Cmd3',    nargs='0', range=NIL,  register=false, keepscript=false, script_id=3, }
-    local cmd4 = { addr=NIL,         bang=false, bar=false, complete=NIL,      complete_arg=NIL,         count=NIL,  definition='call \128\253R4_just_great()',  name='Cmd4',    nargs='0', range=NIL,  register=true,  keepscript=false, script_id=4, }
+    local cmd0 = { addr='arguments', bang=false, bar=false, complete='dir',    complete_arg=NIL,         count='10', definition='pwd <args>',                    name='TestCmd', nargs='1', preview=false, range='10', register=false, keepscript=false, script_id=0, }
+    local cmd1 = { addr=NIL,         bang=false, bar=false, complete='custom', complete_arg='ListUsers', count=NIL,  definition='!finger <args>',                name='Finger',  nargs='+', preview=false, range=NIL,  register=false, keepscript=false, script_id=1, }
+    local cmd2 = { addr=NIL,         bang=true,  bar=false, complete=NIL,      complete_arg=NIL,         count=NIL,  definition='call \128\253R2_foo(<q-args>)', name='Cmd2',    nargs='*', preview=false, range=NIL,  register=false, keepscript=false, script_id=2, }
+    local cmd3 = { addr=NIL,         bang=false, bar=true,  complete=NIL,      complete_arg=NIL,         count=NIL,  definition='call \128\253R3_ohyeah()',      name='Cmd3',    nargs='0', preview=false, range=NIL,  register=false, keepscript=false, script_id=3, }
+    local cmd4 = { addr=NIL,         bang=false, bar=false, complete=NIL,      complete_arg=NIL,         count=NIL,  definition='call \128\253R4_just_great()',  name='Cmd4',    nargs='0', preview=false, range=NIL,  register=true,  keepscript=false, script_id=4, }
     source([[
       let s:foo = 1
       command -complete=custom,ListUsers -nargs=+ Finger !finger <args>
@@ -136,7 +136,7 @@ describe('nvim_create_user_command', function()
         silent = false,
         split = "",
         tab = 0,
-        verbose = 0,
+        verbose = -1,
         vertical = false,
       },
       range = 0,
@@ -170,7 +170,7 @@ describe('nvim_create_user_command', function()
         silent = false,
         split = "",
         tab = 0,
-        verbose = 0,
+        verbose = -1,
         vertical = false,
       },
       range = 0,
@@ -204,7 +204,7 @@ describe('nvim_create_user_command', function()
         silent = false,
         split = "",
         tab = 0,
-        verbose = 0,
+        verbose = -1,
         vertical = false,
       },
       range = 0,
@@ -238,7 +238,7 @@ describe('nvim_create_user_command', function()
         silent = false,
         split = "botright",
         tab = 0,
-        verbose = 0,
+        verbose = -1,
         vertical = false,
       },
       range = 1,
@@ -272,7 +272,7 @@ describe('nvim_create_user_command', function()
         silent = false,
         split = "",
         tab = 0,
-        verbose = 0,
+        verbose = -1,
         vertical = false,
       },
       range = 1,
@@ -306,7 +306,7 @@ describe('nvim_create_user_command', function()
         silent = false,
         split = "",
         tab = 0,
-        verbose = 0,
+        verbose = -1,
         vertical = false,
       },
       range = 0,
@@ -352,7 +352,7 @@ describe('nvim_create_user_command', function()
         silent = false,
         split = "",
         tab = 0,
-        verbose = 0,
+        verbose = -1,
         vertical = false,
       },
       range = 0,
@@ -417,6 +417,16 @@ describe('nvim_create_user_command', function()
     matches('Invalid command name', pcall_err(exec_lua, [[
       vim.api.nvim_create_user_command('💩', 'echo "hi"', {})
     ]]))
+  end)
+
+  it('smods can be used with nvim_cmd', function()
+    exec_lua[[
+      vim.api.nvim_create_user_command('MyEcho', function(opts)
+        vim.api.nvim_cmd({ cmd = 'echo', args = { '&verbose' }, mods = opts.smods }, {})
+      end, {})
+    ]]
+
+    eq("3", meths.cmd({ cmd = 'MyEcho', mods = { verbose = 3 } }, { output = true }))
   end)
 end)
 

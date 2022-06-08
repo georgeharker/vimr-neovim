@@ -1840,11 +1840,12 @@ cleanup:
   xfree(info);
 }
 
-void nlua_do_ucmd(ucmd_T *cmd, exarg_T *eap)
+/// @param preview Invoke the callback as a |:command-preview| handler.
+int nlua_do_ucmd(ucmd_T *cmd, exarg_T *eap, bool preview)
 {
   lua_State *const lstate = global_lstate;
 
-  nlua_pushref(lstate, cmd->uc_luaref);
+  nlua_pushref(lstate, preview ? cmd->uc_preview_luaref : cmd->uc_luaref);
 
   lua_newtable(lstate);
   lua_pushboolean(lstate, eap->forceit == 1);
@@ -1918,7 +1919,8 @@ void nlua_do_ucmd(ucmd_T *cmd, exarg_T *eap)
 
   lua_pushinteger(lstate, cmdmod.tab);
   lua_setfield(lstate, -2, "tab");
-  lua_pushinteger(lstate, p_verbose);
+
+  lua_pushinteger(lstate, eap->verbose_save != -1 ? p_verbose : -1);
   lua_setfield(lstate, -2, "verbose");
 
   if (cmdmod.split & WSP_ABOVE) {
@@ -1936,9 +1938,9 @@ void nlua_do_ucmd(ucmd_T *cmd, exarg_T *eap)
 
   lua_pushboolean(lstate, cmdmod.split & WSP_VERT);
   lua_setfield(lstate, -2, "vertical");
-  lua_pushboolean(lstate, msg_silent != 0);
+  lua_pushboolean(lstate, eap->save_msg_silent != -1 ? (msg_silent != 0) : 0);
   lua_setfield(lstate, -2, "silent");
-  lua_pushboolean(lstate, emsg_silent != 0);
+  lua_pushboolean(lstate, eap->did_esilent);
   lua_setfield(lstate, -2, "emsg_silent");
   lua_pushboolean(lstate, eap->did_sandbox);
   lua_setfield(lstate, -2, "sandbox");
@@ -1969,7 +1971,31 @@ void nlua_do_ucmd(ucmd_T *cmd, exarg_T *eap)
 
   lua_setfield(lstate, -2, "smods");
 
-  if (nlua_pcall(lstate, 1, 0)) {
-    nlua_error(lstate, _("Error executing Lua callback: %.*s"));
+  if (preview) {
+    lua_pushinteger(lstate, cmdpreview_get_ns());
+
+    handle_T cmdpreview_bufnr = cmdpreview_get_bufnr();
+    if (cmdpreview_bufnr != 0) {
+      lua_pushinteger(lstate, cmdpreview_bufnr);
+    } else {
+      lua_pushnil(lstate);
+    }
   }
+
+  if (nlua_pcall(lstate, preview ? 3 : 1, preview ? 1 : 0)) {
+    nlua_error(lstate, _("Error executing Lua callback: %.*s"));
+    return 0;
+  }
+
+  int retv = 0;
+
+  if (preview) {
+    if (lua_isnumber(lstate, -1) && (retv = (int)lua_tointeger(lstate, -1)) >= 0 && retv <= 2) {
+      lua_pop(lstate, 1);
+    } else {
+      retv = 0;
+    }
+  }
+
+  return retv;
 }
