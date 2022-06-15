@@ -270,6 +270,13 @@ function module.command(cmd)
   module.request('nvim_command', cmd)
 end
 
+
+-- use for commands which expect nvim to quit
+function module.expect_exit(...)
+  eq("EOF was received from Nvim. Likely the Nvim process crashed.",
+     module.pcall_err(...))
+end
+
 -- Evaluates a VimL expression.
 -- Fails on VimL error, but does not update v:errmsg.
 function module.eval(expr)
@@ -720,14 +727,10 @@ function module.pending_win32(pending_fn)
 end
 
 function module.pending_c_parser(pending_fn)
-  local status, msg = unpack(module.exec_lua([[ return {pcall(vim.treesitter.require_language, 'c')} ]]))
+  local status, _ = unpack(module.exec_lua([[ return {pcall(vim.treesitter.require_language, 'c')} ]]))
   if not status then
-    if module.isCI() then
-      error("treesitter C parser not found, required on CI: " .. msg)
-    else
-      pending_fn 'no C parser, skipping'
-      return true
-    end
+    pending_fn 'no C parser, skipping'
+    return true
   end
   return false
 end
