@@ -7,13 +7,28 @@ let package = Package(
   platforms: [.macOS(.v10_13)],
   products: [
     .library(name: "NvimServerTypes", targets: ["NvimServerTypes"]),
+    .library(name: "RxNeovim", targets: ["RxNeovim"]),
   ],
-  dependencies: [],
+  dependencies: [
+    .package(url: "https://github.com/ReactiveX/RxSwift", .upToNextMinor(from: "6.5.0")),
+    .package(url: "https://github.com/a2/MessagePack.swift", from: "4.0.0"),
+    .package(url: "https://github.com/qvacua/RxPack.swift", from: "0.1.0"),
+  ],
   targets: [
+    .target(name: "NvimServerTypes", dependencies: [], path: "NvimServerTypes/Sources"),
     .target(
-      name: "NvimServerTypes",
-      dependencies: [],
-      path: "NvimServerTypes/Sources"
+      name: "RxNeovim",
+      dependencies: [
+        .product(name: "RxSwift", package: "RxSwift"),
+        .product(name: "RxPack", package: "RxPack.swift"),
+        .product(name: "MessagePack", package: "MessagePack.swift"),
+      ],
+      path: "RxNeovim/Sources"
+    ),
+    .testTarget(
+      name: "RxNeovimTests",
+      dependencies: ["RxNeovim"],
+      path: "RxNeovim/Tests"
     ),
     .executableTarget(
       name: "NvimServer",
