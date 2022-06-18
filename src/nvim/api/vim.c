@@ -2262,3 +2262,18 @@ Dictionary nvim_eval_statusline(String str, Dict(eval_statusline) *opts, Error *
 
   return result;
 }
+
+// CUSTOM_UI
+// Dirty status
+Boolean nvim_get_dirty_status(void)
+FUNC_API_SINCE(4)
+{
+  FOR_ALL_BUFFERS(buffer) {
+      if (bufIsChanged(buffer)) {
+        return true;
+      }
+  }
+
+  return false;
+}
+
