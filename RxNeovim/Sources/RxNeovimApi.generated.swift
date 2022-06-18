@@ -1,4 +1,4 @@
-// Auto generated for nvim version 0.7.0.
+// Auto generated for nvim version 0.8.0.
 // See bin/generate_api_methods.py
 
 import Foundation
@@ -661,38 +661,6 @@ extension RxNeovimApi {
       .asCompletable()
   }
 
-  public func bufGetCommands(
-    buffer: RxNeovimApi.Buffer,
-    opts: Dictionary<String, RxNeovimApi.Value>,
-    errWhenBlocked: Bool = true
-  ) -> Single<Dictionary<String, RxNeovimApi.Value>> {
-
-    let params: [RxNeovimApi.Value] = [
-        .int(Int64(buffer.handle)),
-        .map(opts.mapToDict({ (Value.string($0), $1) })),
-    ]
-
-    func transform(_ value: Value) throws -> Dictionary<String, RxNeovimApi.Value> {
-      guard let result = (msgPackDictToSwift(value.dictionaryValue)) else {
-        throw RxNeovimApi.Error.conversion(type: Dictionary<String, RxNeovimApi.Value>.self)
-      }
-
-      return result
-    }
-
-    if errWhenBlocked {
-      return self
-        .checkBlocked(
-          self.rpc(method: "nvim_buf_get_commands", params: params, expectsReturnValue: true)
-        )
-        .map(transform)
-    }
-
-    return self
-      .rpc(method: "nvim_buf_get_commands", params: params, expectsReturnValue: true)
-      .map(transform)
-  }
-
   public func bufSetVar(
     buffer: RxNeovimApi.Buffer,
     name: String,
@@ -740,64 +708,6 @@ extension RxNeovimApi {
 
     return self
       .rpc(method: "nvim_buf_del_var", params: params, expectsReturnValue: expectsReturnValue)
-      .asCompletable()
-  }
-
-  public func bufGetOption(
-    buffer: RxNeovimApi.Buffer,
-    name: String,
-    errWhenBlocked: Bool = true
-  ) -> Single<RxNeovimApi.Value> {
-
-    let params: [RxNeovimApi.Value] = [
-        .int(Int64(buffer.handle)),
-        .string(name),
-    ]
-
-    func transform(_ value: Value) throws -> RxNeovimApi.Value {
-      guard let result = (Optional(value)) else {
-        throw RxNeovimApi.Error.conversion(type: RxNeovimApi.Value.self)
-      }
-
-      return result
-    }
-
-    if errWhenBlocked {
-      return self
-        .checkBlocked(
-          self.rpc(method: "nvim_buf_get_option", params: params, expectsReturnValue: true)
-        )
-        .map(transform)
-    }
-
-    return self
-      .rpc(method: "nvim_buf_get_option", params: params, expectsReturnValue: true)
-      .map(transform)
-  }
-
-  public func bufSetOption(
-    buffer: RxNeovimApi.Buffer,
-    name: String,
-    value: RxNeovimApi.Value,
-    expectsReturnValue: Bool = false
-  ) -> Completable {
-
-    let params: [RxNeovimApi.Value] = [
-        .int(Int64(buffer.handle)),
-        .string(name),
-        value,
-    ]
-
-    if expectsReturnValue {
-      return self
-        .checkBlocked(
-          self.rpc(method: "nvim_buf_set_option", params: params, expectsReturnValue: expectsReturnValue)
-        )
-        .asCompletable()
-    }
-
-    return self
-      .rpc(method: "nvim_buf_set_option", params: params, expectsReturnValue: expectsReturnValue)
       .asCompletable()
   }
 
@@ -1073,6 +983,148 @@ extension RxNeovimApi {
       .map(transform)
   }
 
+  public func bufGetInfo(
+    buffer: RxNeovimApi.Buffer,
+    errWhenBlocked: Bool = true
+  ) -> Single<Dictionary<String, RxNeovimApi.Value>> {
+
+    let params: [RxNeovimApi.Value] = [
+        .int(Int64(buffer.handle)),
+    ]
+
+    func transform(_ value: Value) throws -> Dictionary<String, RxNeovimApi.Value> {
+      guard let result = (msgPackDictToSwift(value.dictionaryValue)) else {
+        throw RxNeovimApi.Error.conversion(type: Dictionary<String, RxNeovimApi.Value>.self)
+      }
+
+      return result
+    }
+
+    if errWhenBlocked {
+      return self
+        .checkBlocked(
+          self.rpc(method: "nvim_buf_get_info", params: params, expectsReturnValue: true)
+        )
+        .map(transform)
+    }
+
+    return self
+      .rpc(method: "nvim_buf_get_info", params: params, expectsReturnValue: true)
+      .map(transform)
+  }
+
+  public func parseCmd(
+    str: String,
+    opts: Dictionary<String, RxNeovimApi.Value>,
+    errWhenBlocked: Bool = true
+  ) -> Single<Dictionary<String, RxNeovimApi.Value>> {
+
+    let params: [RxNeovimApi.Value] = [
+        .string(str),
+        .map(opts.mapToDict({ (Value.string($0), $1) })),
+    ]
+
+    func transform(_ value: Value) throws -> Dictionary<String, RxNeovimApi.Value> {
+      guard let result = (msgPackDictToSwift(value.dictionaryValue)) else {
+        throw RxNeovimApi.Error.conversion(type: Dictionary<String, RxNeovimApi.Value>.self)
+      }
+
+      return result
+    }
+
+    if errWhenBlocked {
+      return self
+        .checkBlocked(
+          self.rpc(method: "nvim_parse_cmd", params: params, expectsReturnValue: true)
+        )
+        .map(transform)
+    }
+
+    return self
+      .rpc(method: "nvim_parse_cmd", params: params, expectsReturnValue: true)
+      .map(transform)
+  }
+
+  public func cmd(
+    cmd: Dictionary<String, RxNeovimApi.Value>,
+    opts: Dictionary<String, RxNeovimApi.Value>,
+    errWhenBlocked: Bool = true
+  ) -> Single<String> {
+
+    let params: [RxNeovimApi.Value] = [
+        .map(cmd.mapToDict({ (Value.string($0), $1) })),
+        .map(opts.mapToDict({ (Value.string($0), $1) })),
+    ]
+
+    func transform(_ value: Value) throws -> String {
+      guard let result = (value.stringValue) else {
+        throw RxNeovimApi.Error.conversion(type: String.self)
+      }
+
+      return result
+    }
+
+    if errWhenBlocked {
+      return self
+        .checkBlocked(
+          self.rpc(method: "nvim_cmd", params: params, expectsReturnValue: true)
+        )
+        .map(transform)
+    }
+
+    return self
+      .rpc(method: "nvim_cmd", params: params, expectsReturnValue: true)
+      .map(transform)
+  }
+
+  public func createUserCommand(
+    name: String,
+    command: RxNeovimApi.Value,
+    opts: Dictionary<String, RxNeovimApi.Value>,
+    expectsReturnValue: Bool = false
+  ) -> Completable {
+
+    let params: [RxNeovimApi.Value] = [
+        .string(name),
+        command,
+        .map(opts.mapToDict({ (Value.string($0), $1) })),
+    ]
+
+    if expectsReturnValue {
+      return self
+        .checkBlocked(
+          self.rpc(method: "nvim_create_user_command", params: params, expectsReturnValue: expectsReturnValue)
+        )
+        .asCompletable()
+    }
+
+    return self
+      .rpc(method: "nvim_create_user_command", params: params, expectsReturnValue: expectsReturnValue)
+      .asCompletable()
+  }
+
+  public func delUserCommand(
+    name: String,
+    expectsReturnValue: Bool = false
+  ) -> Completable {
+
+    let params: [RxNeovimApi.Value] = [
+        .string(name),
+    ]
+
+    if expectsReturnValue {
+      return self
+        .checkBlocked(
+          self.rpc(method: "nvim_del_user_command", params: params, expectsReturnValue: expectsReturnValue)
+        )
+        .asCompletable()
+    }
+
+    return self
+      .rpc(method: "nvim_del_user_command", params: params, expectsReturnValue: expectsReturnValue)
+      .asCompletable()
+  }
+
   public func bufCreateUserCommand(
     buffer: RxNeovimApi.Buffer,
     name: String,
@@ -1125,13 +1177,13 @@ extension RxNeovimApi {
       .asCompletable()
   }
 
-  public func bufGetInfo(
-    buffer: RxNeovimApi.Buffer,
+  public func getCommands(
+    opts: Dictionary<String, RxNeovimApi.Value>,
     errWhenBlocked: Bool = true
   ) -> Single<Dictionary<String, RxNeovimApi.Value>> {
 
     let params: [RxNeovimApi.Value] = [
-        .int(Int64(buffer.handle)),
+        .map(opts.mapToDict({ (Value.string($0), $1) })),
     ]
 
     func transform(_ value: Value) throws -> Dictionary<String, RxNeovimApi.Value> {
@@ -1145,13 +1197,45 @@ extension RxNeovimApi {
     if errWhenBlocked {
       return self
         .checkBlocked(
-          self.rpc(method: "nvim_buf_get_info", params: params, expectsReturnValue: true)
+          self.rpc(method: "nvim_get_commands", params: params, expectsReturnValue: true)
         )
         .map(transform)
     }
 
     return self
-      .rpc(method: "nvim_buf_get_info", params: params, expectsReturnValue: true)
+      .rpc(method: "nvim_get_commands", params: params, expectsReturnValue: true)
+      .map(transform)
+  }
+
+  public func bufGetCommands(
+    buffer: RxNeovimApi.Buffer,
+    opts: Dictionary<String, RxNeovimApi.Value>,
+    errWhenBlocked: Bool = true
+  ) -> Single<Dictionary<String, RxNeovimApi.Value>> {
+
+    let params: [RxNeovimApi.Value] = [
+        .int(Int64(buffer.handle)),
+        .map(opts.mapToDict({ (Value.string($0), $1) })),
+    ]
+
+    func transform(_ value: Value) throws -> Dictionary<String, RxNeovimApi.Value> {
+      guard let result = (msgPackDictToSwift(value.dictionaryValue)) else {
+        throw RxNeovimApi.Error.conversion(type: Dictionary<String, RxNeovimApi.Value>.self)
+      }
+
+      return result
+    }
+
+    if errWhenBlocked {
+      return self
+        .checkBlocked(
+          self.rpc(method: "nvim_buf_get_commands", params: params, expectsReturnValue: true)
+        )
+        .map(transform)
+    }
+
+    return self
+      .rpc(method: "nvim_buf_get_commands", params: params, expectsReturnValue: true)
       .map(transform)
   }
 
@@ -1449,6 +1533,293 @@ extension RxNeovimApi {
 
     return self
       .rpc(method: "nvim_set_decoration_provider", params: params, expectsReturnValue: expectsReturnValue)
+      .asCompletable()
+  }
+
+  public func getOptionValue(
+    name: String,
+    opts: Dictionary<String, RxNeovimApi.Value>,
+    errWhenBlocked: Bool = true
+  ) -> Single<RxNeovimApi.Value> {
+
+    let params: [RxNeovimApi.Value] = [
+        .string(name),
+        .map(opts.mapToDict({ (Value.string($0), $1) })),
+    ]
+
+    func transform(_ value: Value) throws -> RxNeovimApi.Value {
+      guard let result = (Optional(value)) else {
+        throw RxNeovimApi.Error.conversion(type: RxNeovimApi.Value.self)
+      }
+
+      return result
+    }
+
+    if errWhenBlocked {
+      return self
+        .checkBlocked(
+          self.rpc(method: "nvim_get_option_value", params: params, expectsReturnValue: true)
+        )
+        .map(transform)
+    }
+
+    return self
+      .rpc(method: "nvim_get_option_value", params: params, expectsReturnValue: true)
+      .map(transform)
+  }
+
+  public func setOptionValue(
+    name: String,
+    value: RxNeovimApi.Value,
+    opts: Dictionary<String, RxNeovimApi.Value>,
+    expectsReturnValue: Bool = false
+  ) -> Completable {
+
+    let params: [RxNeovimApi.Value] = [
+        .string(name),
+        value,
+        .map(opts.mapToDict({ (Value.string($0), $1) })),
+    ]
+
+    if expectsReturnValue {
+      return self
+        .checkBlocked(
+          self.rpc(method: "nvim_set_option_value", params: params, expectsReturnValue: expectsReturnValue)
+        )
+        .asCompletable()
+    }
+
+    return self
+      .rpc(method: "nvim_set_option_value", params: params, expectsReturnValue: expectsReturnValue)
+      .asCompletable()
+  }
+
+  public func getAllOptionsInfo(
+    errWhenBlocked: Bool = true
+  ) -> Single<Dictionary<String, RxNeovimApi.Value>> {
+
+    let params: [RxNeovimApi.Value] = [
+        
+    ]
+
+    func transform(_ value: Value) throws -> Dictionary<String, RxNeovimApi.Value> {
+      guard let result = (msgPackDictToSwift(value.dictionaryValue)) else {
+        throw RxNeovimApi.Error.conversion(type: Dictionary<String, RxNeovimApi.Value>.self)
+      }
+
+      return result
+    }
+
+    if errWhenBlocked {
+      return self
+        .checkBlocked(
+          self.rpc(method: "nvim_get_all_options_info", params: params, expectsReturnValue: true)
+        )
+        .map(transform)
+    }
+
+    return self
+      .rpc(method: "nvim_get_all_options_info", params: params, expectsReturnValue: true)
+      .map(transform)
+  }
+
+  public func getOptionInfo(
+    name: String,
+    errWhenBlocked: Bool = true
+  ) -> Single<Dictionary<String, RxNeovimApi.Value>> {
+
+    let params: [RxNeovimApi.Value] = [
+        .string(name),
+    ]
+
+    func transform(_ value: Value) throws -> Dictionary<String, RxNeovimApi.Value> {
+      guard let result = (msgPackDictToSwift(value.dictionaryValue)) else {
+        throw RxNeovimApi.Error.conversion(type: Dictionary<String, RxNeovimApi.Value>.self)
+      }
+
+      return result
+    }
+
+    if errWhenBlocked {
+      return self
+        .checkBlocked(
+          self.rpc(method: "nvim_get_option_info", params: params, expectsReturnValue: true)
+        )
+        .map(transform)
+    }
+
+    return self
+      .rpc(method: "nvim_get_option_info", params: params, expectsReturnValue: true)
+      .map(transform)
+  }
+
+  public func setOption(
+    name: String,
+    value: RxNeovimApi.Value,
+    expectsReturnValue: Bool = false
+  ) -> Completable {
+
+    let params: [RxNeovimApi.Value] = [
+        .string(name),
+        value,
+    ]
+
+    if expectsReturnValue {
+      return self
+        .checkBlocked(
+          self.rpc(method: "nvim_set_option", params: params, expectsReturnValue: expectsReturnValue)
+        )
+        .asCompletable()
+    }
+
+    return self
+      .rpc(method: "nvim_set_option", params: params, expectsReturnValue: expectsReturnValue)
+      .asCompletable()
+  }
+
+  public func getOption(
+    name: String,
+    errWhenBlocked: Bool = true
+  ) -> Single<RxNeovimApi.Value> {
+
+    let params: [RxNeovimApi.Value] = [
+        .string(name),
+    ]
+
+    func transform(_ value: Value) throws -> RxNeovimApi.Value {
+      guard let result = (Optional(value)) else {
+        throw RxNeovimApi.Error.conversion(type: RxNeovimApi.Value.self)
+      }
+
+      return result
+    }
+
+    if errWhenBlocked {
+      return self
+        .checkBlocked(
+          self.rpc(method: "nvim_get_option", params: params, expectsReturnValue: true)
+        )
+        .map(transform)
+    }
+
+    return self
+      .rpc(method: "nvim_get_option", params: params, expectsReturnValue: true)
+      .map(transform)
+  }
+
+  public func bufGetOption(
+    buffer: RxNeovimApi.Buffer,
+    name: String,
+    errWhenBlocked: Bool = true
+  ) -> Single<RxNeovimApi.Value> {
+
+    let params: [RxNeovimApi.Value] = [
+        .int(Int64(buffer.handle)),
+        .string(name),
+    ]
+
+    func transform(_ value: Value) throws -> RxNeovimApi.Value {
+      guard let result = (Optional(value)) else {
+        throw RxNeovimApi.Error.conversion(type: RxNeovimApi.Value.self)
+      }
+
+      return result
+    }
+
+    if errWhenBlocked {
+      return self
+        .checkBlocked(
+          self.rpc(method: "nvim_buf_get_option", params: params, expectsReturnValue: true)
+        )
+        .map(transform)
+    }
+
+    return self
+      .rpc(method: "nvim_buf_get_option", params: params, expectsReturnValue: true)
+      .map(transform)
+  }
+
+  public func bufSetOption(
+    buffer: RxNeovimApi.Buffer,
+    name: String,
+    value: RxNeovimApi.Value,
+    expectsReturnValue: Bool = false
+  ) -> Completable {
+
+    let params: [RxNeovimApi.Value] = [
+        .int(Int64(buffer.handle)),
+        .string(name),
+        value,
+    ]
+
+    if expectsReturnValue {
+      return self
+        .checkBlocked(
+          self.rpc(method: "nvim_buf_set_option", params: params, expectsReturnValue: expectsReturnValue)
+        )
+        .asCompletable()
+    }
+
+    return self
+      .rpc(method: "nvim_buf_set_option", params: params, expectsReturnValue: expectsReturnValue)
+      .asCompletable()
+  }
+
+  public func winGetOption(
+    window: RxNeovimApi.Window,
+    name: String,
+    errWhenBlocked: Bool = true
+  ) -> Single<RxNeovimApi.Value> {
+
+    let params: [RxNeovimApi.Value] = [
+        .int(Int64(window.handle)),
+        .string(name),
+    ]
+
+    func transform(_ value: Value) throws -> RxNeovimApi.Value {
+      guard let result = (Optional(value)) else {
+        throw RxNeovimApi.Error.conversion(type: RxNeovimApi.Value.self)
+      }
+
+      return result
+    }
+
+    if errWhenBlocked {
+      return self
+        .checkBlocked(
+          self.rpc(method: "nvim_win_get_option", params: params, expectsReturnValue: true)
+        )
+        .map(transform)
+    }
+
+    return self
+      .rpc(method: "nvim_win_get_option", params: params, expectsReturnValue: true)
+      .map(transform)
+  }
+
+  public func winSetOption(
+    window: RxNeovimApi.Window,
+    name: String,
+    value: RxNeovimApi.Value,
+    expectsReturnValue: Bool = false
+  ) -> Completable {
+
+    let params: [RxNeovimApi.Value] = [
+        .int(Int64(window.handle)),
+        .string(name),
+        value,
+    ]
+
+    if expectsReturnValue {
+      return self
+        .checkBlocked(
+          self.rpc(method: "nvim_win_set_option", params: params, expectsReturnValue: expectsReturnValue)
+        )
+        .asCompletable()
+    }
+
+    return self
+      .rpc(method: "nvim_win_set_option", params: params, expectsReturnValue: expectsReturnValue)
       .asCompletable()
   }
 
@@ -2450,177 +2821,6 @@ extension RxNeovimApi {
       .asCompletable()
   }
 
-  public func getOption(
-    name: String,
-    errWhenBlocked: Bool = true
-  ) -> Single<RxNeovimApi.Value> {
-
-    let params: [RxNeovimApi.Value] = [
-        .string(name),
-    ]
-
-    func transform(_ value: Value) throws -> RxNeovimApi.Value {
-      guard let result = (Optional(value)) else {
-        throw RxNeovimApi.Error.conversion(type: RxNeovimApi.Value.self)
-      }
-
-      return result
-    }
-
-    if errWhenBlocked {
-      return self
-        .checkBlocked(
-          self.rpc(method: "nvim_get_option", params: params, expectsReturnValue: true)
-        )
-        .map(transform)
-    }
-
-    return self
-      .rpc(method: "nvim_get_option", params: params, expectsReturnValue: true)
-      .map(transform)
-  }
-
-  public func getOptionValue(
-    name: String,
-    opts: Dictionary<String, RxNeovimApi.Value>,
-    errWhenBlocked: Bool = true
-  ) -> Single<RxNeovimApi.Value> {
-
-    let params: [RxNeovimApi.Value] = [
-        .string(name),
-        .map(opts.mapToDict({ (Value.string($0), $1) })),
-    ]
-
-    func transform(_ value: Value) throws -> RxNeovimApi.Value {
-      guard let result = (Optional(value)) else {
-        throw RxNeovimApi.Error.conversion(type: RxNeovimApi.Value.self)
-      }
-
-      return result
-    }
-
-    if errWhenBlocked {
-      return self
-        .checkBlocked(
-          self.rpc(method: "nvim_get_option_value", params: params, expectsReturnValue: true)
-        )
-        .map(transform)
-    }
-
-    return self
-      .rpc(method: "nvim_get_option_value", params: params, expectsReturnValue: true)
-      .map(transform)
-  }
-
-  public func setOptionValue(
-    name: String,
-    value: RxNeovimApi.Value,
-    opts: Dictionary<String, RxNeovimApi.Value>,
-    expectsReturnValue: Bool = false
-  ) -> Completable {
-
-    let params: [RxNeovimApi.Value] = [
-        .string(name),
-        value,
-        .map(opts.mapToDict({ (Value.string($0), $1) })),
-    ]
-
-    if expectsReturnValue {
-      return self
-        .checkBlocked(
-          self.rpc(method: "nvim_set_option_value", params: params, expectsReturnValue: expectsReturnValue)
-        )
-        .asCompletable()
-    }
-
-    return self
-      .rpc(method: "nvim_set_option_value", params: params, expectsReturnValue: expectsReturnValue)
-      .asCompletable()
-  }
-
-  public func getAllOptionsInfo(
-    errWhenBlocked: Bool = true
-  ) -> Single<Dictionary<String, RxNeovimApi.Value>> {
-
-    let params: [RxNeovimApi.Value] = [
-        
-    ]
-
-    func transform(_ value: Value) throws -> Dictionary<String, RxNeovimApi.Value> {
-      guard let result = (msgPackDictToSwift(value.dictionaryValue)) else {
-        throw RxNeovimApi.Error.conversion(type: Dictionary<String, RxNeovimApi.Value>.self)
-      }
-
-      return result
-    }
-
-    if errWhenBlocked {
-      return self
-        .checkBlocked(
-          self.rpc(method: "nvim_get_all_options_info", params: params, expectsReturnValue: true)
-        )
-        .map(transform)
-    }
-
-    return self
-      .rpc(method: "nvim_get_all_options_info", params: params, expectsReturnValue: true)
-      .map(transform)
-  }
-
-  public func getOptionInfo(
-    name: String,
-    errWhenBlocked: Bool = true
-  ) -> Single<Dictionary<String, RxNeovimApi.Value>> {
-
-    let params: [RxNeovimApi.Value] = [
-        .string(name),
-    ]
-
-    func transform(_ value: Value) throws -> Dictionary<String, RxNeovimApi.Value> {
-      guard let result = (msgPackDictToSwift(value.dictionaryValue)) else {
-        throw RxNeovimApi.Error.conversion(type: Dictionary<String, RxNeovimApi.Value>.self)
-      }
-
-      return result
-    }
-
-    if errWhenBlocked {
-      return self
-        .checkBlocked(
-          self.rpc(method: "nvim_get_option_info", params: params, expectsReturnValue: true)
-        )
-        .map(transform)
-    }
-
-    return self
-      .rpc(method: "nvim_get_option_info", params: params, expectsReturnValue: true)
-      .map(transform)
-  }
-
-  public func setOption(
-    name: String,
-    value: RxNeovimApi.Value,
-    expectsReturnValue: Bool = false
-  ) -> Completable {
-
-    let params: [RxNeovimApi.Value] = [
-        .string(name),
-        value,
-    ]
-
-    if expectsReturnValue {
-      return self
-        .checkBlocked(
-          self.rpc(method: "nvim_set_option", params: params, expectsReturnValue: expectsReturnValue)
-        )
-        .asCompletable()
-    }
-
-    return self
-      .rpc(method: "nvim_set_option", params: params, expectsReturnValue: expectsReturnValue)
-      .asCompletable()
-  }
-
   public func echo(
     chunks: RxNeovimApi.Value,
     history: Bool,
@@ -3365,36 +3565,6 @@ extension RxNeovimApi {
       .asCompletable()
   }
 
-  public func getCommands(
-    opts: Dictionary<String, RxNeovimApi.Value>,
-    errWhenBlocked: Bool = true
-  ) -> Single<Dictionary<String, RxNeovimApi.Value>> {
-
-    let params: [RxNeovimApi.Value] = [
-        .map(opts.mapToDict({ (Value.string($0), $1) })),
-    ]
-
-    func transform(_ value: Value) throws -> Dictionary<String, RxNeovimApi.Value> {
-      guard let result = (msgPackDictToSwift(value.dictionaryValue)) else {
-        throw RxNeovimApi.Error.conversion(type: Dictionary<String, RxNeovimApi.Value>.self)
-      }
-
-      return result
-    }
-
-    if errWhenBlocked {
-      return self
-        .checkBlocked(
-          self.rpc(method: "nvim_get_commands", params: params, expectsReturnValue: true)
-        )
-        .map(transform)
-    }
-
-    return self
-      .rpc(method: "nvim_get_commands", params: params, expectsReturnValue: true)
-      .map(transform)
-  }
-
   public func getApiInfo(
     errWhenBlocked: Bool = true
   ) -> Single<RxNeovimApi.Value> {
@@ -3751,83 +3921,6 @@ extension RxNeovimApi {
 
     return self
       .rpc(method: "nvim_eval_statusline", params: params, expectsReturnValue: true)
-      .map(transform)
-  }
-
-  public func createUserCommand(
-    name: String,
-    command: RxNeovimApi.Value,
-    opts: Dictionary<String, RxNeovimApi.Value>,
-    expectsReturnValue: Bool = false
-  ) -> Completable {
-
-    let params: [RxNeovimApi.Value] = [
-        .string(name),
-        command,
-        .map(opts.mapToDict({ (Value.string($0), $1) })),
-    ]
-
-    if expectsReturnValue {
-      return self
-        .checkBlocked(
-          self.rpc(method: "nvim_create_user_command", params: params, expectsReturnValue: expectsReturnValue)
-        )
-        .asCompletable()
-    }
-
-    return self
-      .rpc(method: "nvim_create_user_command", params: params, expectsReturnValue: expectsReturnValue)
-      .asCompletable()
-  }
-
-  public func delUserCommand(
-    name: String,
-    expectsReturnValue: Bool = false
-  ) -> Completable {
-
-    let params: [RxNeovimApi.Value] = [
-        .string(name),
-    ]
-
-    if expectsReturnValue {
-      return self
-        .checkBlocked(
-          self.rpc(method: "nvim_del_user_command", params: params, expectsReturnValue: expectsReturnValue)
-        )
-        .asCompletable()
-    }
-
-    return self
-      .rpc(method: "nvim_del_user_command", params: params, expectsReturnValue: expectsReturnValue)
-      .asCompletable()
-  }
-
-  public func getDirtyStatus(
-    errWhenBlocked: Bool = true
-  ) -> Single<Bool> {
-
-    let params: [RxNeovimApi.Value] = [
-        
-    ]
-
-    func transform(_ value: Value) throws -> Bool {
-      guard let result = (value.boolValue) else {
-        throw RxNeovimApi.Error.conversion(type: Bool.self)
-      }
-
-      return result
-    }
-
-    if errWhenBlocked {
-      return self
-        .checkBlocked(
-          self.rpc(method: "nvim_get_dirty_status", params: params, expectsReturnValue: true)
-        )
-        .map(transform)
-    }
-
-    return self
-      .rpc(method: "nvim_get_dirty_status", params: params, expectsReturnValue: true)
       .map(transform)
   }
 
@@ -4398,64 +4491,6 @@ extension RxNeovimApi {
 
     return self
       .rpc(method: "nvim_win_del_var", params: params, expectsReturnValue: expectsReturnValue)
-      .asCompletable()
-  }
-
-  public func winGetOption(
-    window: RxNeovimApi.Window,
-    name: String,
-    errWhenBlocked: Bool = true
-  ) -> Single<RxNeovimApi.Value> {
-
-    let params: [RxNeovimApi.Value] = [
-        .int(Int64(window.handle)),
-        .string(name),
-    ]
-
-    func transform(_ value: Value) throws -> RxNeovimApi.Value {
-      guard let result = (Optional(value)) else {
-        throw RxNeovimApi.Error.conversion(type: RxNeovimApi.Value.self)
-      }
-
-      return result
-    }
-
-    if errWhenBlocked {
-      return self
-        .checkBlocked(
-          self.rpc(method: "nvim_win_get_option", params: params, expectsReturnValue: true)
-        )
-        .map(transform)
-    }
-
-    return self
-      .rpc(method: "nvim_win_get_option", params: params, expectsReturnValue: true)
-      .map(transform)
-  }
-
-  public func winSetOption(
-    window: RxNeovimApi.Window,
-    name: String,
-    value: RxNeovimApi.Value,
-    expectsReturnValue: Bool = false
-  ) -> Completable {
-
-    let params: [RxNeovimApi.Value] = [
-        .int(Int64(window.handle)),
-        .string(name),
-        value,
-    ]
-
-    if expectsReturnValue {
-      return self
-        .checkBlocked(
-          self.rpc(method: "nvim_win_set_option", params: params, expectsReturnValue: expectsReturnValue)
-        )
-        .asCompletable()
-    }
-
-    return self
-      .rpc(method: "nvim_win_set_option", params: params, expectsReturnValue: expectsReturnValue)
       .asCompletable()
   }
 
