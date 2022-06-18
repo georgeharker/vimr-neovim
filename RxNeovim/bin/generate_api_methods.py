@@ -406,7 +406,7 @@ def parse_error_cases(error_types):
 
 
 if __name__ == '__main__':
-    result_file_path = './Sources/RxPack/RxNeovimApi.generated.swift'
+    result_file_path = './RxNeovim/Sources/RxNeovimApi.generated.swift'
 
     nvim_path = os.environ['NVIM_PATH'] if 'NVIM_PATH' in os.environ else 'nvim'
 

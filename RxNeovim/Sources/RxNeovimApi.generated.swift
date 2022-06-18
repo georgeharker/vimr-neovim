@@ -1125,6 +1125,36 @@ extension RxNeovimApi {
       .asCompletable()
   }
 
+  public func bufGetInfo(
+    buffer: RxNeovimApi.Buffer,
+    errWhenBlocked: Bool = true
+  ) -> Single<Dictionary<String, RxNeovimApi.Value>> {
+
+    let params: [RxNeovimApi.Value] = [
+        .int(Int64(buffer.handle)),
+    ]
+
+    func transform(_ value: Value) throws -> Dictionary<String, RxNeovimApi.Value> {
+      guard let result = (msgPackDictToSwift(value.dictionaryValue)) else {
+        throw RxNeovimApi.Error.conversion(type: Dictionary<String, RxNeovimApi.Value>.self)
+      }
+
+      return result
+    }
+
+    if errWhenBlocked {
+      return self
+        .checkBlocked(
+          self.rpc(method: "nvim_buf_get_info", params: params, expectsReturnValue: true)
+        )
+        .map(transform)
+    }
+
+    return self
+      .rpc(method: "nvim_buf_get_info", params: params, expectsReturnValue: true)
+      .map(transform)
+  }
+
   public func createNamespace(
     name: String,
     errWhenBlocked: Bool = true
@@ -3770,6 +3800,35 @@ extension RxNeovimApi {
     return self
       .rpc(method: "nvim_del_user_command", params: params, expectsReturnValue: expectsReturnValue)
       .asCompletable()
+  }
+
+  public func getDirtyStatus(
+    errWhenBlocked: Bool = true
+  ) -> Single<Bool> {
+
+    let params: [RxNeovimApi.Value] = [
+        
+    ]
+
+    func transform(_ value: Value) throws -> Bool {
+      guard let result = (value.boolValue) else {
+        throw RxNeovimApi.Error.conversion(type: Bool.self)
+      }
+
+      return result
+    }
+
+    if errWhenBlocked {
+      return self
+        .checkBlocked(
+          self.rpc(method: "nvim_get_dirty_status", params: params, expectsReturnValue: true)
+        )
+        .map(transform)
+    }
+
+    return self
+      .rpc(method: "nvim_get_dirty_status", params: params, expectsReturnValue: true)
+      .map(transform)
   }
 
   public func exec(

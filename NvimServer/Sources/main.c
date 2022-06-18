@@ -15,6 +15,11 @@ int main(int argc, const char *argv[]) {
   logger = os_log_create("com.qvacua.NvimServer", "server");
   observe_parent_termination();
 
+  if (argc == 2 && strcmp("--api-info", argv[1]) == 0) {
+    nvim_main(2, argv);
+    return 0;
+  }
+
   if (argc < 5) {
     printf("We need at least %d arguments! Printing --version and exiting...\n", ARGC - 1);
     
