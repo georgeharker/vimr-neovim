@@ -36,7 +36,7 @@
 #endif
 
 #ifdef CUSTOM_UI
-extern void custom_ui_event(UI *ui, char * name, Array args, bool * args_consumed);
+extern void custom_ui_event(UI *ui, char * name, Array args);
 #endif
 
 

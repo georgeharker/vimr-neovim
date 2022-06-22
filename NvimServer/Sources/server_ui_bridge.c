@@ -267,7 +267,7 @@ static void dummy2(UI *ui __unused, String icon __unused) {}
 
 #pragma mark called by nvim
 
-void custom_ui_event(UI *ui, char *name, Array args, bool *args_consumed) {
+void custom_ui_event(UI *ui, char *name, Array args) {
   size_t name_len = strlen(name);
   send_msg_packing(
       NvimServerMsgIdEvent,
