@@ -43,6 +43,9 @@ static int validate_option_value_args(Dict(option) *opts, int *scope, int *opt_t
   if (opts->win.type == kObjectTypeInteger) {
     *opt_type = SREQ_WIN;
     *from = find_window_by_handle((int)opts->win.data.integer, err);
+    if (ERROR_SET(err)) {
+      return FAIL;
+    }
   } else if (HAS_KEY(opts->win)) {
     api_set_error(err, kErrorTypeValidation, "invalid value for key: win");
     return FAIL;
@@ -52,6 +55,9 @@ static int validate_option_value_args(Dict(option) *opts, int *scope, int *opt_t
     *scope = OPT_LOCAL;
     *opt_type = SREQ_BUF;
     *from = find_buffer_by_handle((int)opts->buf.data.integer, err);
+    if (ERROR_SET(err)) {
+      return FAIL;
+    }
   } else if (HAS_KEY(opts->buf)) {
     api_set_error(err, kErrorTypeValidation, "invalid value for key: buf");
     return FAIL;
@@ -154,6 +160,19 @@ void nvim_set_option_value(String name, Object value, Dict(option) *opts, Error 
   void *to = NULL;
   if (!validate_option_value_args(opts, &scope, &opt_type, &to, err)) {
     return;
+  }
+
+  // If:
+  // - window id is provided
+  // - scope is not provided
+  // - option is global or local to window (global-local)
+  //
+  // Then force scope to local since we don't want to change the global option
+  if (opt_type == SREQ_WIN && scope == 0) {
+    int flags = get_option_value_strict(name.data, NULL, NULL, opt_type, to);
+    if (flags & SOPT_GLOBAL) {
+      scope = OPT_LOCAL;
+    }
   }
 
   long numval = 0;
@@ -454,11 +473,12 @@ void set_option_to(uint64_t channel_id, void *to, int type, String name, Object 
     stringval = value.data.string.data;
   }
 
-  WITH_SCRIPT_CONTEXT(channel_id, {
-    const int opt_flags = (type == SREQ_WIN && !(flags & SOPT_GLOBAL))
-                          ? 0 : (type == SREQ_GLOBAL)
-                                ? OPT_GLOBAL : OPT_LOCAL;
+  // For global-win-local options -> setlocal
+  // For        win-local options -> setglobal and setlocal (opt_flags == 0)
+  const int opt_flags = (type == SREQ_WIN && !(flags & SOPT_GLOBAL)) ? 0 :
+                        (type == SREQ_GLOBAL)                        ? OPT_GLOBAL : OPT_LOCAL;
 
+  WITH_SCRIPT_CONTEXT(channel_id, {
     access_option_value_for(name.data, &numval, &stringval, opt_flags, type, to, false, err);
   });
 }
