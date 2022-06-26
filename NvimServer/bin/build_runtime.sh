@@ -1,7 +1,6 @@
 #!/bin/bash
 set -Eeuo pipefail
 
-readonly clean=${clean:?"true or false"}
 readonly nvim_install_path=${nvim_install_path:?"where to install temp nvim"}
 
 build_runtime() {
@@ -29,10 +28,6 @@ main() {
   local deployment_target
   deployment_target=$(cat "./NvimServer/Resources/macos_deployment_target.txt")
   readonly deployment_target
-
-  if [[ "${clean}" == true ]]; then
-    make distclean
-  fi
 
   build_runtime "${deployment_target}"
 

@@ -15,7 +15,8 @@ find_path(LIBLUV_INCLUDE_DIR luv/luv.h
           PATHS ${PC_LIBLUV_INCLUDEDIR} ${PC_LIBLUV_INCLUDE_DIRS})
 
 # Explicitly look for luv.so. #10407
-list(APPEND LIBLUV_NAMES luv_a luv libluv_a luv${CMAKE_SHARED_LIBRARY_SUFFIX})
+# When luv_a is before luv, the homebrew version of libluv_a is found instead of the compiled libluv.a
+list(APPEND LIBLUV_NAMES luv luv_a libluv_a luv${CMAKE_SHARED_LIBRARY_SUFFIX})
 
 find_library(LIBLUV_LIBRARY NAMES ${LIBLUV_NAMES}
   HINTS ${PC_LIBLUV_LIBDIR} ${PC_LIBLUV_LIBRARY_DIRS})
