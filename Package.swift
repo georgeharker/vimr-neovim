@@ -42,7 +42,7 @@ let package = Package(
         .headerSearchPath("../../src"),
         .headerSearchPath("../../build/include"),
         .headerSearchPath("../../.deps/usr/include"),
-        .headerSearchPath("../../build/config"),
+        .headerSearchPath("../../build/cmake.config"),
         .headerSearchPath("../../build/src/nvim/auto/"),
       ],
       linkerSettings: [
