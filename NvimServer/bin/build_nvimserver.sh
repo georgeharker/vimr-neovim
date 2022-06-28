@@ -5,14 +5,6 @@ declare -r -x clean=${clean:?"if true, will clean libnvim and nvimserver"}
 readonly build_libnvim=${build_libnvim:?"true or false"}
 readonly build_dir=${build_dir:-"./.build"}
 
-package() {
-  local -r build_folder_path=$1
-  pushd "${build_folder_path}" >/dev/null
-    tar cjf "NvimServer.tar.bz2" NvimServer
-    echo "Packaged universal NvimServer to $(realpath "NvimServer.tar.bz2")"
-  popd >/dev/null
-}
-
 main() {
   echo "### Building NvimServer"
   # This script is located in /NvimServer/bin and we have to go to /
@@ -26,8 +18,6 @@ main() {
     fi
 
     swift build --arch arm64 --arch x86_64 -c release --product NvimServer
-
-    package "${build_dir}/apple/Products/Release"
 
   popd >/dev/null
   echo "### Built NvimServer"

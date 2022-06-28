@@ -21,9 +21,6 @@
 #include <nvim/api/private/helpers.h>
 #include <api/vim.h.generated.h>
 #include <nvim/ui.h>
-#include <ui.h.generated.h>
-#include <fileio.h.generated.h>
-#include <nvim/autocmd.h>
 #include "server_ui_bridge.h"
 
 bool uses_custom_tabline;
@@ -31,36 +28,14 @@ bool uses_custom_tabline;
 static const char *default_lang = "en_US";
 static const char *utf_8_lang_suffix = ".UTF-8";
 
-#pragma mark cond_var_t
-typedef struct {
-  uv_mutex_t mutex;
-  uv_cond_t condition;
-  uint64_t timeout;
-  bool posted;
-} cond_var_t;
-
-static void cond_var_init(cond_var_t *cond_var, uint64_t timeout, bool posted) {
-  memset(cond_var, 0, sizeof((*cond_var)));
-  (*cond_var).timeout = timeout;
-  (*cond_var).posted = posted;
-  uv_cond_init(&(*cond_var).condition);
-  uv_mutex_init(&(*cond_var).mutex);
-}
-
-static void cond_var_destroy(cond_var_t *cond_var) {
-  uv_mutex_destroy(&(*cond_var).mutex);
-  uv_cond_destroy(&(*cond_var).condition);
-}
-
 #pragma mark server
 static CFMessagePortRef local_port;
 static CFMessagePortRef remote_port;
 
 static uv_thread_t nvim_thread;
 
-static void set_lang_env_var();
+static void set_lang_and_locale();
 static char *cfstr2cstr_copy(CFStringRef cfstr);
-static const char *cfstr2cstr(CFStringRef cfstr, bool *free_bytes);
 
 static void start_nvim(void *_);
 static int nvim_argc = 0;
@@ -202,7 +177,7 @@ void send_msg_packing(NvimServerMsgId msgid, pack_block body) {
   msgpack_sbuffer_destroy(&sbuf);
 }
 
-static void set_lang_env_var() {
+static void set_lang_and_locale() {
   CFLocaleRef locale = CFLocaleCopyCurrent();
   CFLocaleIdentifier locale_identifier = CFLocaleGetIdentifier(locale);
 
@@ -212,12 +187,23 @@ static void set_lang_env_var() {
     strcpy(cstr_locale_identifier, default_lang);
   }
 
-  char *lang = malloc(strlen(cstr_locale_identifier) + strlen(utf_8_lang_suffix) + 1);
+  char lang[50] = { 0 };
   sprintf(lang, "%s%s", cstr_locale_identifier, utf_8_lang_suffix);
 
+  // In some cases, we get weird locale like en_DE.UTF-8 from above. In those cases, we set LANG
+  // manually to en_US.UTF-8.
   setenv("LANG", lang, true);
+  char *set_locale = setlocale(LC_ALL, "");
+  if (set_locale == NULL || strcmp(set_locale, "C") == 0) {
+    os_log_error(logger, "Got %{public}s from CoreFoundation; LC_ALL would have been NULL or C. "
+                         "Setting LANG manually to en_US.UTF-8", lang);
+    setenv("LANG", "en_US.UTF-8", true);
+    set_locale = setlocale(LC_ALL, "");
+  }
+  os_log_info(logger, "LC_ALL set to %{public}s", set_locale);
 
-  free(lang);
+  setlocale(LC_NUMERIC, "C");
+
   free(cstr_locale_identifier);
   CFRelease(locale);
 }
@@ -225,9 +211,8 @@ static void set_lang_env_var() {
 static void start_nvim(void *arg __unused) {
   backspace = cstr_as_string("<BS>");
 
-  // Set $LANG to ${user lang}.UTF-8 such that the copied text to the system clipboard is not
-  // garbled.
-  set_lang_env_var();
+  // Set LANG and LC_ALL
+  set_lang_and_locale();
 
   nvim_main(nvim_argc, nvim_argv);
 }
@@ -335,19 +320,6 @@ static char *cfstr2cstr_copy(CFStringRef cfstr) {
   }
 
   result[out_len] = '\0';
-  return result;
-}
-
-static const char *cfstr2cstr(CFStringRef cfstr, bool *free_bytes) {
-  *free_bytes = false;
-
-  const char *cptr = CFStringGetCStringPtr(cfstr, kCFStringEncodingUTF8);
-  if (cptr != NULL) { return cptr; }
-
-  char *result = cfstr2cstr_copy(cfstr);
-  if (result == NULL) { return NULL; }
-
-  *free_bytes = true;
   return result;
 }
 
