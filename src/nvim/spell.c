@@ -1576,7 +1576,7 @@ size_t spell_move_to(win_T *wp, int dir, bool allwords, bool curline, hlf_T *att
         lnum = wp->w_buffer->b_ml.ml_line_count;
         wrapped = true;
         if (!shortmess(SHM_SEARCH)) {
-          give_warning((char_u *)_(top_bot_msg), true);
+          give_warning(_(top_bot_msg), true);
         }
       }
       capcol = -1;
@@ -1591,7 +1591,7 @@ size_t spell_move_to(win_T *wp, int dir, bool allwords, bool curline, hlf_T *att
         lnum = 1;
         wrapped = true;
         if (!shortmess(SHM_SEARCH)) {
-          give_warning((char_u *)_(bot_top_msg), true);
+          give_warning(_(bot_top_msg), true);
         }
       }
 
@@ -2115,7 +2115,7 @@ char *did_set_spelllang(win_T *wp)
 
       // Check if we loaded this language before.
       for (slang = first_lang; slang != NULL; slang = slang->sl_next) {
-        if (path_full_compare(lang, slang->sl_fname, false, true)
+        if (path_full_compare((char *)lang, (char *)slang->sl_fname, false, true)
             == kEqualFiles) {
           break;
         }
@@ -2164,7 +2164,7 @@ char *did_set_spelllang(win_T *wp)
     // Loop over the languages, there can be several files for "lang".
     for (slang = first_lang; slang != NULL; slang = slang->sl_next) {
       if (filename
-          ? path_full_compare(lang, slang->sl_fname, false, true) == kEqualFiles
+          ? path_full_compare((char *)lang, (char *)slang->sl_fname, false, true) == kEqualFiles
           : STRICMP(lang, slang->sl_name) == 0) {
         region_mask = REGION_ALL;
         if (!filename && region != NULL) {
@@ -2222,7 +2222,7 @@ char *did_set_spelllang(win_T *wp)
       for (c = 0; c < ga.ga_len; ++c) {
         p = LANGP_ENTRY(ga, c)->lp_slang->sl_fname;
         if (p != NULL
-            && path_full_compare(spf_name, p, false, true) == kEqualFiles) {
+            && path_full_compare((char *)spf_name, (char *)p, false, true) == kEqualFiles) {
           break;
         }
       }
@@ -2233,7 +2233,7 @@ char *did_set_spelllang(win_T *wp)
 
     // Check if it was loaded already.
     for (slang = first_lang; slang != NULL; slang = slang->sl_next) {
-      if (path_full_compare(spf_name, slang->sl_fname, false, true)
+      if (path_full_compare((char *)spf_name, (char *)slang->sl_fname, false, true)
           == kEqualFiles) {
         break;
       }
@@ -3663,6 +3663,12 @@ static void suggest_try_change(suginfo_T *su)
   p = su->su_badptr + su->su_badlen;
   (void)spell_casefold(curwin, p, (int)STRLEN(p), fword + n, MAXWLEN - n);
 
+  // Make sure the resulting text is not longer than the original text.
+  n = (int)STRLEN(su->su_badptr);
+  if (n < MAXWLEN) {
+    fword[n] = NUL;
+  }
+
   for (int lpi = 0; lpi < curwin->w_s->b_langp.ga_len; ++lpi) {
     lp = LANGP_ENTRY(curwin->w_s->b_langp, lpi);
 
@@ -4375,7 +4381,9 @@ static void suggest_trie_walk(suginfo_T *su, langp_T *lp, char_u *fword, bool so
 #endif
           ++depth;
           sp = &stack[depth];
-          ++sp->ts_fidx;
+          if (fword[sp->ts_fidx] != NUL) {
+            sp->ts_fidx++;
+          }
           tword[sp->ts_twordlen++] = c;
           sp->ts_arridx = idxs[arridx];
           if (newscore == SCORE_SUBST) {
@@ -4391,7 +4399,7 @@ static void suggest_trie_walk(suginfo_T *su, langp_T *lp, char_u *fword, bool so
             sp->ts_fcharstart = sp->ts_fidx - 1;
             sp->ts_isdiff = (newscore != 0)
                             ? DIFF_YES : DIFF_NONE;
-          } else if (sp->ts_isdiff == DIFF_INSERT) {
+          } else if (sp->ts_isdiff == DIFF_INSERT && sp->ts_fidx > 0) {
             // When inserting trail bytes don't advance in the
             // bad word.
             sp->ts_fidx--;
