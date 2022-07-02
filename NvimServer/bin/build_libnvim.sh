@@ -16,7 +16,7 @@ build_libnvim() {
     CMAKE_BUILD_TYPE=Release \
     SDKROOT="$(xcrun --show-sdk-path)" \
     MACOSX_DEPLOYMENT_TARGET="${deployment_target}" \
-    CMAKE_EXTRA_FLAGS="-DENABLE_LIBINTL=OFF -DCUSTOM_UI=1 -DFEAT_TUI=0 ${macos_flags}" \
+    CMAKE_EXTRA_FLAGS="-DGETTEXT_SOURCE=CUSTOM -DCUSTOM_UI=1 -DFEAT_TUI=0 ${macos_flags}" \
     DEPS_CMAKE_FLAGS="${macos_flags}" \
     libnvim
 }
@@ -27,11 +27,12 @@ main() {
 
   echo "### Building libnvim"
   local deployment_target
-  deployment_target=$(cat "./NvimServer/Resources/macos_deployment_target.txt")
+  deployment_target=$(jq -r .deploymentTarget ./NvimServer/Resources/buildInfo.json)
   readonly deployment_target
 
   if [[ "${clean}" == true ]]; then
     make distclean
+    ./NvimServer/bin/prepare_libintl.sh
   fi
 
   build_libnvim "${deployment_target}"

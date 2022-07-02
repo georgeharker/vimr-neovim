@@ -9,6 +9,10 @@ include(CheckCSourceCompiles)
 include(CheckVariableExists)
 include(LibFindMacros)
 
+if (GETTEXT_SOURCE MATCHES CUSTOM)
+  list(APPEND CMAKE_PREFIX_PATH "${CMAKE_CURRENT_SOURCE_DIR}/NvimServer/third-party/gettext")
+else()
+
 # Append custom gettext path to CMAKE_PREFIX_PATH
 # if installed via Mac Hombrew
 if (CMAKE_HOST_APPLE)
@@ -19,6 +23,8 @@ if (CMAKE_HOST_APPLE)
             OUTPUT_VARIABLE HOMEBREW_GETTEXT_PREFIX)
         list(APPEND CMAKE_PREFIX_PATH "${HOMEBREW_GETTEXT_PREFIX}")
     endif()
+endif()
+
 endif()
 
 find_path(LibIntl_INCLUDE_DIR
