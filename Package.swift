@@ -44,6 +44,7 @@ let package = Package(
         .headerSearchPath("../../.deps/usr/include"),
         .headerSearchPath("../../build/cmake.config"),
         .headerSearchPath("../../build/src/nvim/auto/"),
+        .headerSearchPath("../../NvimServer/third-party/gettext/include"),
       ],
       linkerSettings: [
         .linkedFramework("CoreServices"),
