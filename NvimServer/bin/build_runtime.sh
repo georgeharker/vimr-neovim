@@ -26,7 +26,7 @@ main() {
 
   echo "### Building runtime"
   local deployment_target
-  deployment_target=$(cat "./NvimServer/Resources/macos_deployment_target.txt")
+  deployment_target=$(jq -r .deploymentTarget ./NvimServer/Resources/buildInfo.json)
   readonly deployment_target
 
   build_runtime "${deployment_target}"
