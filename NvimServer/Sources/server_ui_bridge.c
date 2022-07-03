@@ -202,7 +202,7 @@ static void server_ui_raw_line(
     msgpack_pack_array(packer, (size_t) count);
     for (Integer i = 0; i < count; i++) {msgpack_pack_cstr(packer, (const char *) chunk[i]);}
     msgpack_pack_array(packer, (size_t) count);
-    for (Integer i = 0; i < count; i++) {msgpack_pack_int16(packer, attrs[i]);}
+    for (Integer i = 0; i < count; i++) {msgpack_pack_int64(packer, attrs[i]);}
   });
 }
 
