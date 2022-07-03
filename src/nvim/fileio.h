@@ -29,7 +29,7 @@ typedef varnumber_T (*CheckItem)(void *expr, const char *name);
 
 #ifdef CUSTOM_UI
 extern void custom_ui_autocmds_groups(
-    event_T event, char_u *fname, char_u *fname_io, int group,
+    event_T event, char *fname, char *fname_io, int group,
     bool force, buf_T *buf, exarg_T *eap
 );
 #endif

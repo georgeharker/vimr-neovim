@@ -1577,6 +1577,8 @@ bool has_event(event_T event) FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT
     case EVENT_BUFREADPOST:
     case EVENT_GUIENTER:
       return true;
+    default:
+      break;
   }
 
   return first_autopat[event] != NULL;

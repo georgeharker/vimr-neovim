@@ -321,8 +321,8 @@ void custom_ui_rpcevent_subscribed() {
 
 void custom_ui_autocmds_groups(
     event_T event,
-    char_u *fname __unused,
-    char_u *fname_io __unused,
+    char *fname __unused,
+    char *fname_io __unused,
     int group __unused,
     bool force __unused,
     buf_T *buf,
