@@ -7332,7 +7332,7 @@ static void replace_do_bs(int limit_col)
 }
 
 /// Check that C-indenting is on.
-static bool cindent_on(void)
+bool cindent_on(void)
   FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT
 {
   return !p_paste && (curbuf->b_p_cin || *curbuf->b_p_inde != NUL);
@@ -7937,13 +7937,8 @@ static bool ins_esc(long *count, int cmdchar, bool nomove)
    * Don't do it for CTRL-O, unless past the end of the line.
    */
   if (!nomove
-      && (curwin->w_cursor.col != 0
-          || curwin->w_cursor.coladd > 0
-          )
-      && (restart_edit == NUL
-          || (gchar_cursor() == NUL
-              && !VIsual_active
-              ))
+      && (curwin->w_cursor.col != 0 || curwin->w_cursor.coladd > 0)
+      && (restart_edit == NUL || (gchar_cursor() == NUL && !VIsual_active))
       && !revins_on) {
     if (curwin->w_cursor.coladd > 0 || get_ve_flags() == VE_ALL) {
       oneleft();
@@ -8375,7 +8370,7 @@ static bool ins_bs(int c, int mode, int *inserted_space_p)
       }
 
       // delete characters until we are at or before want_vcol
-      while (vcol > want_vcol
+      while (vcol > want_vcol && curwin->w_cursor.col > 0
              && (cc = *(get_cursor_pos_ptr() - 1), ascii_iswhite(cc))) {
         ins_bs_one(&vcol);
       }
@@ -8567,12 +8562,10 @@ static void ins_mousescroll(int dir, int count)
   }
 
   // Don't scroll the window in which completion is being done.
-  if (!pum_visible()
-      || curwin != old_curwin) {
+  if (!pum_visible() || curwin != old_curwin) {
     if (dir == MSCR_DOWN || dir == MSCR_UP) {
       if (mod_mask & (MOD_MASK_SHIFT | MOD_MASK_CTRL)) {
-        scroll_redraw(dir,
-                      (curwin->w_botline - curwin->w_topline));
+        scroll_redraw(dir, (long)(curwin->w_botline - curwin->w_topline));
       } else {
         scroll_redraw(dir, count);
       }

@@ -718,7 +718,7 @@ bool mouse_scroll_horiz_step(int dir, int step)
 
 bool mouse_scroll_horiz(int dir)
 {
-  return mouse_scroll_horiz_step(dir, 6);
+  return mouse_scroll_horiz_step(dir, (int)p_mousescroll_hor);
 }
 // CUSTOM_UI end
 
