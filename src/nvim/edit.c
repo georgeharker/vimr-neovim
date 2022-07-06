@@ -1025,19 +1025,19 @@ static int insert_handle_key(InsertState *s)
 
   // CUSTOM_UI begin
   case K_MOUSEDOWN:   // Default action for scroll wheel up: scroll up
-    ins_mousescroll(MSCR_DOWN, 3);
+    ins_mousescroll(MSCR_DOWN, (int)p_mousescroll_vert);
     break;
 
   case K_MOUSEUP:     // Default action for scroll wheel down: scroll down
-    ins_mousescroll(MSCR_UP, 3);
+    ins_mousescroll(MSCR_UP, (int)p_mousescroll_vert);
     break;
 
   case K_MOUSELEFT:   // Scroll wheel left
-    ins_mousescroll(MSCR_LEFT, 6);
+    ins_mousescroll(MSCR_LEFT, (int)p_mousescroll_hor);
     break;
 
   case K_MOUSERIGHT:  // Scroll wheel right
-    ins_mousescroll(MSCR_RIGHT, 6);
+    ins_mousescroll(MSCR_RIGHT, (int)p_mousescroll_hor);
     break;
   // CUSTOM_UI end
 
