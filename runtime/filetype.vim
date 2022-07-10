@@ -1,7 +1,12 @@
 " Vim support file to detect file types
 "
 " Maintainer:	Bram Moolenaar <Bram@vim.org>
-" Last Change:	2022 Jun 03
+" Last Change:	2022 Jul 5
+
+" Only run this if enabled
+if !exists("do_legacy_filetype")
+  finish
+endif
 
 " Listen very carefully, I will say this only once
 if exists("did_load_filetypes")
@@ -399,6 +404,9 @@ au BufNewFile,BufRead configure.in,configure.ac setf config
 
 " Cooklang
 au BufNewFile,BufRead *.cook			setf cook
+
+" CSV Files
+au BufNewFile,BufRead *.csv			setf csv
 
 " CUDA Compute Unified Device Architecture
 au BufNewFile,BufRead *.cu,*.cuh		setf cuda
@@ -2023,6 +2031,9 @@ au BufNewFile,BufReadPost *.tssop		setf tssop
 
 " TSS - Command Line (temporary)
 au BufNewFile,BufReadPost *.tsscl		setf tsscl
+
+" TSV Files
+au BufNewFile,BufRead *.tsv			setf tsv
 
 " Tutor mode
 au BufNewFile,BufReadPost *.tutor		setf tutor

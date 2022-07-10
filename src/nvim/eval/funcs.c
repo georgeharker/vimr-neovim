@@ -1062,6 +1062,11 @@ static void f_complete(typval_T *argvars, typval_T *rettv, FunPtr fptr)
     return;
   }
 
+  const int save_textlock = textlock;
+  // "textlock" is set when evaluating 'completefunc' but we can change text
+  // here.
+  textlock = 0;
+
   // Check for undo allowed here, because if something was already inserted
   // the line was already saved for undo and this check isn't done.
   if (!undo_allowed(curbuf)) {
@@ -1070,15 +1075,13 @@ static void f_complete(typval_T *argvars, typval_T *rettv, FunPtr fptr)
 
   if (argvars[1].v_type != VAR_LIST) {
     emsg(_(e_invarg));
-    return;
+  } else {
+    const colnr_T startcol = tv_get_number_chk(&argvars[0], NULL);
+    if (startcol > 0) {
+      set_completion(startcol - 1, argvars[1].vval.v_list);
+    }
   }
-
-  const colnr_T startcol = tv_get_number_chk(&argvars[0], NULL);
-  if (startcol <= 0) {
-    return;
-  }
-
-  set_completion(startcol - 1, argvars[1].vval.v_list);
+  textlock = save_textlock;
 }
 
 /// "complete_add()" function
@@ -2464,7 +2467,7 @@ static void f_fmod(typval_T *argvars, typval_T *rettv, FunPtr fptr)
 /// "fnameescape({string})" function
 static void f_fnameescape(typval_T *argvars, typval_T *rettv, FunPtr fptr)
 {
-  rettv->vval.v_string = vim_strsave_fnameescape(tv_get_string(&argvars[0]), false);
+  rettv->vval.v_string = vim_strsave_fnameescape(tv_get_string(&argvars[0]), VSE_NONE);
   rettv->v_type = VAR_STRING;
 }
 
