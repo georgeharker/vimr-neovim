@@ -227,6 +227,8 @@ void do_exmode(void)
         emsg(_(e_emptybuf));
       } else {
         if (ex_pressedreturn) {
+          // Make sure the message overwrites the right line and isn't throttled.
+          msg_scroll_flush();
           // go up one line, to overwrite the ":<CR>" line, so the
           // output doesn't contain empty lines.
           msg_row = prev_msg_row;
@@ -907,6 +909,15 @@ int do_cmdline(char *cmdline, LineGetter fgetline, void *cookie, int flags)
   }
 
   msg_list = saved_msg_list;
+
+  // Cleanup if "cs_emsg_silent_list" remains.
+  if (cstack.cs_emsg_silent_list != NULL) {
+    eslist_T *elem, *temp;
+    for (elem = cstack.cs_emsg_silent_list; elem != NULL; elem = temp) {
+      temp = elem->next;
+      xfree(elem);
+    }
+  }
 
   /*
    * If there was too much output to fit on the command line, ask the user to
@@ -4605,8 +4616,9 @@ char *invalid_range(exarg_T *eap)
       }
       break;
     case ADDR_BUFFERS:
-      if (eap->line1 < firstbuf->b_fnum
-          || eap->line2 > lastbuf->b_fnum) {
+      // Only a boundary check, not whether the buffers actually
+      // exist.
+      if (eap->line1 < 1 || eap->line2 > get_highest_fnum()) {
         return _(e_invrange);
       }
       break;
