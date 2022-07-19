@@ -1,6 +1,7 @@
 " Test for options
 
 source check.vim
+source view_util.vim
 
 func Test_whichwrap()
   set whichwrap=b,s
@@ -466,9 +467,11 @@ func Test_set_one_column()
 endfunc
 
 func Test_set_values()
-  " The file is only generated when running "make test" in the src directory.
+  " opt_test.vim is generated from ../optiondefs.h using gen_opt_test.vim
   if filereadable('opt_test.vim')
     source opt_test.vim
+  else
+    throw 'Skipped: opt_test.vim does not exist'
   endif
 endfunc
 
@@ -799,6 +802,14 @@ func Test_rightleftcmd()
   set rightleft&
 endfunc
 
+" Test for the "debug" option
+func Test_debug_option()
+  set debug=beep
+  exe "normal \<C-c>"
+  call assert_equal('Beep!', Screenline(&lines))
+  set debug&
+endfunc
+
 " Test for setting option values using v:false and v:true
 func Test_opt_boolean()
   set number&
@@ -811,6 +822,47 @@ func Test_opt_boolean()
   let &nu = v:false
   call assert_equal(0, &nu)
   set number&
+endfunc
+
+" Test for the 'window' option
+func Test_window_opt()
+  " Needs only one open widow
+  %bw!
+  call setline(1, range(1, 8))
+  set window=5
+  exe "normal \<C-F>"
+  call assert_equal(4, line('w0'))
+  exe "normal \<C-F>"
+  call assert_equal(7, line('w0'))
+  exe "normal \<C-F>"
+  call assert_equal(8, line('w0'))
+  exe "normal \<C-B>"
+  call assert_equal(5, line('w0'))
+  exe "normal \<C-B>"
+  call assert_equal(2, line('w0'))
+  exe "normal \<C-B>"
+  call assert_equal(1, line('w0'))
+  set window=1
+  exe "normal gg\<C-F>"
+  call assert_equal(2, line('w0'))
+  exe "normal \<C-F>"
+  call assert_equal(3, line('w0'))
+  exe "normal \<C-B>"
+  call assert_equal(2, line('w0'))
+  exe "normal \<C-B>"
+  call assert_equal(1, line('w0'))
+  enew!
+  set window&
+endfunc
+
+" Test for the 'winminheight' option
+func Test_opt_winminheight()
+  only!
+  let &winheight = &lines + 4
+  call assert_fails('let &winminheight = &lines + 2', 'E36:')
+  call assert_true(&winminheight <= &lines)
+  set winminheight&
+  set winheight&
 endfunc
 
 func Test_opt_winminheight_term()
@@ -854,6 +906,16 @@ func Test_opt_winminheight_term_tabs()
 
   call StopVimInTerminal(buf)
   call delete('Xwinminheight')
+endfunc
+
+" Test for the 'winminwidth' option
+func Test_opt_winminwidth()
+  only!
+  let &winwidth = &columns + 4
+  call assert_fails('let &winminwidth = &columns + 2', 'E36:')
+  call assert_true(&winminwidth <= &columns)
+  set winminwidth&
+  set winwidth&
 endfunc
 
 " Test for setting option value containing spaces with isfname+=32

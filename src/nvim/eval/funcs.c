@@ -1062,11 +1062,6 @@ static void f_complete(typval_T *argvars, typval_T *rettv, FunPtr fptr)
     return;
   }
 
-  const int save_textlock = textlock;
-  // "textlock" is set when evaluating 'completefunc' but we can change text
-  // here.
-  textlock = 0;
-
   // Check for undo allowed here, because if something was already inserted
   // the line was already saved for undo and this check isn't done.
   if (!undo_allowed(curbuf)) {
@@ -1081,7 +1076,6 @@ static void f_complete(typval_T *argvars, typval_T *rettv, FunPtr fptr)
       set_completion(startcol - 1, argvars[1].vval.v_list);
     }
   }
-  textlock = save_textlock;
 }
 
 /// "complete_add()" function
@@ -2053,6 +2047,12 @@ static void f_exepath(typval_T *argvars, typval_T *rettv, FunPtr fptr)
   char *path = NULL;
 
   (void)os_can_exe(tv_get_string(&argvars[0]), &path, true);
+
+#ifdef BACKSLASH_IN_FILENAME
+  if (path != NULL) {
+    slash_adjust((char_u *)path);
+  }
+#endif
 
   rettv->v_type = VAR_STRING;
   rettv->vval.v_string = path;

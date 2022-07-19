@@ -172,6 +172,9 @@ local extension = {
     return require('vim.filetype.detect').bindzone(bufnr, '')
   end,
   bicep = 'bicep',
+  bb = 'bitbake',
+  bbappend = 'bitbake',
+  bbclass = 'bitbake',
   bl = 'blank',
   bsdl = 'bsdl',
   bst = 'bst',
@@ -1662,6 +1665,9 @@ local pattern = {
   ['[mM]akefile%.am'] = 'automake',
   ['.*/bind/db%..*'] = starsetf('bindzone'),
   ['.*/named/db%..*'] = starsetf('bindzone'),
+  ['.*/build/conf/.*%.conf'] = 'bitbake',
+  ['.*/meta/conf/.*%.conf'] = 'bitbake',
+  ['.*/meta%-.*/conf/.*%.conf'] = 'bitbake',
   ['.*bsd'] = 'bsdl',
   ['bzr_log%..*'] = 'bzr',
   ['.*enlightenment/.*%.cfg'] = 'c',
@@ -2235,30 +2241,30 @@ end
 --- <pre>
 ---  vim.filetype.add({
 ---    extension = {
----      foo = "fooscript",
+---      foo = 'fooscript',
 ---      bar = function(path, bufnr)
 ---        if some_condition() then
----          return "barscript", function(bufnr)
+---          return 'barscript', function(bufnr)
 ---            -- Set a buffer variable
 ---            vim.b[bufnr].barscript_version = 2
 ---          end
 ---        end
----        return "bar"
+---        return 'bar'
 ---      end,
 ---    },
 ---    filename = {
----      [".foorc"] = "toml",
----      ["/etc/foo/config"] = "toml",
+---      ['.foorc'] = 'toml',
+---      ['/etc/foo/config'] = 'toml',
 ---    },
 ---    pattern = {
----      [".*/etc/foo/.*"] = "fooscript",
+---      ['.*/etc/foo/.*'] = 'fooscript',
 ---      -- Using an optional priority
----      [".*/etc/foo/.*%.conf"] = { "dosini", { priority = 10 } },
----      ["README.(%a+)$"] = function(path, bufnr, ext)
----        if ext == "md" then
----          return "markdown"
----        elseif ext == "rst" then
----          return "rst"
+---      ['.*/etc/foo/.*%.conf'] = { 'dosini', { priority = 10 } },
+---      ['README.(%a+)$'] = function(path, bufnr, ext)
+---        if ext == 'md' then
+---          return 'markdown'
+---        elseif ext == 'rst' then
+---          return 'rst'
 ---        end
 ---      end,
 ---    },

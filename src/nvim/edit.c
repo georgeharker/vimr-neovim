@@ -136,7 +136,6 @@ static char *ctrl_x_mode_names[] = {
 };
 
 static char e_hitend[] = N_("Hit end of paragraph");
-static char e_complwin[] = N_("E839: Completion function changed window");
 static char e_compldel[] = N_("E840: Completion function deleted text");
 
 /*
@@ -3941,8 +3940,6 @@ static void expand_by_function(int type, char_u *base)
   dict_T *matchdict = NULL;
   char_u *funcname;
   pos_T pos;
-  win_T *curwin_save;
-  buf_T *curbuf_save;
   typval_T rettv;
   const int save_State = State;
 
@@ -3961,9 +3958,9 @@ static void expand_by_function(int type, char_u *base)
   args[1].vval.v_string = base != NULL ? (char *)base : "";
 
   pos = curwin->w_cursor;
-  curwin_save = curwin;
-  curbuf_save = curbuf;
-  // Lock the text to avoid weird things from happening.
+  // Lock the text to avoid weird things from happening.  Also disallow
+  // switching to another window, it should not be needed and may end up in
+  // Insert mode in another buffer.
   textlock++;
 
   // Call a function, which returns a list or dict.
@@ -3985,10 +3982,6 @@ static void expand_by_function(int type, char_u *base)
   }
   textlock--;
 
-  if (curwin_save != curwin || curbuf_save != curbuf) {
-    emsg(_(e_complwin));
-    goto theend;
-  }
   curwin->w_cursor = pos;       // restore the cursor position
   validate_cursor();
   if (!equalpos(curwin->w_cursor, pos)) {
@@ -5226,8 +5219,6 @@ static int ins_complete(int c, bool enable_pum)
       // set to 1 to obtain the length of text to use for completion.
       char_u *funcname;
       pos_T pos;
-      win_T *curwin_save;
-      buf_T *curbuf_save;
       const int save_State = State;
 
       // Call 'completefunc' or 'omnifunc' and get pattern length as a string
@@ -5248,15 +5239,11 @@ static int ins_complete(int c, bool enable_pum)
       args[1].vval.v_string = "";
 
       pos = curwin->w_cursor;
-      curwin_save = curwin;
-      curbuf_save = curbuf;
+      textlock++;
       colnr_T col = (colnr_T)call_func_retnr((char *)funcname, 2, args);
+      textlock--;
 
       State = save_State;
-      if (curwin_save != curwin || curbuf_save != curbuf) {
-        emsg(_(e_complwin));
-        return FAIL;
-      }
       curwin->w_cursor = pos;           // restore the cursor position
       validate_cursor();
       if (!equalpos(curwin->w_cursor, pos)) {

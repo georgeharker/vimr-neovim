@@ -185,7 +185,9 @@ func Test_str2nr()
 
   call assert_fails('call str2nr([])', 'E730:')
   call assert_fails('call str2nr({->2})', 'E729:')
-  call assert_fails('call str2nr(1.2)', 'E806:')
+  if has('float')
+    call assert_fails('call str2nr(1.2)', 'E806:')
+  endif
   call assert_fails('call str2nr(10, [])', 'E474:')
 endfunc
 
@@ -325,11 +327,18 @@ func Test_simplify()
   call assert_equal('./file',      simplify('./dir/../file'))
   call assert_equal('../dir/file', simplify('dir/../../dir/file'))
   call assert_equal('./file',      simplify('dir/.././file'))
+  call assert_equal('../dir',      simplify('./../dir'))
+  call assert_equal('..',          simplify('../testdir/..'))
+  call mkdir('Xdir')
+  call assert_equal('.',           simplify('Xdir/../.'))
+  call delete('Xdir', 'd')
 
   call assert_fails('call simplify({->0})', 'E729:')
   call assert_fails('call simplify([])', 'E730:')
   call assert_fails('call simplify({})', 'E731:')
-  call assert_fails('call simplify(1.2)', 'E806:')
+  if has('float')
+    call assert_fails('call simplify(1.2)', 'E806:')
+  endif
 endfunc
 
 func Test_pathshorten()
@@ -538,6 +547,7 @@ func Save_mode()
   return ''
 endfunc
 
+" Test for the mode() function
 func Test_mode()
   new
   call append(0, ["Blue Ball Black", "Brown Band Bowl", ""])
@@ -708,6 +718,8 @@ func Test_mode()
   call assert_equal('c-c', g:current_modes)
   call feedkeys("gQecho \<C-R>=Save_mode()\<CR>\<CR>vi\<CR>", 'xt')
   call assert_equal('c-cv', g:current_modes)
+  " call feedkeys("Qcall Save_mode()\<CR>vi\<CR>", 'xt')
+  " call assert_equal('c-ce', g:current_modes)
   " How to test Ex mode?
 
   " Test mode in operatorfunc (it used to be Operator-pending).
@@ -1252,6 +1264,23 @@ func Test_inputlist()
   " Cancel after inputting a number
   call feedkeys(":let c = inputlist(['Select color:', '1. red', '2. green', '3. blue'])\<cr>5q", 'tx')
   call assert_equal(0, c)
+
+  " Use backspace to delete characters in the prompt
+  call feedkeys(":let c = inputlist(['Select color:', '1. red', '2. green', '3. blue'])\<cr>1\<BS>3\<BS>2\<cr>", 'tx')
+  call assert_equal(2, c)
+
+  " Use mouse to make a selection
+  " call test_setmouse(&lines - 3, 2)
+  call nvim_input_mouse('left', 'press', '', 0, &lines - 4, 1) " set mouse position
+  call getchar() " discard mouse event but keep mouse position
+  call feedkeys(":let c = inputlist(['Select color:', '1. red', '2. green', '3. blue'])\<cr>\<LeftMouse>", 'tx')
+  call assert_equal(1, c)
+  " Mouse click outside of the list
+  " call test_setmouse(&lines - 6, 2)
+  call nvim_input_mouse('left', 'press', '', 0, &lines - 7, 1) " set mouse position
+  call getchar() " discard mouse event but keep mouse position
+  call feedkeys(":let c = inputlist(['Select color:', '1. red', '2. green', '3. blue'])\<cr>\<LeftMouse>", 'tx')
+  call assert_equal(-2, c)
 
   call assert_fails('call inputlist("")', 'E686:')
 endfunc
