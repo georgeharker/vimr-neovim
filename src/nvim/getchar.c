@@ -21,6 +21,7 @@
 #include "nvim/garray.h"
 #include "nvim/getchar.h"
 #include "nvim/input.h"
+#include "nvim/insexpand.h"
 #include "nvim/keycodes.h"
 #include "nvim/lua/executor.h"
 #include "nvim/main.h"
@@ -1807,7 +1808,7 @@ static int handle_mapping(int *keylenp, bool *timedout, int *mapdepth)
   int local_State = get_real_state();
   bool is_plug_map = false;
 
-  // If typehead starts with <Plug> then remap, even for a "noremap" mapping.
+  // If typeahead starts with <Plug> then remap, even for a "noremap" mapping.
   if (typebuf.tb_len >= 3
       && typebuf.tb_buf[typebuf.tb_off] == K_SPECIAL
       && typebuf.tb_buf[typebuf.tb_off + 1] == KS_EXTRA
