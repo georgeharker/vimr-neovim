@@ -828,38 +828,6 @@ static uint8_t *command_line_enter(int firstc, long count, int indent, bool init
   setmouse();
   ui_cursor_shape();               // may show different cursor shape
 
-  init_history();
-  s->hiscnt = hislen;              // set hiscnt to impossible history value
-  s->histype = hist_char2type(s->firstc);
-  do_digraph(-1);                       // init digraph typeahead
-
-  // If something above caused an error, reset the flags, we do want to type
-  // and execute commands. Display may be messed up a bit.
-  if (did_emsg) {
-    redrawcmd();
-  }
-
-  // Redraw the statusline in case it uses the current mode using the mode()
-  // function.
-  if (!cmd_silent && msg_scrolled == 0) {
-    bool found_one = false;
-
-    FOR_ALL_WINDOWS_IN_TAB(wp, curtab) {
-      if (*p_stl != NUL || *wp->w_p_stl != NUL) {
-        wp->w_redr_status = true;
-        found_one = true;
-      }
-    }
-    if (found_one) {
-      redraw_statuslines();
-    }
-  }
-
-  did_emsg = false;
-  got_int = false;
-  s->state.check = command_line_check;
-  s->state.execute = command_line_execute;
-
   TryState tstate;
   Error err = ERROR_INIT;
   bool tl_ret = true;
@@ -889,6 +857,44 @@ static uint8_t *command_line_enter(int firstc, long count, int indent, bool init
     tl_ret = true;
   }
   may_trigger_modechanged();
+
+  init_history();
+  s->hiscnt = hislen;              // set hiscnt to impossible history value
+  s->histype = hist_char2type(s->firstc);
+  do_digraph(-1);                       // init digraph typeahead
+
+  // If something above caused an error, reset the flags, we do want to type
+  // and execute commands. Display may be messed up a bit.
+  if (did_emsg) {
+    redrawcmd();
+  }
+
+  // Redraw the statusline in case it uses the current mode using the mode()
+  // function.
+  if (!cmd_silent && msg_scrolled == 0) {
+    bool found_one = false;
+
+    FOR_ALL_WINDOWS_IN_TAB(wp, curtab) {
+      if (*p_stl != NUL || *wp->w_p_stl != NUL) {
+        wp->w_redr_status = true;
+        found_one = true;
+      }
+    }
+
+    if (*p_tal != NUL) {
+      redraw_tabline = true;
+      found_one = true;
+    }
+
+    if (found_one) {
+      redraw_statuslines();
+    }
+  }
+
+  did_emsg = false;
+  got_int = false;
+  s->state.check = command_line_check;
+  s->state.execute = command_line_execute;
 
   state_enter(&s->state);
 
@@ -959,6 +965,7 @@ static uint8_t *command_line_enter(int firstc, long count, int indent, bool init
     cmdpreview = save_cmdpreview;  // restore preview state
     redraw_all_later(SOME_VALID);
   }
+  may_trigger_modechanged();
   setmouse();
   ui_cursor_shape();            // may show different cursor shape
   sb_text_end_cmdline();
@@ -1067,7 +1074,8 @@ static int command_line_execute(VimState *state, int key)
   // Don't ignore it for the input() function.
   if ((s->c == Ctrl_C)
       && s->firstc != '@'
-      && !s->break_ctrl_c
+      // do clear got_int in Ex mode to avoid infinite Ctrl-C loop
+      && (!s->break_ctrl_c || exmode_active)
       && !global_busy) {
     got_int = false;
   }
@@ -3328,7 +3336,7 @@ static void ui_ext_cmdline_show(CmdlineInfo *line)
 {
   Arena arena = ARENA_EMPTY;
   arena_start(&arena, &ui_ext_fixblk);
-  Array content = ARRAY_DICT_INIT;
+  Array content;
   if (cmdline_star) {
     content = arena_array(&arena, 1);
     size_t len = 0;
@@ -3815,6 +3823,7 @@ void redrawcmd(void)
 
   redrawing_cmdline = true;
 
+  sb_text_restart_cmdline();
   msg_start();
   redrawcmdprompt();
 
@@ -6803,9 +6812,13 @@ static int open_cmdwin(void)
 
     // Avoid command-line window first character being concealed.
     curwin->w_p_cole = 0;
+    // First go back to the original window.
     wp = curwin;
     set_bufref(&bufref, curbuf);
     win_goto(old_curwin);
+
+    // win_goto() may trigger an autocommand that already closes the
+    // cmdline window.
     if (win_valid(wp) && wp != curwin) {
       win_close(wp, true, false);
     }

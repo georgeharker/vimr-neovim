@@ -2481,7 +2481,7 @@ size_t find_ident_at_pos(win_T *wp, linenr_T lnum, colnr_T startcol, char_u **te
   col = 0;
   // Search for point of changing multibyte character class.
   this_class = mb_get_class(ptr);
-  while (ptr[col] != NUL
+  while (ptr[col] != NUL  // -V781
          && ((i == 0
               ? mb_get_class(ptr + col) == this_class
               : mb_get_class(ptr + col) != 0)
@@ -3485,7 +3485,8 @@ void scroll_redraw(int up, long count)
   redraw_later(curwin, VALID);
 }
 
-/// Get the count specified after a 'z' command.
+/// Get the count specified after a 'z' command. Only the 'z<CR>', 'zl', 'zh',
+/// 'z<Left>', and 'z<Right>' commands accept a count after 'z'.
 /// @return  true to process the 'z' command and false to skip it.
 static bool nv_z_get_count(cmdarg_T *cap, int *nchar_arg)
 {
@@ -5101,6 +5102,7 @@ static void nv_brackets(cmdarg_T *cap)
   } else if (cap->nchar == '\'' || cap->nchar == '`') {
     // "['", "[`", "]'" and "]`": jump to next mark
     fmark_T *fm = pos_to_mark(curbuf, NULL, curwin->w_cursor);
+    assert(fm != NULL);
     fmark_T *prev_fm;
     for (n = cap->count1; n > 0; n--) {
       prev_fm = fm;

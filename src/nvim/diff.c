@@ -115,7 +115,10 @@ void diff_buf_delete(buf_T *buf)
       tp->tp_diff_invalid = true;
 
       if (tp == curtab) {
-        diff_redraw(true);
+        // don't redraw right away, more might change or buffer state
+        // is invalid right now
+        need_diff_redraw = true;
+        redraw_later(curwin, VALID);
       }
     }
   }
@@ -369,9 +372,8 @@ static void diff_mark_adjust_tp(tabpage_T *tp, int idx, linenr_T line1, linenr_T
 
         // 2. 3. 4. 5.: inserted/deleted lines touching this diff.
         if (deleted > 0) {
+          off = 0;
           if (dp->df_lnum[idx] >= line1) {
-            off = dp->df_lnum[idx] - lnum_deleted;
-
             if (last <= line2) {
               // 4. delete all lines of diff
               if ((dp->df_next != NULL)
@@ -388,14 +390,13 @@ static void diff_mark_adjust_tp(tabpage_T *tp, int idx, linenr_T line1, linenr_T
               dp->df_count[idx] = 0;
             } else {
               // 5. delete lines at or just before top of diff
+              off = dp->df_lnum[idx] - lnum_deleted;
               n = off;
               dp->df_count[idx] -= line2 - dp->df_lnum[idx] + 1;
               check_unchanged = true;
             }
             dp->df_lnum[idx] = line1;
           } else {
-            off = 0;
-
             if (last < line2) {
               // 2. delete at end of diff
               dp->df_count[idx] -= last - lnum_deleted + 1;
@@ -418,10 +419,13 @@ static void diff_mark_adjust_tp(tabpage_T *tp, int idx, linenr_T line1, linenr_T
             }
           }
 
-          int i;
-          for (i = 0; i < DB_COUNT; i++) {
+          for (int i = 0; i < DB_COUNT; i++) {
             if ((tp->tp_diffbuf[i] != NULL) && (i != idx)) {
-              dp->df_lnum[i] -= off;
+              if (dp->df_lnum[i] > off) {
+                dp->df_lnum[i] -= off;
+              } else {
+                dp->df_lnum[i] = 1;
+              }
               dp->df_count[i] += n;
             }
           }
@@ -648,7 +652,8 @@ void diff_redraw(bool dofold)
 
   need_diff_redraw = false;
   FOR_ALL_WINDOWS_IN_TAB(wp, curtab) {
-    if (!wp->w_p_diff) {
+    // when closing windows or wiping buffers skip invalid window
+    if (!wp->w_p_diff || !buf_valid(wp->w_buffer)) {
       continue;
     }
     redraw_later(wp, SOME_VALID);
@@ -1421,7 +1426,7 @@ void diff_win_options(win_T *wp, int addbuf)
     }
     wp->w_p_fdc_save = vim_strsave(wp->w_p_fdc);
   }
-  xfree(wp->w_p_fdc);
+  free_string_option(wp->w_p_fdc);
   wp->w_p_fdc = (char_u *)xstrdup("2");
   assert(diff_foldcolumn >= 0 && diff_foldcolumn <= 9);
   snprintf((char *)wp->w_p_fdc, STRLEN(wp->w_p_fdc) + 1, "%d", diff_foldcolumn);
@@ -2485,6 +2490,17 @@ void nv_diffgetput(bool put, size_t count)
   ex_diffgetput(&ea);
 }
 
+/// Return true if "diff" appears in the list of diff blocks of the current tab.
+static bool valid_diff(diff_T *diff)
+{
+  for (diff_T *dp = curtab->tp_first_diff; dp != NULL; dp = dp->df_next) {
+    if (dp == diff) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /// ":diffget" and ":diffput"
 ///
 /// @param eap
@@ -2694,8 +2710,9 @@ void ex_diffgetput(exarg_T *eap)
       for (i = 0; i < count; i++) {
         // remember deleting the last line of the buffer
         buf_empty = curbuf->b_ml.ml_line_count == 1;
-        ml_delete(lnum, false);
-        added--;
+        if (ml_delete(lnum, false) == OK) {
+          added--;
+        }
       }
 
       for (i = 0; i < dp->df_count[idx_from] - start_skip - end_skip; i++) {
@@ -2742,10 +2759,9 @@ void ex_diffgetput(exarg_T *eap)
         }
       }
 
-      // Adjust marks.  This will change the following entries!
       if (added != 0) {
-        mark_adjust(lnum, lnum + count - 1, (long)MAXLNUM, added,
-                    kExtmarkUndo);
+        // Adjust marks.  This will change the following entries!
+        mark_adjust(lnum, lnum + count - 1, (long)MAXLNUM, added, kExtmarkUndo);
         if (curwin->w_cursor.lnum >= lnum) {
           // Adjust the cursor position if it's in/after the changed
           // lines.
@@ -2762,7 +2778,15 @@ void ex_diffgetput(exarg_T *eap)
         // Diff is deleted, update folds in other windows.
         diff_fold_update(dfree, idx_to);
         xfree(dfree);
-      } else {
+      }
+
+      // mark_adjust() may have made "dp" invalid.  We don't know where
+      // to continue then, bail out.
+      if (added != 0 && !valid_diff(dp)) {
+        break;
+      }
+
+      if (dfree == NULL) {
         // mark_adjust() may have changed the count in a wrong way
         dp->df_count[idx_to] = new_count;
       }
