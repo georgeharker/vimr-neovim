@@ -20,6 +20,7 @@
 #include "nvim/buffer_updates.h"
 #include "nvim/change.h"
 #include "nvim/charset.h"
+#include "nvim/cmdhist.h"
 #include "nvim/cursor.h"
 #include "nvim/decoration.h"
 #include "nvim/diff.h"
@@ -59,6 +60,7 @@
 #include "nvim/os_unix.h"
 #include "nvim/path.h"
 #include "nvim/plines.h"
+#include "nvim/profile.h"
 #include "nvim/quickfix.h"
 #include "nvim/regexp.h"
 #include "nvim/screen.h"
@@ -3343,6 +3345,7 @@ static bool sub_joining_lines(exarg_T *eap, char *pat, char *sub, char *cmd, boo
       if ((cmdmod.cmod_flags & CMOD_KEEPPATTERNS) == 0) {
         save_re_pat(RE_SUBST, (char_u *)pat, p_magic);
       }
+      // put pattern in history
       add_to_history(HIST_SEARCH, (char_u *)pat, true, NUL);
     }
 
@@ -3541,7 +3544,7 @@ static int do_sub(exarg_T *eap, proftime_T timeout, long cmdpreview_ns, handle_T
       which_pat = RE_LAST;                  // use last used regexp
       delimiter = (char_u)(*cmd++);                   // remember delimiter character
       pat = cmd;                            // remember start of search pat
-      cmd = (char *)skip_regexp((char_u *)cmd, delimiter, p_magic, (char_u **)&eap->arg);
+      cmd = (char *)skip_regexp((char_u *)cmd, delimiter, p_magic, &eap->arg);
       if (cmd[0] == delimiter) {            // end delimiter found
         *cmd++ = NUL;                       // replace it with a NUL
         has_second_delim = true;
@@ -3597,7 +3600,7 @@ static int do_sub(exarg_T *eap, proftime_T timeout, long cmdpreview_ns, handle_T
   // check for a trailing count
   cmd = skipwhite(cmd);
   if (ascii_isdigit(*cmd)) {
-    i = getdigits_long((char_u **)&cmd, true, 0);
+    i = getdigits_long(&cmd, true, 0);
     if (i <= 0 && !eap->skip && subflags.do_error) {
       emsg(_(e_zerocount));
       return 0;
@@ -3616,7 +3619,7 @@ static int do_sub(exarg_T *eap, proftime_T timeout, long cmdpreview_ns, handle_T
   if (*cmd && *cmd != '"') {        // if not end-of-line or comment
     eap->nextcmd = (char *)check_nextcmd((char_u *)cmd);
     if (eap->nextcmd == NULL) {
-      emsg(_(e_trailing));
+      semsg(_(e_trailing_arg), cmd);
       return 0;
     }
   }
@@ -3669,7 +3672,7 @@ static int do_sub(exarg_T *eap, proftime_T timeout, long cmdpreview_ns, handle_T
     }
   }
 
-  bool cmdheight0 = p_ch < 1 && !ui_has(kUIMessages);
+  const bool cmdheight0 = !ui_has_messages();
   if (cmdheight0) {
     // If cmdheight is 0, cmdheight must be set to 1 when we enter command line.
     set_option_value("ch", 1L, NULL, 0);
@@ -4626,7 +4629,7 @@ void ex_global(exarg_T *eap)
     delim = *cmd;               // get the delimiter
     cmd++;                      // skip delimiter if there is one
     pat = cmd;                  // remember start of pattern
-    cmd = (char *)skip_regexp((char_u *)cmd, delim, p_magic, (char_u **)&eap->arg);
+    cmd = (char *)skip_regexp((char_u *)cmd, delim, p_magic, &eap->arg);
     if (cmd[0] == delim) {                  // end delimiter found
       *cmd++ = NUL;                         // replace it with a NUL
     }
@@ -4858,14 +4861,14 @@ void ex_help(exarg_T *eap)
       semsg(_("E149: Sorry, no help for %s"), arg);
     }
     if (n != FAIL) {
-      FreeWild(num_matches, (char_u **)matches);
+      FreeWild(num_matches, matches);
     }
     return;
   }
 
   // The first match (in the requested language) is the best match.
   tag = xstrdup(matches[i]);
-  FreeWild(num_matches, (char_u **)matches);
+  FreeWild(num_matches, matches);
 
   /*
    * Re-use an existing help window or open a new one.
@@ -5054,7 +5057,7 @@ int find_help_tags(const char *arg, int *num_matches, char ***matches, bool keep
   int i;
 
   // Specific tags that either have a specific replacement or won't go
-  // throught the generic rules.
+  // through the generic rules.
   static char *(except_tbl[][2]) = {
     { "*",           "star" },
     { "g*",          "gstar" },
@@ -5287,7 +5290,7 @@ int find_help_tags(const char *arg, int *num_matches, char ***matches, bool keep
   if (keep_lang) {
     flags |= TAG_KEEP_LANG;
   }
-  if (find_tags(IObuff, num_matches, (char_u ***)matches, flags, MAXCOL, NULL) == OK
+  if (find_tags(IObuff, num_matches, matches, flags, MAXCOL, NULL) == OK
       && *num_matches > 0) {
     // Sort the matches found on the heuristic number that is after the
     // tag name.
@@ -5424,8 +5427,8 @@ void fix_help_buffer(void)
           // Note: We cannot just do `&NameBuff` because it is a statically sized array
           //       so `NameBuff == &NameBuff` according to C semantics.
           char *buff_list[1] = { (char *)NameBuff };
-          if (gen_expand_wildcards(1, (char_u **)buff_list, &fcount,
-                                   (char_u ***)&fnames, EW_FILE|EW_SILENT) == OK
+          if (gen_expand_wildcards(1, buff_list, &fcount,
+                                   &fnames, EW_FILE|EW_SILENT) == OK
               && fcount > 0) {
             // If foo.abx is found use it instead of foo.txt in
             // the same directory.
@@ -5526,7 +5529,7 @@ void fix_help_buffer(void)
               }
               fclose(fd);
             }
-            FreeWild(fcount, (char_u **)fnames);
+            FreeWild(fcount, fnames);
           }
         }
         xfree(rt);
@@ -5580,14 +5583,14 @@ static void helptags_one(char *dir, const char *ext, const char *tagfname, bool 
   // Note: We cannot just do `&NameBuff` because it is a statically sized array
   //       so `NameBuff == &NameBuff` according to C semantics.
   char *buff_list[1] = { (char *)NameBuff };
-  const int res = gen_expand_wildcards(1, (char_u **)buff_list, &filecount, (char_u ***)&files,
+  const int res = gen_expand_wildcards(1, buff_list, &filecount, &files,
                                        EW_FILE|EW_SILENT);
   if (res == FAIL || filecount == 0) {
     if (!got_int) {
       semsg(_("E151: No match: %s"), NameBuff);
     }
     if (res != FAIL) {
-      FreeWild(filecount, (char_u **)files);
+      FreeWild(filecount, files);
     }
     return;
   }
@@ -5608,7 +5611,7 @@ static void helptags_one(char *dir, const char *ext, const char *tagfname, bool 
     if (!ignore_writeerr) {
       semsg(_("E152: Cannot open %s for writing"), NameBuff);
     }
-    FreeWild(filecount, (char_u **)files);
+    FreeWild(filecount, files);
     return;
   }
 
@@ -5698,11 +5701,11 @@ static void helptags_one(char *dir, const char *ext, const char *tagfname, bool 
     fclose(fd);
   }
 
-  FreeWild(filecount, (char_u **)files);
+  FreeWild(filecount, files);
 
   if (!got_int && ga.ga_data != NULL) {
     // Sort the tags.
-    sort_strings((char_u **)ga.ga_data, ga.ga_len);
+    sort_strings(ga.ga_data, ga.ga_len);
 
     // Check for duplicates.
     for (int i = 1; i < ga.ga_len; i++) {
@@ -5777,7 +5780,7 @@ static void do_helptags(char *dirname, bool add_help_tags, bool ignore_writeerr)
   // Note: We cannot just do `&NameBuff` because it is a statically sized array
   //       so `NameBuff == &NameBuff` according to C semantics.
   char *buff_list[1] = { (char *)NameBuff };
-  if (gen_expand_wildcards(1, (char_u **)buff_list, &filecount, (char_u ***)&files,
+  if (gen_expand_wildcards(1, buff_list, &filecount, &files,
                            EW_FILE|EW_SILENT) == FAIL
       || filecount == 0) {
     semsg(_("E151: No match: %s"), NameBuff);
@@ -5793,6 +5796,7 @@ static void do_helptags(char *dirname, bool add_help_tags, bool ignore_writeerr)
     if (len <= 4) {
       continue;
     }
+
     if (STRICMP(files[i] + len - 4, ".txt") == 0) {
       // ".txt" -> language "en"
       lang[0] = 'e';
@@ -5843,7 +5847,7 @@ static void do_helptags(char *dirname, bool add_help_tags, bool ignore_writeerr)
   }
 
   ga_clear(&ga);
-  FreeWild(filecount, (char_u **)files);
+  FreeWild(filecount, files);
 }
 
 static void helptags_cb(char *fname, void *cookie)

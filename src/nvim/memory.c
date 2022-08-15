@@ -546,7 +546,7 @@ void arena_start(Arena *arena, ArenaMem *reuse_blk)
 
 /// Finnish the allocations in an arena.
 ///
-/// This does not immedately free the memory, but leaves existing allocated
+/// This does not immediately free the memory, but leaves existing allocated
 /// objects valid, and returns an opaque ArenaMem handle, which can be used to
 /// free the allocations using `arena_mem_free`, when the objects allocated
 /// from the arena are not needed anymore.
@@ -617,8 +617,10 @@ char *arena_memdupz(Arena *arena, const char *buf, size_t size)
 
 #if defined(EXITFREE)
 
+# include "nvim/autocmd.h"
 # include "nvim/buffer.h"
 # include "nvim/charset.h"
+# include "nvim/cmdhist.h"
 # include "nvim/diff.h"
 # include "nvim/edit.h"
 # include "nvim/eval/typval.h"
@@ -626,7 +628,6 @@ char *arena_memdupz(Arena *arena, const char *buf, size_t size)
 # include "nvim/ex_docmd.h"
 # include "nvim/ex_getln.h"
 # include "nvim/file_search.h"
-# include "nvim/fileio.h"
 # include "nvim/fold.h"
 # include "nvim/getchar.h"
 # include "nvim/mark.h"

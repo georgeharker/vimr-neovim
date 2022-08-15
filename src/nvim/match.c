@@ -7,14 +7,18 @@
 
 #include "nvim/buffer_defs.h"
 #include "nvim/charset.h"
+#include "nvim/eval.h"
 #include "nvim/eval/funcs.h"
+#include "nvim/ex_docmd.h"
 #include "nvim/fold.h"
 #include "nvim/highlight_group.h"
 #include "nvim/match.h"
 #include "nvim/memline.h"
+#include "nvim/profile.h"
 #include "nvim/regexp.h"
 #include "nvim/runtime.h"
 #include "nvim/screen.h"
+#include "nvim/vim.h"
 
 #ifdef INCLUDE_GENERATED_DECLARATIONS
 # include "match.c.generated.h"
@@ -1193,7 +1197,7 @@ void ex_match(exarg_T *eap)
     if (!eap->skip) {
       if (*end != NUL && !ends_excmd(*skipwhite((char *)end + 1))) {
         xfree(g);
-        eap->errmsg = e_trailing;
+        eap->errmsg = ex_errmsg(e_trailing_arg, (const char *)end);
         return;
       }
       if (*end != *p) {

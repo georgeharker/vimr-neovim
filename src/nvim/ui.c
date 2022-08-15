@@ -14,7 +14,6 @@
 #include "nvim/cursor_shape.h"
 #include "nvim/diff.h"
 #include "nvim/event/loop.h"
-#include "nvim/ex_cmds2.h"
 #include "nvim/ex_getln.h"
 #include "nvim/fold.h"
 #include "nvim/garray.h"
@@ -615,6 +614,12 @@ bool ui_has(UIExtension ext)
   return ui_ext[ext];
 }
 
+/// Returns true if the UI has messages area.
+bool ui_has_messages(void)
+{
+  return p_ch > 0 || ui_has(kUIMessages);
+}
+
 Array ui_array(void)
 {
   Array all_uis = ARRAY_DICT_INIT;
@@ -660,6 +665,6 @@ void ui_grid_resize(handle_T grid_handle, int width, int height, Error *error)
     // non-positive indicates no request
     wp->w_height_request = MAX(height, 0);
     wp->w_width_request = MAX(width, 0);
-    win_set_inner_size(wp);
+    win_set_inner_size(wp, true);
   }
 }

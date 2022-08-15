@@ -122,7 +122,7 @@ void do_window(int nchar, long Prenum, int xchar)
 {
   long Prenum1;
   win_T *wp;
-  char_u *ptr;
+  char *ptr;
   linenr_T lnum = -1;
   int type = FIND_DEFINE;
   size_t len;
@@ -483,14 +483,14 @@ newwindow:
 wingotofile:
     CHECK_CMDWIN;
 
-    ptr = grab_file_name(Prenum1, &lnum);
+    ptr = (char *)grab_file_name(Prenum1, &lnum);
     if (ptr != NULL) {
       tabpage_T *oldtab = curtab;
       win_T *oldwin = curwin;
       setpcmark();
       if (win_split(0, 0) == OK) {
         RESET_BINDING(curwin);
-        if (do_ecmd(0, (char *)ptr, NULL, NULL, ECMD_LASTL, ECMD_HIDE, NULL) == FAIL) {
+        if (do_ecmd(0, ptr, NULL, NULL, ECMD_LASTL, ECMD_HIDE, NULL) == FAIL) {
           // Failed to open the file, close the window opened for it.
           win_close(curwin, false, false);
           goto_tabpage_win(oldtab, oldwin);
@@ -518,9 +518,9 @@ wingotofile:
     }
 
     // Make a copy, if the line was changed it will be freed.
-    ptr = vim_strnsave(ptr, len);
+    ptr = xstrnsave(ptr, len);
 
-    find_pattern_in_path(ptr, 0, len, true, Prenum == 0,
+    find_pattern_in_path((char_u *)ptr, 0, len, true, Prenum == 0,
                          type, Prenum1, ACTION_SPLIT, 1, MAXLNUM);
     xfree(ptr);
     curwin->w_set_curswant = true;
@@ -705,7 +705,7 @@ win_T *win_new_float(win_T *wp, bool last, FloatConfig fconfig, Error *err)
   wp->w_vsep_width = 0;
 
   win_config_float(wp, fconfig);
-  win_set_inner_size(wp);
+  win_set_inner_size(wp, true);
   wp->w_pos_changed = true;
   redraw_later(wp, VALID);
   return wp;
@@ -789,7 +789,7 @@ void win_config_float(win_T *wp, FloatConfig fconfig)
     wp->w_width = MIN(wp->w_width, Columns - win_border_width(wp));
   }
 
-  win_set_inner_size(wp);
+  win_set_inner_size(wp, true);
   must_redraw = MAX(must_redraw, VALID);
 
   wp->w_pos_changed = true;
@@ -1270,7 +1270,7 @@ int win_split_ins(int size, int flags, win_T *new_wp, int dir)
     wp->w_floating = false;
     // non-floating window doesn't store float config or have a border.
     wp->w_float_config = FLOAT_CONFIG_INIT;
-    memset(wp->w_border_adj, 0, sizeof(wp->w_border_adj));
+    CLEAR_FIELD(wp->w_border_adj);
   }
 
   /*
@@ -2150,12 +2150,11 @@ static void win_equal_rec(win_T *next_curwin, bool current, frame_T *topfr, int 
       } else {
         next_curwin_size = -1;
         FOR_ALL_FRAMES(fr, topfr->fr_child) {
-          // If 'winfixwidth' set keep the window width if
-          // possible.
-          // Watch out for this window being the next_curwin.
           if (!frame_fixed_width(fr)) {
             continue;
           }
+          // If 'winfixwidth' set keep the window width if possible.
+          // Watch out for this window being the next_curwin.
           n = frame_minwidth(fr, NOWIN);
           new_size = fr->fr_width;
           if (frame_has_win(fr, next_curwin)) {
@@ -2281,12 +2280,11 @@ static void win_equal_rec(win_T *next_curwin, bool current, frame_T *topfr, int 
       } else {
         next_curwin_size = -1;
         FOR_ALL_FRAMES(fr, topfr->fr_child) {
-          // If 'winfixheight' set keep the window height if
-          // possible.
-          // Watch out for this window being the next_curwin.
           if (!frame_fixed_height(fr)) {
             continue;
           }
+          // If 'winfixheight' set keep the window height if possible.
+          // Watch out for this window being the next_curwin.
           n = frame_minheight(fr, NOWIN);
           new_size = fr->fr_height;
           if (frame_has_win(fr, next_curwin)) {
@@ -3898,9 +3896,7 @@ void close_others(int message, int forceit)
         continue;
       }
     }
-    win_close(wp,
-              !buf_hide(wp->w_buffer) && !bufIsChanged(wp->w_buffer),
-              false);
+    win_close(wp, !buf_hide(wp->w_buffer) && !bufIsChanged(wp->w_buffer), false);
   }
 
   if (message && !ONE_WINDOW) {
@@ -4297,7 +4293,7 @@ static int leave_tabpage(buf_T *new_curbuf, bool trigger_leave_autocmds)
   tp->tp_prevwin = prevwin;
   tp->tp_firstwin = firstwin;
   tp->tp_lastwin = lastwin;
-  tp->tp_old_Rows = Rows;
+  tp->tp_old_Rows_avail = ROWS_AVAIL;
   tp->tp_old_Columns = Columns;
   firstwin = NULL;
   lastwin = NULL;
@@ -4337,10 +4333,7 @@ static void enter_tabpage(tabpage_T *tp, buf_T *old_curbuf, bool trigger_enter_a
   const int row = win_comp_pos();  // recompute w_winrow for all windows
   diff_need_scrollbind = true;
 
-  // The tabpage line may have appeared or disappeared, may need to resize
-  // the frames for that.  When the Vim window was resized need to update
-  // frame sizes too.  Use the stored value of p_ch, so that it can be
-  // different for each tab page.
+  // Use the stored value of p_ch, so that it can be different for each tab page.
   if (p_ch != curtab->tp_ch_used) {
     clear_cmdline = true;
   }
@@ -4353,7 +4346,9 @@ static void enter_tabpage(tabpage_T *tp, buf_T *old_curbuf, bool trigger_enter_a
     clear_cmdline = true;
   }
 
-  if (curtab->tp_old_Rows != Rows || (old_off != firstwin->w_winrow)) {
+  // The tabpage line may have appeared or disappeared, may need to resize the frames for that.
+  // When the Vim window was resized or ROWS_AVAIL changed need to update frame sizes too.
+  if (curtab->tp_old_Rows_avail != ROWS_AVAIL || (old_off != firstwin->w_winrow)) {
     win_new_screen_rows();
   }
   if (curtab->tp_old_Columns != Columns && starting == 0) {
@@ -5180,7 +5175,7 @@ void win_free_grid(win_T *wp, bool reinit)
   grid_free(&wp->w_grid_alloc);
   if (reinit) {
     // if a float is turned into a split, the grid data structure will be reused
-    memset(&wp->w_grid_alloc, 0, sizeof(wp->w_grid_alloc));
+    CLEAR_FIELD(wp->w_grid_alloc);
   }
 }
 
@@ -5523,6 +5518,7 @@ void win_setheight_win(int height, win_T *win)
     msg_row = row;
     msg_col = 0;
     redraw_all_later(NOT_VALID);
+    redraw_cmdline = true;
   }
 }
 
@@ -5877,7 +5873,7 @@ void win_setminheight(void)
   // loop until there is a 'winminheight' that is possible
   while (p_wmh > 0) {
     const int room = Rows - (int)p_ch;
-    const int needed = min_rows() - 1;  // 1 was added for the cmdline
+    const int needed = min_rows();
     if (room >= needed) {
       break;
     }
@@ -6166,7 +6162,7 @@ void win_new_height(win_T *wp, int height)
 
   wp->w_height = height;
   wp->w_pos_changed = true;
-  win_set_inner_size(wp);
+  win_set_inner_size(wp, true);
 }
 
 void scroll_to_fraction(win_T *wp, int prev_height)
@@ -6275,7 +6271,7 @@ void scroll_to_fraction(win_T *wp, int prev_height)
   invalidate_botline_win(wp);
 }
 
-void win_set_inner_size(win_T *wp)
+void win_set_inner_size(win_T *wp, bool valid_cursor)
 {
   int width = wp->w_width_request;
   if (width == 0) {
@@ -6289,7 +6285,7 @@ void win_set_inner_size(win_T *wp)
   }
 
   if (height != prev_height) {
-    if (height > 0) {
+    if (height > 0 && valid_cursor) {
       if (wp == curwin) {
         // w_wrow needs to be valid. When setting 'laststatus' this may
         // call win_new_height() recursively.
@@ -6307,7 +6303,8 @@ void win_set_inner_size(win_T *wp)
 
     // There is no point in adjusting the scroll position when exiting.  Some
     // values might be invalid.
-    if (!exiting) {
+    // Skip scroll_to_fraction() when 'cmdheight' was set to one from zero.
+    if (!exiting && !made_cmdheight_nonzero && valid_cursor) {
       scroll_to_fraction(wp, prev_height);
     }
     redraw_later(wp, NOT_VALID);  // SOME_VALID??
@@ -6316,11 +6313,13 @@ void win_set_inner_size(win_T *wp)
   if (width != wp->w_width_inner) {
     wp->w_width_inner = width;
     wp->w_lines_valid = 0;
-    changed_line_abv_curs_win(wp);
-    invalidate_botline_win(wp);
-    if (wp == curwin) {
-      update_topline(wp);
-      curs_columns(wp, true);  // validate w_wrow
+    if (valid_cursor) {
+      changed_line_abv_curs_win(wp);
+      invalidate_botline_win(wp);
+      if (wp == curwin) {
+        update_topline(wp);
+        curs_columns(wp, true);  // validate w_wrow
+      }
     }
     redraw_later(wp, NOT_VALID);
   }
@@ -6349,7 +6348,7 @@ static int win_border_width(win_T *wp)
 void win_new_width(win_T *wp, int width)
 {
   wp->w_width = width;
-  win_set_inner_size(wp);
+  win_set_inner_size(wp, true);
 
   wp->w_redr_status = true;
   wp->w_pos_changed = true;
@@ -6468,17 +6467,17 @@ char_u *grab_file_name(long count, linenr_T *file_lnum)
   int options = FNAME_MESS | FNAME_EXP | FNAME_REL | FNAME_UNESC;
   if (VIsual_active) {
     size_t len;
-    char_u *ptr;
+    char *ptr;
     if (get_visual_text(NULL, &ptr, &len) == FAIL) {
       return NULL;
     }
     // Only recognize ":123" here
     if (file_lnum != NULL && ptr[len] == ':' && isdigit(ptr[len + 1])) {
-      char_u *p = ptr + len + 1;
+      char *p = ptr + len + 1;
 
       *file_lnum = (linenr_T)getdigits_long(&p, false, 0);
     }
-    return find_file_name_in_path(ptr, len, options, count, (char_u *)curbuf->b_ffname);
+    return find_file_name_in_path((char_u *)ptr, len, options, count, (char_u *)curbuf->b_ffname);
   }
   return file_name_at_cursor(options | FNAME_HYP, count, file_lnum);
 }
@@ -6600,7 +6599,7 @@ char_u *file_name_in_line(char_u *line, int col, int options, long count, char_u
       }
       p = skipwhite(p);
       if (isdigit(*p)) {
-        *file_lnum = (linenr_T)getdigits_long((char_u **)&p, false, 0);
+        *file_lnum = (linenr_T)getdigits_long(&p, false, 0);
       }
     }
   }
@@ -6741,9 +6740,11 @@ static void last_status_rec(frame_T *fr, bool statusline, bool is_stl_global)
 /// Add or remove window bar from window "wp".
 ///
 /// @param make_room Whether to resize frames to make room for winbar.
+/// @param valid_cursor Whether the cursor is valid and should be used while
+///                     resizing.
 ///
 /// @return Success status.
-int set_winbar_win(win_T *wp, bool make_room)
+int set_winbar_win(win_T *wp, bool make_room, bool valid_cursor)
 {
   // Require the local value to be set in order to show winbar on a floating window.
   int winbar_height = wp->w_floating ? ((*wp->w_p_wbr != NUL) ? 1 : 0)
@@ -6759,7 +6760,7 @@ int set_winbar_win(win_T *wp, bool make_room)
       }
     }
     wp->w_winbar_height = winbar_height;
-    win_set_inner_size(wp);
+    win_set_inner_size(wp, valid_cursor);
     wp->w_redr_status = wp->w_redr_status || winbar_height;
 
     if (winbar_height == 0) {
@@ -6780,7 +6781,7 @@ int set_winbar_win(win_T *wp, bool make_room)
 void set_winbar(bool make_room)
 {
   FOR_ALL_WINDOWS_IN_TAB(wp, curtab) {
-    if (set_winbar_win(wp, make_room) == FAIL) {
+    if (set_winbar_win(wp, make_room, true) == FAIL) {
       break;
     }
   }
@@ -6830,7 +6831,9 @@ int min_rows(void)
     }
   }
   total += tabline_height() + global_stl_height();
-  total += 1;           // count the room for the command line
+  if (p_ch > 0) {
+    total += 1;           // count the room for the command line
+  }
   return total;
 }
 
@@ -7096,7 +7099,7 @@ int switch_win(switchwin_T *switchwin, win_T *win, tabpage_T *tp, bool no_displa
 // As switch_win() but without blocking autocommands.
 int switch_win_noblock(switchwin_T *switchwin, win_T *win, tabpage_T *tp, bool no_display)
 {
-  memset(switchwin, 0, sizeof(switchwin_T));
+  CLEAR_POINTER(switchwin);
   switchwin->sw_curwin = curwin;
   if (win == curwin) {
     switchwin->sw_same_win = true;

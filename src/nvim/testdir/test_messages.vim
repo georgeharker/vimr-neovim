@@ -95,6 +95,65 @@ func Test_echoerr()
   call test_ignore_error('RESET')
 endfunc
 
+func Test_mode_message_at_leaving_insert_by_ctrl_c()
+  if !has('terminal') || has('gui_running')
+    return
+  endif
+
+  " Set custom statusline built by user-defined function.
+  let testfile = 'Xtest.vim'
+  call writefile([
+        \ 'func StatusLine() abort',
+        \ '  return ""',
+        \ 'endfunc',
+        \ 'set statusline=%!StatusLine()',
+        \ 'set laststatus=2',
+        \ ], testfile)
+
+  let rows = 10
+  let buf = term_start([GetVimProg(), '--clean', '-S', testfile], {'term_rows': rows})
+  call term_wait(buf, 200)
+  call assert_equal('run', job_status(term_getjob(buf)))
+
+  call term_sendkeys(buf, "i")
+  call WaitForAssert({-> assert_match('^-- INSERT --\s*$', term_getline(buf, rows))})
+  call term_sendkeys(buf, "\<C-C>")
+  call WaitForAssert({-> assert_match('^\s*$', term_getline(buf, rows))})
+
+  call term_sendkeys(buf, ":qall!\<CR>")
+  call WaitForAssert({-> assert_equal('dead', job_status(term_getjob(buf)))})
+  exe buf . 'bwipe!'
+  call delete(testfile)
+endfunc
+
+func Test_mode_message_at_leaving_insert_with_esc_mapped()
+  if !has('terminal') || has('gui_running')
+    return
+  endif
+
+  " Set custom statusline built by user-defined function.
+  let testfile = 'Xtest.vim'
+  call writefile([
+        \ 'set laststatus=2',
+        \ 'inoremap <Esc> <Esc>00',
+        \ ], testfile)
+
+  let rows = 10
+  let buf = term_start([GetVimProg(), '--clean', '-S', testfile], {'term_rows': rows})
+  call term_wait(buf, 200)
+  call assert_equal('run', job_status(term_getjob(buf)))
+
+  call term_sendkeys(buf, "i")
+  call WaitForAssert({-> assert_match('^-- INSERT --\s*$', term_getline(buf, rows))})
+  call term_sendkeys(buf, "\<Esc>")
+  call WaitForAssert({-> assert_match('^\s*$', term_getline(buf, rows))})
+
+  call term_sendkeys(buf, ":qall!\<CR>")
+  call WaitForAssert({-> assert_equal('dead', job_status(term_getjob(buf)))})
+  exe buf . 'bwipe!'
+  call delete(testfile)
+endfunc
+
 func Test_echospace()
   set noruler noshowcmd laststatus=1
   call assert_equal(&columns - 1, v:echospace)
@@ -314,6 +373,62 @@ func Test_fileinfo_after_echo()
   call StopVimInTerminal(buf)
   call delete('Xtest_fileinfo_after_echo')
   call delete('b.txt')
+endfunc
+
+func Test_cmdheight_zero()
+  set cmdheight=0
+  set showcmd
+  redraw!
+
+  echo 'test echo'
+  call assert_equal(116, screenchar(&lines, 1))
+  redraw!
+
+  echomsg 'test echomsg'
+  call assert_equal(116, screenchar(&lines, 1))
+  redraw!
+
+  call feedkeys(":ls\<CR>", "xt")
+  call assert_equal(':ls', Screenline(&lines - 1))
+  redraw!
+
+  let char = getchar(0)
+  call assert_match(char, 0)
+
+  " Check change/restore cmdheight when macro
+  call feedkeys("qa", "xt")
+  call assert_equal(1, &cmdheight)
+  call feedkeys("q", "xt")
+  call assert_equal(0, &cmdheight)
+
+  call setline(1, 'somestring')
+  call feedkeys("y", "n")
+  %s/somestring/otherstring/gc
+  call assert_equal('otherstring', getline(1))
+
+  call feedkeys("g\<C-g>", "xt")
+  call assert_match(
+        \ 'Col 1 of 11; Line 1 of 1; Word 1 of 1',
+        \ Screenline(&lines))
+
+  " Check split behavior
+  for i in range(1, 10)
+    split
+  endfor
+  only
+  call assert_equal(0, &cmdheight)
+
+  " Check that pressing ":" should not scroll a window
+  " Check for what patch 9.0.0115 fixes
+  botright 10new
+  call setline(1, range(12))
+  7
+  call feedkeys(":\"\<C-R>=line('w0')\<CR>\<CR>", "xt")
+  call assert_equal('"1', @:)
+  bwipe!
+
+  set cmdheight&
+  set showcmd&
 endfunc
 
 " vim: shiftwidth=2 sts=2 expandtab

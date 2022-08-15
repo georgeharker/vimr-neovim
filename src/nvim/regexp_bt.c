@@ -466,7 +466,7 @@ static void regcomp_start(char_u *expr, int re_flags)                        // 
 
   num_complex_braces = 0;
   regnpar = 1;
-  memset(had_endbrace, 0, sizeof(had_endbrace));
+  CLEAR_FIELD(had_endbrace);
   regnzpar = 1;
   re_has_z = 0;
   regsize = 0L;
@@ -1689,7 +1689,7 @@ static int seen_endbrace(int refnum)
 
     // Trick: check if "@<=" or "@<!" follows, in which case
     // the \1 can appear before the referenced match.
-    for (p = regparse; *p != NUL; p++) {
+    for (p = (char_u *)regparse; *p != NUL; p++) {
       if (p[0] == '@' && p[1] == '<' && (p[2] == '!' || p[2] == '=')) {
         break;
       }
@@ -2469,7 +2469,7 @@ do_multibyte:
           // Need to get composing character too.
           for (;;) {
             l = utf_ptr2len((char *)regparse);
-            if (!utf_composinglike(regparse, regparse + l)) {
+            if (!utf_composinglike((char_u *)regparse, (char_u *)regparse + l)) {
               break;
             }
             regmbc(utf_ptr2char((char *)regparse));

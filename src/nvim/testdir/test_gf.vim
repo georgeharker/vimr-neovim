@@ -138,6 +138,22 @@ func Test_gf_visual()
   call assert_equal('Xtest_gf_visual', bufname('%'))
   call assert_equal(3, getcurpos()[1])
 
+  " do not include the NUL at the end
+  call writefile(['x'], 'X')
+  let save_enc = &enc
+  " for enc in ['latin1', 'utf-8']
+  for enc in ['utf-8']
+    exe "set enc=" .. enc
+    new
+    call setline(1, 'X')
+    set nomodified
+    exe "normal \<C-V>$gf"
+    call assert_equal('X', bufname())
+    bwipe!
+  endfor
+  let &enc = save_enc
+  call delete('X')
+
   " line number in visual area is used for file name
   if has('unix')
     bwipe!
@@ -175,6 +191,22 @@ func Test_gf_error()
   au! InsertCharPre
 
   bwipe!
+
+  " gf is not allowed when buffer is locked
+  new
+  augroup Test_gf
+    au!
+    au OptionSet diff norm! gf
+  augroup END
+  call setline(1, ['Xfile1', 'line2', 'line3', 'line4'])
+  " Nvim does not support test_override()
+  " call test_override('starting', 1)
+  " call assert_fails('diffthis', 'E788:')
+  " call test_override('starting', 0)
+  augroup Test_gf
+    au!
+  augroup END
+  bw!
 endfunc
 
 " If a file is not found by 'gf', then 'includeexpr' should be used to locate
@@ -192,6 +224,29 @@ func Test_gf_includeexpr()
   call assert_equal('somefile.java', g:Inc_fname)
   close!
   delfunc IncFunc
+endfunc
+
+" Check that expanding directories can handle more than 255 entries.
+func Test_gf_subdirs_wildcard()
+  let cwd = getcwd()
+  let dir = 'Xtestgf_dir'
+  call mkdir(dir)
+  call chdir(dir)
+  for i in range(300)
+    call mkdir(i)
+    call writefile([], i .. '/' .. i, 'S')
+  endfor
+  set path=./**
+
+  new | only
+  call setline(1, '99')
+  w! Xtest1
+  normal gf
+  call assert_equal('99', fnamemodify(bufname(''), ":t"))
+
+  call chdir(cwd)
+  call delete(dir, 'rf')
+  set path&
 endfunc
 
 " vim: shiftwidth=2 sts=2 expandtab

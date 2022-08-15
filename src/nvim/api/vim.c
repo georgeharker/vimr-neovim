@@ -27,9 +27,9 @@
 #include "nvim/eval.h"
 #include "nvim/eval/typval.h"
 #include "nvim/eval/userfunc.h"
-#include "nvim/ex_cmds2.h"
 #include "nvim/ex_cmds_defs.h"
 #include "nvim/ex_docmd.h"
+#include "nvim/ex_eval.h"
 #include "nvim/file_search.h"
 #include "nvim/fileio.h"
 #include "nvim/getchar.h"
@@ -53,6 +53,7 @@
 #include "nvim/os/input.h"
 #include "nvim/os/process.h"
 #include "nvim/popupmnu.h"
+#include "nvim/runtime.h"
 #include "nvim/screen.h"
 #include "nvim/state.h"
 #include "nvim/types.h"
@@ -1419,7 +1420,7 @@ Dictionary nvim_get_mode(void)
 /// Gets a list of global (non-buffer-local) |mapping| definitions.
 ///
 /// @param  mode       Mode short-name ("n", "i", "v", ...)
-/// @returns Array of maparg()-like dictionaries describing mappings.
+/// @returns Array of |maparg()|-like dictionaries describing mappings.
 ///          The "buffer" key is always zero.
 ArrayOf(Dictionary) nvim_get_keymap(uint64_t channel_id, String mode)
   FUNC_API_SINCE(3)
@@ -1431,8 +1432,8 @@ ArrayOf(Dictionary) nvim_get_keymap(uint64_t channel_id, String mode)
 ///
 /// To set a buffer-local mapping, use |nvim_buf_set_keymap()|.
 ///
-/// Unlike |:map|, leading/trailing whitespace is accepted as part of the {lhs}
-/// or {rhs}. Empty {rhs} is |<Nop>|. |keycodes| are replaced as usual.
+/// Unlike |:map|, leading/trailing whitespace is accepted as part of the {lhs} or {rhs}.
+/// Empty {rhs} is |<Nop>|. |keycodes| are replaced as usual.
 ///
 /// Example:
 /// <pre>
@@ -1449,13 +1450,15 @@ ArrayOf(Dictionary) nvim_get_keymap(uint64_t channel_id, String mode)
 ///               or "!" for |:map!|, or empty string for |:map|.
 /// @param  lhs   Left-hand-side |{lhs}| of the mapping.
 /// @param  rhs   Right-hand-side |{rhs}| of the mapping.
-/// @param  opts  Optional parameters map: keys are |:map-arguments|, values
-///               are booleans (default false). Accepts all |:map-arguments| as
-///               keys excluding |<buffer>| but including |noremap| and "desc".
-///               Unknown key is an error. "desc" can be used to give a
-///               description to the mapping. When called from Lua, also accepts a
-///               "callback" key that takes a Lua function to call when the
-///               mapping is executed.
+/// @param  opts  Optional parameters map: keys are |:map-arguments|, values are booleans (default
+///               false). Accepts all |:map-arguments| as keys excluding |<buffer>| but including
+///               |noremap| and "desc". Unknown key is an error.
+///               "desc" can be used to give a description to the mapping.
+///               When called from Lua, also accepts a "callback" key that takes a Lua function to
+///               call when the mapping is executed.
+///               When "expr" is true, "replace_keycodes" (boolean) can be used to replace keycodes
+///               in the resulting string (see |nvim_replace_termcodes()|), and a Lua callback
+///               returning `nil` is equivalent to returning an empty string.
 /// @param[out]   err   Error details, if any.
 void nvim_set_keymap(uint64_t channel_id, String mode, String lhs, String rhs, Dict(keymap) *opts,
                      Error *err)

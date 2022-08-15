@@ -30,14 +30,12 @@ typedef struct {
 #include "nvim/option_defs.h"
 // for jump list and tag stack sizes in a buffer and mark types
 #include "nvim/mark_defs.h"
-// for u_header_T; needs buf_T.
+// for u_header_T
 #include "nvim/undo_defs.h"
 // for hashtab_T
 #include "nvim/hashtab.h"
 // for dict_T
 #include "nvim/eval/typval.h"
-// for proftime_T
-#include "nvim/profile.h"
 // for String
 #include "nvim/api/private/defs.h"
 // for Map(K, V)
@@ -369,6 +367,7 @@ struct mapblock {
   char m_expr;                  // <expr> used, m_str is an expression
   sctx_T m_script_ctx;          // SCTX where map was defined
   char *m_desc;                 // description of keymap
+  bool m_replace_keycodes;      // replace termcodes in lua function
 };
 
 /// Used for highlighting in the status line.
@@ -432,7 +431,7 @@ typedef struct {
 typedef struct {
   hashtab_T b_keywtab;                  // syntax keywords hash table
   hashtab_T b_keywtab_ic;               // idem, ignore case
-  int b_syn_error;                      // TRUE when error occurred in HL
+  bool b_syn_error;                     // true when error occurred in HL
   bool b_syn_slow;                      // true when 'redrawtime' reached
   int b_syn_ic;                         // ignore case for :syn cmds
   int b_syn_foldlevel;                  // how to compute foldlevel on a line
@@ -946,16 +945,15 @@ struct diffblock_S {
 typedef struct tabpage_S tabpage_T;
 struct tabpage_S {
   handle_T handle;
-  tabpage_T *tp_next;         ///< next tabpage or NULL
-  frame_T *tp_topframe;     ///< topframe for the windows
-  win_T *tp_curwin;       ///< current window in this Tab page
-  win_T *tp_prevwin;      ///< previous window in this Tab page
-  win_T *tp_firstwin;     ///< first window in this Tab page
-  win_T *tp_lastwin;      ///< last window in this Tab page
-  long tp_old_Rows;                 ///< Rows when Tab page was left
-  long tp_old_Columns;              ///< Columns when Tab page was left
-  long tp_ch_used;                  ///< value of 'cmdheight' when frame size
-                                    ///< was set
+  tabpage_T *tp_next;      ///< next tabpage or NULL
+  frame_T *tp_topframe;    ///< topframe for the windows
+  win_T *tp_curwin;        ///< current window in this Tab page
+  win_T *tp_prevwin;       ///< previous window in this Tab page
+  win_T *tp_firstwin;      ///< first window in this Tab page
+  win_T *tp_lastwin;       ///< last window in this Tab page
+  long tp_old_Rows_avail;  ///< ROWS_AVAIL when Tab page was left
+  long tp_old_Columns;     ///< Columns when Tab page was left
+  long tp_ch_used;         ///< value of 'cmdheight' when frame size was set
 
   diff_T *tp_first_diff;
   buf_T *(tp_diffbuf[DB_COUNT]);
@@ -1133,43 +1131,6 @@ typedef struct {
   pos_T w_cursor_save;  // original cursor position
   pos_T w_cursor_corr;  // corrected cursor position
 } pos_save_T;
-
-/// Indices into vimmenu_T->strings[] and vimmenu_T->noremap[] for each mode
-/// \addtogroup MENU_INDEX
-/// @{
-enum {
-  MENU_INDEX_INVALID      = -1,
-  MENU_INDEX_NORMAL       = 0,
-  MENU_INDEX_VISUAL       = 1,
-  MENU_INDEX_SELECT       = 2,
-  MENU_INDEX_OP_PENDING   = 3,
-  MENU_INDEX_INSERT       = 4,
-  MENU_INDEX_CMDLINE      = 5,
-  MENU_INDEX_TERMINAL     = 6,
-  MENU_INDEX_TIP          = 7,
-  MENU_MODES              = 8,
-};
-
-typedef struct VimMenu vimmenu_T;
-
-struct VimMenu {
-  int modes;                         ///< Which modes is this menu visible for
-  int enabled;                       ///< for which modes the menu is enabled
-  char *name;                 ///< Name of menu, possibly translated
-  char *dname;                ///< Displayed Name ("name" without '&')
-  char *en_name;              ///< "name" untranslated, NULL when
-                              ///< was not translated
-  char *en_dname;             ///< NULL when "dname" untranslated
-  int mnemonic;                      ///< mnemonic key (after '&')
-  char *actext;               ///< accelerator text (after TAB)
-  long priority;                     ///< Menu order priority
-  char *strings[MENU_MODES];  ///< Mapped string for each mode
-  int noremap[MENU_MODES];           ///< A \ref REMAP_VALUES flag for each mode
-  bool silent[MENU_MODES];           ///< A silent flag for each mode
-  vimmenu_T *children;             ///< Children of sub-menu
-  vimmenu_T *parent;               ///< Parent of menu
-  vimmenu_T *next;                 ///< Next item in menu
-};
 
 /// Structure which contains all information that belongs to a window.
 ///

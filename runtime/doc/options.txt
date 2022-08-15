@@ -591,7 +591,11 @@ A jump table for the options with a short description can be found at |Q_op|.
 	"double":	Use twice the width of ASCII characters.
 							*E834* *E835*
 	The value "double" cannot be used if 'listchars' or 'fillchars'
-	contains a character that would be double width.
+	contains a character that would be double width.  These errors may
+	also be given when calling setcellwidths().
+
+	The values are overruled for characters specified with
+	|setcellwidths()|.
 
 	There are a number of CJK fonts for which the width of glyphs for
 	those characters are solely based on how many octets they take in
@@ -1314,14 +1318,15 @@ A jump table for the options with a short description can be found at |Q_op|.
 
 						*'cmdheight'* *'ch'*
 'cmdheight' 'ch'	number	(default 1)
-			global
+			global or local to tab page
 	Number of screen lines to use for the command-line.  Helps avoiding
 	|hit-enter| prompts.
 	The value of this option is stored with the tab page, so that each tab
 	page can have a different value.
 
-	When 'cmdheight' is zero, it disables echo area and all outputs need
-	|hit-enter| prompt.
+	When 'cmdheight' is zero, there is no command-line unless it is being
+	used.  Some informative messages will not be displayed, any other
+	messages will cause the |hit-enter| prompt.
 
 						*'cmdwinheight'* *'cwh'*
 'cmdwinheight' 'cwh'	number	(default 7)
@@ -2139,7 +2144,8 @@ A jump table for the options with a short description can be found at |Q_op|.
 	When on all Unicode emoji characters are considered to be full width.
 	This excludes "text emoji" characters, which are normally displayed as
 	single width.  Unfortunately there is no good specification for this
-	and it has been determined on trial-and-error basis.
+	and it has been determined on trial-and-error basis.  Use the
+	|setcellwidths()| function to change the behavior.
 
 					*'encoding'* *'enc'* *E543*
 'encoding' 'enc'
@@ -3571,7 +3577,7 @@ A jump table for the options with a short description can be found at |Q_op|.
 	help.  (Note that previously setting the global option to the empty
 	value did this, which is now deprecated.)
 	When the first character is ":", the command is invoked as a Vim
-	Ex command with [count] added as an argument if it is not zero.
+	Ex command prefixed with [count].
 	When "man" or "man -s" is used, Vim will automatically translate
 	a [count] for the "K" command to a section number.
 	See |option-backslash| about including spaces and backslashes.
@@ -3731,8 +3737,8 @@ A jump table for the options with a short description can be found at |Q_op|.
 						*'lispwords'* *'lw'*
 'lispwords' 'lw'	string	(default is very long)
 			global or local to buffer |global-local|
-	Comma-separated list of words that influence the Lisp indenting.
-	|'lisp'|
+	Comma-separated list of words that influence the Lisp indenting when
+	enabled with the |'lisp'| option.
 
 						*'list'* *'nolist'*
 'list'			boolean	(default off)
@@ -4210,14 +4216,14 @@ A jump table for the options with a short description can be found at |Q_op|.
 
 	The 'mousemodel' option is set by the |:behave| command.
 
-					*mousescroll*
+						*'mousescroll'*
 'mousescroll'		string	(default "ver:3,hor:6")
 			global
 	This option controls the number of lines / columns to scroll by when
 	scrolling with a mouse. The option is a comma separated list of parts.
 	Each part consists of a direction and a count as follows:
 		direction:count,direction:count
-	Direction is one of either "hor" or "ver", "hor" controls horizontal
+	Direction is one of either "hor" or "ver". "hor" controls horizontal
 	scrolling and "ver" controls vertical scrolling. Count sets the amount
 	to scroll by for the given direction, it should be a non negative
 	integer. Each direction should be set at most once. If a direction
@@ -4712,8 +4718,8 @@ A jump table for the options with a short description can be found at |Q_op|.
 	in read-only mode ("vim -R") or when the executable is called "view".
 	When using ":w!" the 'readonly' option is reset for the current
 	buffer, unless the 'Z' flag is in 'cpoptions'.
-	When using the ":view" command the 'readonly' option is
-	set for the newly edited buffer.
+	When using the ":view" command the 'readonly' option is set for the
+	newly edited buffer.
 	See 'modifiable' for disallowing changes to the buffer.
 
 						*'redrawdebug'* *'rdb'*
@@ -4834,7 +4840,7 @@ A jump table for the options with a short description can be found at |Q_op|.
 
 		search		"/" and "?" commands
 
-	This is useful for languages such as Hebrew and Arabic.
+	This is useful for languages such as Hebrew, Arabic and Farsi.
 	The 'rightleft' option must be set for 'rightleftcmd' to take effect.
 
 					 *'ruler'* *'ru'* *'noruler'* *'noru'*
@@ -4850,7 +4856,7 @@ A jump table for the options with a short description can be found at |Q_op|.
 	If 'rulerformat' is set, it will determine the contents of the ruler.
 	Each window has its own ruler.  If a window has a status line, the
 	ruler is shown there.  If a window doesn't have a status line and
-	'cmdheight' is 0, the ruler is not shown.  Otherwise it is shown in
+	'cmdheight' is zero, the ruler is not shown.  Otherwise it is shown in
 	the last line of the screen.  If the statusline is given by
 	'statusline' (i.e. not empty), this option takes precedence over
 	'ruler' and 'rulerformat'.
@@ -5112,7 +5118,7 @@ A jump table for the options with a short description can be found at |Q_op|.
 
 						*'sessionoptions'* *'ssop'*
 'sessionoptions' 'ssop'	string	(default: "blank,buffers,curdir,folds,
-					       help,tabpages,winsize")
+					       help,tabpages,winsize,terminal")
 			global
 	Changes the effect of the |:mksession| command.  It is a comma-
 	separated list of words.  Each word enables saving and restoring
@@ -5559,7 +5565,7 @@ A jump table for the options with a short description can be found at |Q_op|.
 			global
 	Show (partial) command in the last line of the screen.  Set this
 	option off if your terminal is slow.
-	The option is disabled if 'cmdheight' is 0.
+	The option has no effect when 'cmdheight' is zero.
 	In Visual mode the size of the selected area is shown:
 	- When selecting characters within a line, the number of characters.
 	  If the number of bytes is different it is also displayed: "2-6"
@@ -5606,7 +5612,7 @@ A jump table for the options with a short description can be found at |Q_op|.
 			global
 	If in Insert, Replace or Visual mode put a message on the last line.
 	The |hl-ModeMsg| highlight group determines the highlighting.
-	The option is disabled if 'cmdheight' is 0.
+	The option has no effect when 'cmdheight' is zero.
 
 						*'showtabline'* *'stal'*
 'showtabline' 'stal'	number	(default 1)
@@ -5869,6 +5875,11 @@ A jump table for the options with a short description can be found at |Q_op|.
 			Not used for |spellsuggest()|.  The number of
 			suggestions is never more than the value of 'lines'
 			minus two.
+
+	timeout:{millisec}   Limit the time searching for suggestions to
+			{millisec} milli seconds.  Applies to the following
+			methods.  When omitted the limit is 5000. When
+			negative there is no limit.
 
 	file:{filename} Read file {filename}, which must have two columns,
 			separated by a slash.  The first column contains the
@@ -6185,7 +6196,7 @@ A jump table for the options with a short description can be found at |Q_op|.
 			global
 	This option controls the behavior when switching between buffers.
 	Mostly for |quickfix| commands some values are also used for other
- 	commands, as mentioned below.
+	commands, as mentioned below.
 	Possible values (comma-separated list):
 	   useopen	If included, jump to the first open window that
 			contains the specified buffer (if there is one).

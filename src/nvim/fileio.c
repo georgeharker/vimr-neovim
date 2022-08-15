@@ -19,6 +19,7 @@
 #include "nvim/cursor.h"
 #include "nvim/diff.h"
 #include "nvim/edit.h"
+#include "nvim/eval.h"
 #include "nvim/eval/typval.h"
 #include "nvim/eval/userfunc.h"
 #include "nvim/ex_cmds.h"
@@ -710,7 +711,7 @@ int readfile(char *fname, char *sfname, linenr_T from, linenr_T lines_to_skip,
     fenc_alloced = false;
   } else {
     fenc_next = (char *)p_fencs;                // try items in 'fileencodings'
-    fenc = (char *)next_fenc((char_u **)&fenc_next, &fenc_alloced);
+    fenc = (char *)next_fenc(&fenc_next, &fenc_alloced);
   }
 
   /*
@@ -804,7 +805,7 @@ retry:
         xfree(fenc);
       }
       if (fenc_next != NULL) {
-        fenc = (char *)next_fenc((char_u **)&fenc_next, &fenc_alloced);
+        fenc = (char *)next_fenc(&fenc_next, &fenc_alloced);
       } else {
         fenc = "";
         fenc_alloced = false;
@@ -2060,7 +2061,7 @@ void set_forced_fenc(exarg_T *eap)
 /// NULL.
 /// When *pp is not set to NULL, the result is in allocated memory and "alloced"
 /// is set to true.
-static char_u *next_fenc(char_u **pp, bool *alloced)
+static char_u *next_fenc(char **pp, bool *alloced)
   FUNC_ATTR_NONNULL_ALL FUNC_ATTR_NONNULL_RET
 {
   char_u *p;
@@ -2071,13 +2072,13 @@ static char_u *next_fenc(char_u **pp, bool *alloced)
     *pp = NULL;
     return (char_u *)"";
   }
-  p = (char_u *)vim_strchr((char *)(*pp), ',');
+  p = (char_u *)vim_strchr((*pp), ',');
   if (p == NULL) {
-    r = enc_canonize(*pp);
+    r = enc_canonize((char_u *)(*pp));
     *pp += STRLEN(*pp);
   } else {
-    r = vim_strnsave(*pp, (size_t)(p - *pp));
-    *pp = p + 1;
+    r = vim_strnsave((char_u *)(*pp), (size_t)(p - (char_u *)(*pp)));
+    *pp = (char *)p + 1;
     p = enc_canonize(r);
     xfree(r);
     r = p;
@@ -5122,7 +5123,7 @@ void buf_reload(buf_T *buf, int orig_mode, bool reload_options)
   // file, not reset the syntax highlighting, clear marks, diff status, etc.
   // Force the fileformat and encoding to be the same.
   if (reload_options) {
-    memset(&ea, 0, sizeof(ea));
+    CLEAR_FIELD(ea);
   } else {
     prep_exarg(&ea, buf);
   }
@@ -5270,7 +5271,6 @@ void forward_slash(char_u *fname)
     return;
   }
   for (p = fname; *p != NUL; p++) {
-    // The Big5 encoding can have '\' in the trail byte.
     if (*p == '\\') {
       *p = '/';
     }
@@ -5401,7 +5401,7 @@ int readdir_core(garray_T *gap, const char *path, void *context, CheckItem check
   os_closedir(&dir);
 
   if (gap->ga_len > 0) {
-    sort_strings((char_u **)gap->ga_data, gap->ga_len);
+    sort_strings(gap->ga_data, gap->ga_len);
   }
 
   return OK;
@@ -5581,14 +5581,14 @@ bool match_file_list(char_u *list, char_u *sfname, char_u *ffname)
   char_u *regpat;
   char allow_dirs;
   bool match;
-  char_u *p;
+  char *p;
 
   tail = (char_u *)path_tail((char *)sfname);
 
   // try all patterns in 'wildignore'
-  p = list;
+  p = (char *)list;
   while (*p) {
-    copy_option_part((char **)&p, (char *)buf, ARRAY_SIZE(buf), ",");
+    copy_option_part(&p, (char *)buf, ARRAY_SIZE(buf), ",");
     regpat = (char_u *)file_pat_to_reg_pat((char *)buf, NULL, &allow_dirs, false);
     if (regpat == NULL) {
       break;

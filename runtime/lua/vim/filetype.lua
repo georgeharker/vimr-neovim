@@ -142,6 +142,7 @@ local extension = {
   asp = function(path, bufnr)
     return require('vim.filetype.detect').asp(bufnr)
   end,
+  astro = 'astro',
   atl = 'atlas',
   as = 'atlas',
   ahk = 'autohotkey',
@@ -668,6 +669,21 @@ local extension = {
   moo = 'moo',
   moon = 'moonscript',
   mp = 'mp',
+  mpiv = function(path, bufnr)
+    return 'mp', function(b)
+      vim.b[b].mp_metafun = 1
+    end
+  end,
+  mpvi = function(path, bufnr)
+    return 'mp', function(b)
+      vim.b[b].mp_metafun = 1
+    end
+  end,
+  mpxl = function(path, bufnr)
+    return 'mp', function(b)
+      vim.b[b].mp_metafun = 1
+    end
+  end,
   mof = 'msidl',
   odl = 'msidl',
   msql = 'msql',
@@ -776,6 +792,7 @@ local extension = {
   ptl = 'python',
   ql = 'ql',
   qll = 'ql',
+  qmd = 'quarto',
   R = function(path, bufnr)
     return require('vim.filetype.detect').r(bufnr)
   end,
@@ -2275,9 +2292,9 @@ end
 ---       priority = -math.huge,
 ---       function(path, bufnr)
 ---         local content = vim.filetype.getlines(bufnr, 1)
----         if vim.filetype.matchregex(content, { [[^#!.*\\<mine\\>]] }) then
+---         if vim.filetype.matchregex(content, [[^#!.*\\<mine\\>]]) then
 ---           return 'mine'
----         elseif vim.filetype.matchregex(content, { [[\\<drawing\\>]] }) then
+---         elseif vim.filetype.matchregex(content, [[\\<drawing\\>]]) then
 ---           return 'drawing'
 ---         end
 ---       end,

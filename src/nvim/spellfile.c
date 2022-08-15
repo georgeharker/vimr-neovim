@@ -242,6 +242,7 @@
 #include "nvim/os/os.h"
 #include "nvim/path.h"
 #include "nvim/regexp.h"
+#include "nvim/runtime.h"
 #include "nvim/screen.h"
 #include "nvim/spell.h"
 #include "nvim/spell_defs.h"
@@ -576,11 +577,10 @@ slang_T *spell_load_file(char_u *fname, char_u *lang, slang_T *old_lp, bool sile
   char_u *p;
   int n;
   int len;
-  char_u *save_sourcing_name = (char_u *)sourcing_name;
-  linenr_T save_sourcing_lnum = sourcing_lnum;
   slang_T *lp = NULL;
   int c = 0;
   int res;
+  bool did_estack_push = false;
 
   fd = os_fopen((char *)fname, "r");
   if (fd == NULL) {
@@ -612,8 +612,8 @@ slang_T *spell_load_file(char_u *fname, char_u *lang, slang_T *old_lp, bool sile
   }
 
   // Set sourcing_name, so that error messages mention the file name.
-  sourcing_name = (char *)fname;
-  sourcing_lnum = 0;
+  estack_push(ETYPE_SPELL, (char *)fname, 0);
+  did_estack_push = true;
 
   // <HEADER>: <fileID>
   const int scms_ret = spell_check_magic_string(fd);
@@ -809,8 +809,9 @@ endOK:
   if (fd != NULL) {
     fclose(fd);
   }
-  sourcing_name = (char *)save_sourcing_name;
-  sourcing_lnum = save_sourcing_lnum;
+  if (did_estack_push) {
+    estack_pop();
+  }
 
   return lp;
 }
@@ -1408,8 +1409,7 @@ static int read_compound(FILE *fd, slang_T *slang, int len)
     ga_init(gap, sizeof(char_u *), c);
     ga_grow(gap, c);
     while (--c >= 0) {
-      ((char_u **)(gap->ga_data))[gap->ga_len++] =
-        read_cnt_string(fd, 1, &cnt);
+      ((char **)(gap->ga_data))[gap->ga_len++] = (char *)read_cnt_string(fd, 1, &cnt);
       // <comppatlen> <comppattext>
       if (cnt < 0) {
         return cnt;
@@ -1862,7 +1862,7 @@ static long compress_added = 500000;    // word count
 // Sets "sps_flags".
 int spell_check_msm(void)
 {
-  char_u *p = p_msm;
+  char *p = (char *)p_msm;
   long start = 0;
   long incr = 0;
   long added = 0;
@@ -2300,18 +2300,15 @@ static afffile_T *spell_read_aff(spellinfo_T *spin, char_u *fname)
 
         // Only add the couple if it isn't already there.
         for (i = 0; i < gap->ga_len - 1; i += 2) {
-          if (STRCMP(((char_u **)(gap->ga_data))[i], items[1]) == 0
-              && STRCMP(((char_u **)(gap->ga_data))[i + 1],
-                        items[2]) == 0) {
+          if (STRCMP(((char **)(gap->ga_data))[i], items[1]) == 0
+              && STRCMP(((char **)(gap->ga_data))[i + 1], items[2]) == 0) {
             break;
           }
         }
         if (i >= gap->ga_len) {
           ga_grow(gap, 2);
-          ((char_u **)(gap->ga_data))[gap->ga_len++]
-            = getroom_save(spin, items[1]);
-          ((char_u **)(gap->ga_data))[gap->ga_len++]
-            = getroom_save(spin, items[2]);
+          ((char **)(gap->ga_data))[gap->ga_len++] = (char *)getroom_save(spin, items[1]);
+          ((char **)(gap->ga_data))[gap->ga_len++] = (char *)getroom_save(spin, items[2]);
         }
       } else if (is_aff_rule(items, itemcnt, "SYLLABLE", 2)
                  && syllable == NULL) {
@@ -2968,7 +2965,7 @@ static void check_renumber(spellinfo_T *spin)
 // Returns true if flag "flag" appears in affix list "afflist".
 static bool flag_in_afflist(int flagtype, char_u *afflist, unsigned flag)
 {
-  char_u *p;
+  char *p;
   unsigned n;
 
   switch (flagtype) {
@@ -2977,7 +2974,7 @@ static bool flag_in_afflist(int flagtype, char_u *afflist, unsigned flag)
 
   case AFT_CAPLONG:
   case AFT_LONG:
-    for (p = afflist; *p != NUL;) {
+    for (p = (char *)afflist; *p != NUL;) {
       n = (unsigned)mb_ptr2char_adv((const char_u **)&p);
       if ((flagtype == AFT_LONG || (n >= 'A' && n <= 'Z'))
           && *p != NUL) {
@@ -2990,8 +2987,8 @@ static bool flag_in_afflist(int flagtype, char_u *afflist, unsigned flag)
     break;
 
   case AFT_NUM:
-    for (p = afflist; *p != NUL;) {
-      int digits = getdigits_int((char **)&p, true, 0);
+    for (p = (char *)afflist; *p != NUL;) {
+      int digits = getdigits_int(&p, true, 0);
       assert(digits >= 0);
       n = (unsigned int)digits;
       if (n == 0) {
@@ -4146,8 +4143,8 @@ static wordnode_T *get_wordnode(spellinfo_T *spin)
   } else {
     n = spin->si_first_free;
     spin->si_first_free = n->wn_child;
-    memset(n, 0, sizeof(wordnode_T));
-    --spin->si_free_count;
+    CLEAR_POINTER(n);
+    spin->si_free_count--;
   }
 #ifdef SPELL_PRINTTREE
   if (n != NULL) {
@@ -4644,8 +4641,8 @@ static int write_vim_spell(spellinfo_T *spin, char_u *fname)
 
     size_t l = STRLEN(spin->si_compflags);
     assert(spin->si_comppat.ga_len >= 0);
-    for (size_t i = 0; i < (size_t)spin->si_comppat.ga_len; ++i) {
-      l += STRLEN(((char_u **)(spin->si_comppat.ga_data))[i]) + 1;
+    for (size_t i = 0; i < (size_t)spin->si_comppat.ga_len; i++) {
+      l += STRLEN(((char **)(spin->si_comppat.ga_data))[i]) + 1;
     }
     put_bytes(fd, l + 7, 4);                            // <sectionlen>
 
@@ -4655,8 +4652,8 @@ static int write_vim_spell(spellinfo_T *spin, char_u *fname)
     putc(0, fd);                // for Vim 7.0b compatibility
     putc(spin->si_compoptions, fd);                     // <compoptions>
     put_bytes(fd, (uintmax_t)spin->si_comppat.ga_len, 2);  // <comppatcount>
-    for (size_t i = 0; i < (size_t)spin->si_comppat.ga_len; ++i) {
-      char_u *p = ((char_u **)(spin->si_comppat.ga_data))[i];
+    for (size_t i = 0; i < (size_t)spin->si_comppat.ga_len; i++) {
+      char *p = ((char **)(spin->si_comppat.ga_data))[i];
       assert(STRLEN(p) < INT_MAX);
       putc((int)STRLEN(p), fd);                         // <comppatlen>
       fwv &= fwrite(p, STRLEN(p), 1, fd);               // <comppattext>
@@ -4879,7 +4876,7 @@ static int put_node(FILE *fd, wordnode_T *node, int idx, int regionmask, bool pr
 void ex_mkspell(exarg_T *eap)
 {
   int fcount;
-  char_u **fnames;
+  char **fnames;
   char_u *arg = (char_u *)eap->arg;
   bool ascii = false;
 
@@ -5270,11 +5267,11 @@ theend:
 /// @param ascii  -ascii argument given
 /// @param over_write  overwrite existing output file
 /// @param added_word  invoked through "zg"
-static void mkspell(int fcount, char_u **fnames, bool ascii, bool over_write, bool added_word)
+static void mkspell(int fcount, char **fnames, bool ascii, bool over_write, bool added_word)
 {
   char_u *fname = NULL;
   char_u *wfname;
-  char_u **innames;
+  char **innames;
   int incount;
   afffile_T *(afile[MAXREGIONS]);
   int i;
@@ -5282,7 +5279,7 @@ static void mkspell(int fcount, char_u **fnames, bool ascii, bool over_write, bo
   bool error = false;
   spellinfo_T spin;
 
-  memset(&spin, 0, sizeof(spin));
+  CLEAR_FIELD(spin);
   spin.si_verbose = !added_word;
   spin.si_ascii = ascii;
   spin.si_followup = true;
@@ -5411,7 +5408,7 @@ static void mkspell(int fcount, char_u **fnames, bool ascii, bool over_write, bo
       } else {
         // No .aff file, try reading the file as a word list.  Store
         // the words in the trees.
-        if (spell_read_wordfile(&spin, innames[i]) == FAIL) {
+        if (spell_read_wordfile(&spin, (char_u *)innames[i]) == FAIL) {
           error = true;
         }
       }
@@ -5522,7 +5519,7 @@ void spell_add_word(char_u *word, int len, SpellAddType what, int idx, bool undo
   FILE *fd = NULL;
   buf_T *buf = NULL;
   bool new_spf = false;
-  char_u *fname;
+  char *fname;
   char_u *fnamebuf = NULL;
   char_u line[MAXWLEN * 2];
   long fpos, fpos_next = 0;
@@ -5541,7 +5538,7 @@ void spell_add_word(char_u *word, int len, SpellAddType what, int idx, bool undo
         return;
       }
     }
-    fname = int_wordlist;
+    fname = (char *)int_wordlist;
   } else {
     // If 'spellfile' isn't set figure out a good default value.
     if (*curwin->w_s->b_p_spf == NUL) {
@@ -5578,13 +5575,13 @@ void spell_add_word(char_u *word, int len, SpellAddType what, int idx, bool undo
       return;
     }
 
-    fname = fnamebuf;
+    fname = (char *)fnamebuf;
   }
 
   if (what == SPELL_ADD_BAD || undo) {
     // When the word appears as good word we need to remove that one,
     // since its flags sort before the one with WF_BANNED.
-    fd = os_fopen((char *)fname, "r");
+    fd = os_fopen(fname, "r");
     if (fd != NULL) {
       while (!vim_fgets(line, MAXWLEN * 2, fd)) {
         fpos = fpos_next;
@@ -5598,14 +5595,14 @@ void spell_add_word(char_u *word, int len, SpellAddType what, int idx, bool undo
           // the start of the line.  Mixing reading and writing
           // doesn't work for all systems, close the file first.
           fclose(fd);
-          fd = os_fopen((char *)fname, "r+");
+          fd = os_fopen(fname, "r+");
           if (fd == NULL) {
             break;
           }
           if (fseek(fd, fpos, SEEK_SET) == 0) {
             fputc('#', fd);
             if (undo) {
-              home_replace(NULL, (char *)fname, (char *)NameBuff, MAXPATHL, true);
+              home_replace(NULL, fname, (char *)NameBuff, MAXPATHL, true);
               smsg(_("Word '%.*s' removed from %s"), len, word, NameBuff);
             }
           }
@@ -5622,7 +5619,7 @@ void spell_add_word(char_u *word, int len, SpellAddType what, int idx, bool undo
   }
 
   if (!undo) {
-    fd = os_fopen((char *)fname, "a");
+    fd = os_fopen(fname, "a");
     if (fd == NULL && new_spf) {
       char_u *p;
 
@@ -5630,16 +5627,16 @@ void spell_add_word(char_u *word, int len, SpellAddType what, int idx, bool undo
       // file.  We may need to create the "spell" directory first.  We
       // already checked the runtime directory is writable in
       // init_spellfile().
-      if (!dir_of_file_exists(fname)
-          && (p = (char_u *)path_tail_with_sep((char *)fname)) != fname) {
+      if (!dir_of_file_exists((char_u *)fname)
+          && (p = (char_u *)path_tail_with_sep(fname)) != (char_u *)fname) {
         int c = *p;
 
         // The directory doesn't exist.  Try creating it and opening
         // the file again.
         *p = NUL;
-        os_mkdir((char *)fname, 0755);
+        os_mkdir(fname, 0755);
         *p = (char_u)c;
-        fd = os_fopen((char *)fname, "a");
+        fd = os_fopen(fname, "a");
       }
     }
 
@@ -5655,7 +5652,7 @@ void spell_add_word(char_u *word, int len, SpellAddType what, int idx, bool undo
       }
       fclose(fd);
 
-      home_replace(NULL, (char *)fname, (char *)NameBuff, MAXPATHL, true);
+      home_replace(NULL, fname, (char *)NameBuff, MAXPATHL, true);
       smsg(_("Word '%.*s' added to %s"), len, word, NameBuff);
     }
   }
@@ -5815,7 +5812,7 @@ static int write_spell_prefcond(FILE *fd, garray_T *gap, size_t *fwv)
   size_t totlen = 2 + (size_t)gap->ga_len;  // <prefcondcnt> and <condlen> bytes
   for (int i = 0; i < gap->ga_len; i++) {
     // <prefcond> : <condlen> <condstr>
-    char_u *p = ((char_u **)gap->ga_data)[i];
+    char *p = ((char **)gap->ga_data)[i];
     if (p != NULL) {
       size_t len = STRLEN(p);
       if (fd != NULL) {

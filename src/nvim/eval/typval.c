@@ -233,7 +233,7 @@ void tv_list_init_static10(staticList10_T *const sl)
 #define SL_SIZE ARRAY_SIZE(sl->sl_items)
   list_T *const l = &sl->sl_list;
 
-  memset(sl, 0, sizeof(staticList10_T));
+  CLEAR_POINTER(sl);
   l->lv_first = &sl->sl_items[0];
   l->lv_last = &sl->sl_items[SL_SIZE - 1];
   l->lv_refcount = DO_NOT_FREE_CNT;
@@ -261,7 +261,7 @@ void tv_list_init_static10(staticList10_T *const sl)
 void tv_list_init_static(list_T *const l)
   FUNC_ATTR_NONNULL_ALL
 {
-  memset(l, 0, sizeof(*l));
+  CLEAR_POINTER(l);
   l->lv_refcount = DO_NOT_FREE_CNT;
   list_log(l, NULL, NULL, "sinit");
 }
@@ -1657,13 +1657,14 @@ void callback_copy(Callback *dest, Callback *src)
 /// Generate a string description of a callback
 char *callback_to_string(Callback *cb)
 {
-  size_t msglen = 100;
+  if (cb->type == kCallbackLua) {
+    return nlua_funcref_str(cb->data.luaref);
+  }
+
+  const size_t msglen = 100;
   char *msg = (char *)xmallocz(msglen);
 
   switch (cb->type) {
-  case kCallbackLua:
-    snprintf(msg, msglen, "<lua: %d>", cb->data.luaref);
-    break;
   case kCallbackFuncref:
     // TODO(tjdevries): Is this enough space for this?
     snprintf(msg, msglen, "<vim function: %s>", cb->data.funcref);
@@ -1672,7 +1673,7 @@ char *callback_to_string(Callback *cb)
     snprintf(msg, msglen, "<vim partial: %s>", cb->data.partial->pt_name);
     break;
   default:
-    snprintf(msg, msglen, "%s", "");
+    *msg = '\0';
     break;
   }
   return msg;

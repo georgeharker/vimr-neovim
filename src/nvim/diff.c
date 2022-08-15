@@ -14,6 +14,7 @@
 #include <stdbool.h>
 
 #include "nvim/ascii.h"
+#include "nvim/autocmd.h"
 #include "nvim/buffer.h"
 #include "nvim/change.h"
 #include "nvim/charset.h"
@@ -656,6 +657,7 @@ void diff_redraw(bool dofold)
     if (!wp->w_p_diff || !buf_valid(wp->w_buffer)) {
       continue;
     }
+
     redraw_later(wp, SOME_VALID);
     if (wp != curwin) {
       wp_other = wp;
@@ -664,8 +666,8 @@ void diff_redraw(bool dofold)
       foldUpdateAll(wp);
     }
 
-    // A change may have made filler lines invalid, need to take care
-    // of that for other windows.
+    // A change may have made filler lines invalid, need to take care of
+    // that for other windows.
     int n = diff_check(wp, wp->w_topline);
 
     if (((wp != curwin) && (wp->w_topfill > 0)) || (n > 0)) {
@@ -682,6 +684,7 @@ void diff_redraw(bool dofold)
       check_topfill(wp, false);
     }
   }
+
   if (wp_other != NULL && curwin->w_p_scb) {
     if (used_max_fill_curwin) {
       // The current window was set to use the maximum number of filler
@@ -954,13 +957,13 @@ void ex_diffupdate(exarg_T *eap)
 
   // Only use the internal method if it did not fail for one of the buffers.
   diffio_T diffio;
-  memset(&diffio, 0, sizeof(diffio));
+  CLEAR_FIELD(diffio);
   diffio.dio_internal = diff_internal() && !diff_internal_failed();
 
   diff_try_update(&diffio, idx_orig, eap);
   if (diffio.dio_internal && diff_internal_failed()) {
     // Internal diff failed, use external diff instead.
-    memset(&diffio, 0, sizeof(diffio));
+    CLEAR_FIELD(diffio);
     diff_try_update(&diffio, idx_orig, eap);
   }
 
@@ -1073,9 +1076,9 @@ static int diff_file_internal(diffio_T *diffio)
   xdemitconf_t emit_cfg;
   xdemitcb_t emit_cb;
 
-  memset(&param, 0, sizeof(param));
-  memset(&emit_cfg, 0, sizeof(emit_cfg));
-  memset(&emit_cb, 0, sizeof(emit_cb));
+  CLEAR_FIELD(param);
+  CLEAR_FIELD(emit_cfg);
+  CLEAR_FIELD(emit_cb);
 
   param.flags = (unsigned long)diff_algorithm;
 
@@ -2141,14 +2144,14 @@ int diffopt_changed(void)
   long diff_algorithm_new = 0;
   long diff_indent_heuristic = 0;
 
-  char_u *p = p_dip;
+  char *p = (char *)p_dip;
   while (*p != NUL) {
     if (STRNCMP(p, "filler", 6) == 0) {
       p += 6;
       diff_flags_new |= DIFF_FILLER;
     } else if ((STRNCMP(p, "context:", 8) == 0) && ascii_isdigit(p[8])) {
       p += 8;
-      diff_context_new = getdigits_int((char **)&p, false, diff_context_new);
+      diff_context_new = getdigits_int(&p, false, diff_context_new);
     } else if (STRNCMP(p, "iblank", 6) == 0) {
       p += 6;
       diff_flags_new |= DIFF_IBLANK;
@@ -2172,7 +2175,7 @@ int diffopt_changed(void)
       diff_flags_new |= DIFF_VERTICAL;
     } else if ((STRNCMP(p, "foldcolumn:", 11) == 0) && ascii_isdigit(p[11])) {
       p += 11;
-      diff_foldcolumn_new = getdigits_int((char **)&p, false, diff_foldcolumn_new);
+      diff_foldcolumn_new = getdigits_int(&p, false, diff_foldcolumn_new);
     } else if (STRNCMP(p, "hiddenoff", 9) == 0) {
       p += 9;
       diff_flags_new |= DIFF_HIDDEN_OFF;
@@ -3066,8 +3069,8 @@ static int parse_diff_ed(char_u *line, diffhunk_T *hunk)
   // change: {first}[,{last}]c{first}[,{last}]
   // append: {first}a{first}[,{last}]
   // delete: {first}[,{last}]d{first}
-  char_u *p = line;
-  linenr_T f1 = getdigits_int32((char **)&p, true, 0);
+  char *p = (char *)line;
+  linenr_T f1 = getdigits_int32(&p, true, 0);
   if (*p == ',') {
     p++;
     l1 = getdigits(&p, true, 0);
@@ -3077,7 +3080,7 @@ static int parse_diff_ed(char_u *line, diffhunk_T *hunk)
   if (*p != 'a' && *p != 'c' && *p != 'd') {
     return FAIL;        // invalid diff format
   }
-  int difftype = *p++;
+  int difftype = (uint8_t)(*p++);
   long f2 = getdigits(&p, true, 0);
   if (*p == ',') {
     p++;
@@ -3114,7 +3117,7 @@ static int parse_diff_unified(char_u *line, diffhunk_T *hunk)
 {
   // Parse unified diff hunk header:
   // @@ -oldline,oldcount +newline,newcount @@
-  char_u *p = line;
+  char *p = (char *)line;
   if (*p++ == '@' && *p++ == '@' && *p++ == ' ' && *p++ == '-') {
     long oldcount;
     long newline;

@@ -60,7 +60,7 @@ let package = Package(
           "build/lib/libnvim.a",
           ".deps/usr/lib/libmsgpackc.a",
           ".deps/usr/lib/libluv.a",
-          ".deps/usr/lib/libuv.a",
+          ".deps/usr/lib/libuv_a.a",
           ".deps/usr/lib/libvterm.a",
           ".deps/usr/lib/libluajit-5.1.a",
           ".deps/usr/lib/libtree-sitter.a",

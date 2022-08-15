@@ -16,10 +16,11 @@
 #include "nvim/buffer_defs.h"
 #include "nvim/change.h"
 #include "nvim/cursor.h"
+#include "nvim/eval.h"
 #include "nvim/eval/userfunc.h"
 #include "nvim/event/loop.h"
 #include "nvim/event/time.h"
-#include "nvim/ex_cmds2.h"
+#include "nvim/ex_eval.h"
 #include "nvim/ex_getln.h"
 #include "nvim/extmark.h"
 #include "nvim/func_attr.h"
@@ -232,7 +233,7 @@ static int nlua_str_utf_start(lua_State *const lstate) FUNC_ATTR_NONNULL_ALL
   if (offset < 0 || offset > (intptr_t)s1_len) {
     return luaL_error(lstate, "index out of range");
   }
-  int head_offset = mb_head_off((char_u *)s1, (char_u *)s1 + offset - 1);
+  int head_offset = utf_cp_head_off((char_u *)s1, (char_u *)s1 + offset - 1);
   lua_pushinteger(lstate, head_offset);
   return 1;
 }
@@ -252,7 +253,7 @@ static int nlua_str_utf_end(lua_State *const lstate) FUNC_ATTR_NONNULL_ALL
   if (offset < 0 || offset > (intptr_t)s1_len) {
     return luaL_error(lstate, "index out of range");
   }
-  int tail_offset = mb_tail_off(s1, s1 + offset - 1);
+  int tail_offset = utf_cp_tail_off(s1, s1 + offset - 1);
   lua_pushinteger(lstate, tail_offset);
   return 1;
 }
