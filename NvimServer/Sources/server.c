@@ -17,6 +17,7 @@
 #include <nvim/edit.h>
 #include <nvim/mouse.h>
 #include <nvim/screen.h>
+#include <nvim/drawscreen.h>
 #include <nvim/fileio.h>
 #include <nvim/api/private/helpers.h>
 #include <api/vim.h.generated.h>
@@ -353,7 +354,7 @@ static void scroll(void **argv) {
       custom_ui_scroll(vertDir, abs(vert), row, column);
     }
 
-    update_screen(VALID);
+    update_screen(UPD_VALID);
     setcursor();
     ui_flush();
   });
