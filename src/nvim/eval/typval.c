@@ -1016,7 +1016,7 @@ static int item_compare(const void *s1, const void *s2, bool keep_zero)
     if (sortinfo->item_compare_lc) {
       res = strcoll(p1, p2);
     } else {
-      res = sortinfo->item_compare_ic ? STRICMP(p1, p2): STRCMP(p1, p2);
+      res = sortinfo->item_compare_ic ? STRICMP(p1, p2): strcmp(p1, p2);
     }
   } else {
     double n1, n2;
@@ -1252,7 +1252,7 @@ static void do_sort_uniq(typval_T *argvars, typval_T *rettv, bool sort)
           idx++;
           li = TV_LIST_ITEM_NEXT(l, li);
         }
-        if (info.item_compare_func_err) {
+        if (info.item_compare_func_err) {  // -V547
           emsg(_("E882: Uniq compare function failed"));
           break;
         }
@@ -1568,7 +1568,7 @@ bool tv_callback_equal(const Callback *cb1, const Callback *cb2)
   }
   switch (cb1->type) {
   case kCallbackFuncref:
-    return STRCMP(cb1->data.funcref, cb2->data.funcref) == 0;
+    return strcmp(cb1->data.funcref, cb2->data.funcref) == 0;
   case kCallbackPartial:
     // FIXME: this is inconsistent with tv_equal but is needed for precision
     // maybe change dictwatcheradd to return a watcher id instead?
@@ -2533,7 +2533,7 @@ dict_T *tv_dict_copy(const vimconv_T *const conv, dict_T *const orig, const bool
       new_di = tv_dict_item_alloc((const char *)di->di_key);
     } else {
       size_t len = STRLEN(di->di_key);
-      char *const key = (char *)string_convert(conv, di->di_key, &len);
+      char *const key = (char *)string_convert(conv, (char *)di->di_key, &len);
       if (key == NULL) {
         new_di = tv_dict_item_alloc_len((const char *)di->di_key, len);
       } else {
@@ -2777,7 +2777,7 @@ static void tv_dict_list(typval_T *const tv, typval_T *const rettv, const DictLi
     switch (what) {
       case kDictListKeys:
         tv_item.v_type = VAR_STRING;
-        tv_item.vval.v_string = (char *)vim_strsave(di->di_key);
+        tv_item.vval.v_string = xstrdup((char *)di->di_key);
         break;
       case kDictListValues:
         tv_copy(&di->di_tv, &tv_item);
@@ -3717,8 +3717,7 @@ varnumber_T tv_get_number_chk(const typval_T *const tv, bool *const ret_error)
   case VAR_STRING: {
     varnumber_T n = 0;
     if (tv->vval.v_string != NULL) {
-      vim_str2nr((char_u *)tv->vval.v_string, NULL, NULL, STR2NR_ALL, &n, NULL, 0,
-                 false);
+      vim_str2nr(tv->vval.v_string, NULL, NULL, STR2NR_ALL, &n, NULL, 0, false);
     }
     return n;
   }

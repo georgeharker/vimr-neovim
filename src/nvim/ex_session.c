@@ -359,7 +359,7 @@ static int put_view(FILE *fd, win_T *wp, int add_edit, unsigned *flagp, int curr
       // Then ":help" will re-use both the buffer and the window and set
       // the options, even when "options" is not in 'sessionoptions'.
       if (0 < wp->w_tagstackidx && wp->w_tagstackidx <= wp->w_tagstacklen) {
-        curtag = (char *)wp->w_tagstack[wp->w_tagstackidx - 1].tagname;
+        curtag = wp->w_tagstack[wp->w_tagstackidx - 1].tagname;
       }
 
       if (put_line(fd, "enew | setl bt=help") == FAIL
@@ -956,7 +956,7 @@ void ex_mkrc(exarg_T *eap)
   }
 
   // When using 'viewdir' may have to create the directory.
-  if (using_vdir && !os_isdir(p_vdir)) {
+  if (using_vdir && !os_isdir((char *)p_vdir)) {
     vim_mkdir_emsg((const char *)p_vdir, 0755);
   }
 

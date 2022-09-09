@@ -167,15 +167,6 @@ enum {
 #define MIN_SWAP_PAGE_SIZE 1048
 #define MAX_SWAP_PAGE_SIZE 50000
 
-// Boolean constants
-
-#ifndef TRUE
-# define FALSE  0           // note: this is an int, not a long!
-# define TRUE   1
-#endif
-
-#define MAYBE   2           // sometimes used for a variant on TRUE
-
 #define STATUS_HEIGHT   1       // height of a status line under a window
 #define QF_WINHEIGHT    10      // default height for quickfix window
 
@@ -214,7 +205,6 @@ enum { FOLD_TEXT_LEN = 51, };  //!< buffer size for get_foldtext()
 #define STRCPY(d, s)        strcpy((char *)(d), (char *)(s))
 #define STRNCPY(d, s, n)    strncpy((char *)(d), (char *)(s), (size_t)(n))
 #define STRLCPY(d, s, n)    xstrlcpy((char *)(d), (char *)(s), (size_t)(n))
-#define STRCMP(d, s)        strcmp((char *)(d), (char *)(s))
 #define STRNCMP(d, s, n)    strncmp((char *)(d), (char *)(s), (size_t)(n))
 #ifdef HAVE_STRCASECMP
 # define STRICMP(d, s)      strcasecmp((char *)(d), (char *)(s))
@@ -239,10 +229,7 @@ enum { FOLD_TEXT_LEN = 51, };  //!< buffer size for get_foldtext()
 # endif
 #endif
 
-#define STRRCHR(s, c)       (char_u *)strrchr((const char *)(s), (c))
-
-#define STRCAT(d, s)        strcat((char *)(d), (char *)(s))
-#define STRNCAT(d, s, n)    strncat((char *)(d), (char *)(s), (size_t)(n))
+#define STRCAT(d, s)        strcat((char *)(d), (char *)(s))  // NOLINT(runtime/printf)
 #define STRLCAT(d, s, n)    xstrlcat((char *)(d), (char *)(s), (size_t)(n))
 
 // Character used as separated in autoload function/variable names.

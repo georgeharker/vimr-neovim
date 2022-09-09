@@ -74,6 +74,11 @@ extern void custom_ui_start(void);
 extern void custom_ui_rpcevent_subscribed(void);
 #endif
 
+typedef struct ui_event_callback {
+  LuaRef cb;
+  bool ext_widgets[kUIGlobalCount];
+} UIEventCallback;
+
 #ifdef INCLUDE_GENERATED_DECLARATIONS
 # include "ui.h.generated.h"
 

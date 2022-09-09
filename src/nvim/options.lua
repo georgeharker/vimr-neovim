@@ -1622,6 +1622,14 @@ return {
       defaults={if_true="popup_setpos"}
     },
     {
+      full_name='mousemoveevent', abbreviation='mousemev',
+      short_desc=N_("deliver mouse move events to input queue"),
+      type='bool', scope={'global'},
+      redraw={'ui_option'},
+      varname='p_mousemev',
+      defaults={if_true=false}
+    },
+    {
       full_name='mousescroll',
       short_desc=N_("amount to scroll by when scrolling with a mouse"),
       type='string', list='comma', scope={'global'},
@@ -2347,6 +2355,7 @@ return {
       secure=true,
       expand=true,
       varname='p_spo',
+      redraw={'current_buffer'},
       defaults={if_true=""}
     },
     {
@@ -2859,7 +2868,8 @@ return {
     {
       full_name='winhighlight', abbreviation='winhl',
       short_desc=N_("Setup window-local highlights");
-      type='string', scope={'window'},
+      type='string', list='onecomma', scope={'window'},
+      deny_duplicates=true,
       alloced=true,
       redraw={'current_window'},
       defaults={if_true=""}

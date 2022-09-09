@@ -279,7 +279,7 @@ void ex_profile(exarg_T *eap)
   char *e;
   int len;
 
-  e = (char *)skiptowhite((char_u *)eap->arg);
+  e = skiptowhite(eap->arg);
   len = (int)(e - eap->arg);
   e = skipwhite(e);
 
@@ -291,23 +291,23 @@ void ex_profile(exarg_T *eap)
     set_vim_var_nr(VV_PROFILING, 1L);
   } else if (do_profiling == PROF_NONE) {
     emsg(_("E750: First use \":profile start {fname}\""));
-  } else if (STRCMP(eap->arg, "stop") == 0) {
+  } else if (strcmp(eap->arg, "stop") == 0) {
     profile_dump();
     do_profiling = PROF_NONE;
     set_vim_var_nr(VV_PROFILING, 0L);
     profile_reset();
-  } else if (STRCMP(eap->arg, "pause") == 0) {
+  } else if (strcmp(eap->arg, "pause") == 0) {
     if (do_profiling == PROF_YES) {
       pause_time = profile_start();
     }
     do_profiling = PROF_PAUSED;
-  } else if (STRCMP(eap->arg, "continue") == 0) {
+  } else if (strcmp(eap->arg, "continue") == 0) {
     if (do_profiling == PROF_PAUSED) {
       pause_time = profile_end(pause_time);
       profile_set_wait(profile_add(profile_get_wait(), pause_time));
     }
     do_profiling = PROF_YES;
-  } else if (STRCMP(eap->arg, "dump") == 0) {
+  } else if (strcmp(eap->arg, "dump") == 0) {
     profile_dump();
   } else {
     // The rest is similar to ":breakadd".
@@ -354,7 +354,7 @@ void set_context_in_profile_cmd(expand_T *xp, const char *arg)
   pexpand_what = PEXP_SUBCMD;
   xp->xp_pattern = (char *)arg;
 
-  char_u *const end_subcmd = skiptowhite((const char_u *)arg);
+  char_u *const end_subcmd = (char_u *)skiptowhite(arg);
   if (*end_subcmd == NUL) {
     return;
   }
@@ -612,7 +612,7 @@ static void func_dump_profile(FILE *fd)
             .script_ctx = fp->uf_script_ctx,
             .channel_id = 0,
           };
-          char *p = (char *)get_scriptname(last_set, &should_free);
+          char *p = get_scriptname(last_set, &should_free);
           fprintf(fd, "    Defined: %s:%" PRIdLINENR "\n",
                   p, fp->uf_script_ctx.sc_lnum);
           if (should_free) {
@@ -721,7 +721,7 @@ static void script_dump_profile(FILE *fd)
       fprintf(fd, "\n");
       fprintf(fd, "count  total (s)   self (s)\n");
 
-      sfd = os_fopen((char *)si->sn_name, "r");
+      sfd = os_fopen(si->sn_name, "r");
       if (sfd == NULL) {
         fprintf(fd, "Cannot open file!\n");
       } else {

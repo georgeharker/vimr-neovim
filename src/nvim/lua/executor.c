@@ -7,6 +7,7 @@
 #include <tree_sitter/api.h>
 
 #include "luv/luv.h"
+#include "nvim/api/extmark.h"
 #include "nvim/api/private/defs.h"
 #include "nvim/api/private/helpers.h"
 #include "nvim/api/vim.h"
@@ -40,6 +41,9 @@
 #include "nvim/os/os.h"
 #include "nvim/profile.h"
 #include "nvim/runtime.h"
+#include "nvim/screen.h"
+#include "nvim/ui.h"
+#include "nvim/ui_compositor.h"
 #include "nvim/undo.h"
 #include "nvim/usercmd.h"
 #include "nvim/version.h"
@@ -589,6 +593,71 @@ static bool nlua_init_packages(lua_State *lstate)
   return true;
 }
 
+/// "vim.ui_attach(ns_id, {ext_foo=true}, cb)" function
+static int nlua_ui_attach(lua_State *lstate)
+  FUNC_ATTR_NONNULL_ALL
+{
+  uint32_t ns_id = (uint32_t)luaL_checkinteger(lstate, 1);
+
+  if (!ns_initialized(ns_id)) {
+    return luaL_error(lstate, "invalid ns_id");
+  }
+  if (!lua_istable(lstate, 2)) {
+    return luaL_error(lstate, "ext_widgets must be a table");
+  }
+  if (!lua_isfunction(lstate, 3)) {
+    return luaL_error(lstate, "callback must be a Lua function");
+  }
+
+  bool ext_widgets[kUIGlobalCount] = { false };
+  bool tbl_has_true_val = false;
+
+  lua_pushvalue(lstate, 2);
+  lua_pushnil(lstate);
+  while (lua_next(lstate, -2)) {
+    // [dict, key, val]
+    size_t len;
+    const char *s = lua_tolstring(lstate, -2, &len);
+    bool val = lua_toboolean(lstate, -1);
+
+    for (size_t i = 0; i < kUIGlobalCount; i++) {
+      if (strequal(s, ui_ext_names[i])) {
+        if (val) {
+          tbl_has_true_val = true;
+        }
+        ext_widgets[i] = val;
+        goto ok;
+      }
+    }
+
+    return luaL_error(lstate, "Unexpected key: %s", s);
+ok:
+    lua_pop(lstate, 1);
+  }
+
+  if (!tbl_has_true_val) {
+    return luaL_error(lstate, "ext_widgets table must contain at least one 'true' value");
+  }
+
+  LuaRef ui_event_cb = nlua_ref_global(lstate, 3);
+  ui_comp_add_cb(ns_id, ui_event_cb, ext_widgets);
+  return 0;
+}
+
+/// "vim.ui_detach(ns_id)" function
+static int nlua_ui_detach(lua_State *lstate)
+  FUNC_ATTR_NONNULL_ALL
+{
+  uint32_t ns_id = (uint32_t)luaL_checkinteger(lstate, 1);
+
+  if (!ns_initialized(ns_id)) {
+    return luaL_error(lstate, "invalid ns_id");
+  }
+
+  ui_comp_remove_cb(ns_id);
+  return 0;
+}
+
 /// Initialize lua interpreter state
 ///
 /// Called by lua interpreter itself to initialize state.
@@ -648,6 +717,14 @@ static bool nlua_state_init(lua_State *const lstate) FUNC_ATTR_NONNULL_ALL
   // wait
   lua_pushcfunction(lstate, &nlua_wait);
   lua_setfield(lstate, -2, "wait");
+
+  // ui_attach
+  lua_pushcfunction(lstate, &nlua_ui_attach);
+  lua_setfield(lstate, -2, "ui_attach");
+
+  // ui_detach
+  lua_pushcfunction(lstate, &nlua_ui_detach);
+  lua_setfield(lstate, -2, "ui_detach");
 
   nlua_common_vim_init(lstate, false);
 
@@ -967,7 +1044,7 @@ static int nlua_debug(lua_State *lstate)
     if (input.v_type != VAR_STRING
         || input.vval.v_string == NULL
         || *input.vval.v_string == NUL
-        || STRCMP(input.vval.v_string, "cont") == 0) {
+        || strcmp(input.vval.v_string, "cont") == 0) {
       tv_clear(&input);
       return 0;
     }
@@ -990,7 +1067,7 @@ int nlua_in_fast_event(lua_State *lstate)
 
 static bool viml_func_is_fast(const char *name)
 {
-  const EvalFuncDef *const fdef = find_internal_func((const char *)name);
+  const EvalFuncDef *const fdef = find_internal_func(name);
   if (fdef) {
     return fdef->fast;
   }
@@ -1027,7 +1104,7 @@ int nlua_call(lua_State *lstate)
     // TODO(bfredl): this should be simplified in error handling refactor
     force_abort = false;
     suppress_errthrow = false;
-    current_exception = NULL;
+    did_throw = false;
     did_emsg = false;
 
     try_start();
@@ -1348,12 +1425,11 @@ int nlua_source_using_linegetter(LineGetter fgetline, void *cookie, char *name)
 /// @param[in]  argcount Count of typval arguments
 /// @param[in]  argvars Typval Arguments
 /// @param[out] rettv The return value from the called function.
-int typval_exec_lua_callable(lua_State *lstate, LuaCallable lua_cb, int argcount, typval_T *argvars,
-                             typval_T *rettv)
+int typval_exec_lua_callable(LuaRef lua_cb, int argcount, typval_T *argvars, typval_T *rettv)
 {
-  LuaRef cb = lua_cb.func_ref;
+  lua_State *lstate = global_lstate;
 
-  nlua_pushref(lstate, cb);
+  nlua_pushref(lstate, lua_cb);
 
   PUSH_ALL_TYPVALS(lstate, argvars, argcount, false);
 
@@ -1422,9 +1498,10 @@ bool nlua_ref_is_function(LuaRef ref)
 /// @param name    if non-NULL, sent to callback as first arg
 ///                if NULL, only args are used
 /// @param retval  if true, convert return value to Object
-///                if false, discard return value
+///                if false, only check if return value is truthy
 /// @param err     Error details, if any (if NULL, errors are echoed)
-/// @return        Return value of function, if retval was set. Otherwise NIL.
+/// @return        Return value of function, if retval was set. Otherwise
+/// BOOLEAN_OBJ(true) or NIL.
 Object nlua_call_ref(LuaRef ref, const char *name, Array args, bool retval, Error *err)
 {
   lua_State *const lstate = global_lstate;
@@ -1438,7 +1515,7 @@ Object nlua_call_ref(LuaRef ref, const char *name, Array args, bool retval, Erro
     nlua_push_Object(lstate, args.items[i], false);
   }
 
-  if (nlua_pcall(lstate, nargs, retval ? 1 : 0)) {
+  if (nlua_pcall(lstate, nargs, 1)) {
     // if err is passed, the caller will deal with the error.
     if (err) {
       size_t len;
@@ -1458,7 +1535,10 @@ Object nlua_call_ref(LuaRef ref, const char *name, Array args, bool retval, Erro
     }
     return nlua_pop_Object(lstate, false, err);
   } else {
-    return NIL;
+    bool value = lua_toboolean(lstate, -1);
+    lua_pop(lstate, 1);
+
+    return value ? BOOLEAN_OBJ(true) : NIL;
   }
 }
 
@@ -1662,6 +1742,9 @@ static void nlua_add_treesitter(lua_State *const lstate) FUNC_ATTR_NONNULL_ALL
   lua_pushcfunction(lstate, tslua_has_language);
   lua_setfield(lstate, -2, "_ts_has_language");
 
+  lua_pushcfunction(lstate, tslua_remove_lang);
+  lua_setfield(lstate, -2, "_ts_remove_language");
+
   lua_pushcfunction(lstate, tslua_inspect_lang);
   lua_setfield(lstate, -2, "_ts_inspect_language");
 
@@ -1749,26 +1832,6 @@ static int nlua_is_thread(lua_State *lstate)
   return 1;
 }
 
-// Required functions for lua c functions as VimL callbacks
-
-int nlua_CFunction_func_call(int argcount, typval_T *argvars, typval_T *rettv, void *state)
-{
-  lua_State *const lstate = global_lstate;
-  LuaCFunctionState *funcstate = (LuaCFunctionState *)state;
-
-  return typval_exec_lua_callable(lstate, funcstate->lua_callable,
-                                  argcount, argvars, rettv);
-}
-
-void nlua_CFunction_func_free(void *state)
-{
-  lua_State *const lstate = global_lstate;
-  LuaCFunctionState *funcstate = (LuaCFunctionState *)state;
-
-  nlua_unref_global(lstate, funcstate->lua_callable.func_ref);
-  xfree(funcstate);
-}
-
 bool nlua_is_table_from_lua(typval_T *const arg)
 {
   if (arg->v_type == VAR_DICT) {
@@ -1814,11 +1877,9 @@ char_u *nlua_register_table_as_callable(typval_T *const arg)
   }
   lua_pop(lstate, 2);  // [table]
 
-  LuaCFunctionState *state = xmalloc(sizeof(LuaCFunctionState));
-  state->lua_callable.func_ref = nlua_ref_global(lstate, -1);
+  LuaRef func = nlua_ref_global(lstate, -1);
 
-  char_u *name = register_cfunc(&nlua_CFunction_func_call,
-                                &nlua_CFunction_func_free, state);
+  char_u *name = register_luafunc(func);
 
   lua_pop(lstate, 1);  // []
   assert(top == lua_gettop(lstate));
@@ -1998,7 +2059,7 @@ int nlua_do_ucmd(ucmd_T *cmd, exarg_T *eap, bool preview)
 
   lua_newtable(lstate);  // smods table
 
-  lua_pushinteger(lstate, cmdmod.cmod_tab);
+  lua_pushinteger(lstate, cmdmod.cmod_tab - 1);
   lua_setfield(lstate, -2, "tab");
 
   lua_pushinteger(lstate, cmdmod.cmod_verbose - 1);
@@ -2019,6 +2080,8 @@ int nlua_do_ucmd(ucmd_T *cmd, exarg_T *eap, bool preview)
 
   lua_pushboolean(lstate, cmdmod.cmod_split & WSP_VERT);
   lua_setfield(lstate, -2, "vertical");
+  lua_pushboolean(lstate, cmdmod.cmod_split & WSP_HOR);
+  lua_setfield(lstate, -2, "horizontal");
   lua_pushboolean(lstate, cmdmod.cmod_flags & CMOD_SILENT);
   lua_setfield(lstate, -2, "silent");
   lua_pushboolean(lstate, cmdmod.cmod_flags & CMOD_ERRSILENT);

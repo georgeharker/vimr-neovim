@@ -159,31 +159,10 @@ EXTERN colnr_T dollar_vcol INIT(= -1);
 
 // Variables for Insert mode completion.
 
-// Length in bytes of the text being completed (this is deleted to be replaced
-// by the match.)
-EXTERN int compl_length INIT(= 0);
-
-// Set when doing something for completion that may call edit() recursively,
-// which is not allowed. Also used to disable folding during completion
-EXTERN bool compl_busy INIT(= false);
-
-// List of flags for method of completion.
-EXTERN int compl_cont_status INIT(= 0);
-#define CONT_ADDING    1       // "normal" or "adding" expansion
-#define CONT_INTRPT   (2 + 4)  // a ^X interrupted the current expansion
-                               // it's set only iff N_ADDS is set
-#define CONT_N_ADDS    4       // next ^X<> will add-new or expand-current
-#define CONT_S_IPOS    8       // next ^X<> will set initial_pos?
-                               // if so, word-wise-expansion will set SOL
-#define CONT_SOL       16      // pattern includes start of line, just for
-                               // word-wise expansion, not set for ^X^L
-#define CONT_LOCAL     32      // for ctrl_x_mode 0, ^X^P/^X^N do a local
-                               // expansion, (eg use complete=.)
-
-EXTERN char_u *edit_submode INIT(= NULL);        // msg for CTRL-X submode
-EXTERN char_u *edit_submode_pre INIT(= NULL);    // prepended to edit_submode
-EXTERN char_u *edit_submode_extra INIT(= NULL);  // appended to edit_submode
-EXTERN hlf_T edit_submode_highl;                 // highl. method for extra info
+EXTERN char *edit_submode INIT(= NULL);         // msg for CTRL-X submode
+EXTERN char *edit_submode_pre INIT(= NULL);     // prepended to edit_submode
+EXTERN char *edit_submode_extra INIT(= NULL);   // appended to edit_submode
+EXTERN hlf_T edit_submode_highl;                // highl. method for extra info
 
 // state for putting characters in the message area
 EXTERN int cmdmsg_rl INIT(= false);  // cmdline is drawn right to left
@@ -198,7 +177,7 @@ EXTERN bool msg_scrolled_ign INIT(= false);
 // is reset before the screen is redrawn, so we need to keep track of this.
 EXTERN bool msg_did_scroll INIT(= false);
 
-EXTERN char_u *keep_msg INIT(= NULL);       // msg to be shown after redraw
+EXTERN char *keep_msg INIT(= NULL);         // msg to be shown after redraw
 EXTERN int keep_msg_attr INIT(= 0);         // highlight attr for keep_msg
 EXTERN bool need_fileinfo INIT(= false);    // do fileinfo() after redraw
 EXTERN int msg_scroll INIT(= false);        // msg_start() will scroll
@@ -262,8 +241,12 @@ EXTERN int do_profiling INIT(= PROF_NONE);      ///< PROF_ values
 
 /// Exception currently being thrown.  Used to pass an exception to a different
 /// cstack.  Also used for discarding an exception before it is caught or made
-/// pending.
+/// pending.  Only valid when did_throw is true.
 EXTERN except_T *current_exception;
+
+/// An exception is being thrown.  Reset when the exception is caught or as
+/// long as it is pending in a finally clause.
+EXTERN bool did_throw INIT(= false);
 
 /// Set when a throw that cannot be handled in do_cmdline() must be propagated
 /// to the cstack of the previously called do_cmdline().
@@ -580,6 +563,8 @@ EXTERN bool can_si INIT(= false);
 // one indent will be removed.
 EXTERN bool can_si_back INIT(= false);
 
+EXTERN int old_indent INIT(= 0);  ///< for ^^D command in insert mode
+
 // w_cursor before formatting text.
 EXTERN pos_T saved_cursor INIT(= { 0, 0, 0 });
 
@@ -614,7 +599,7 @@ EXTERN int inhibit_delete_count INIT(= 0);
 #define DBCS_DEBUG     (-1)
 
 /// Encoding used when 'fencs' is set to "default"
-EXTERN char_u *fenc_default INIT(= NULL);
+EXTERN char *fenc_default INIT(= NULL);
 
 /// "State" is the main state of Vim.
 /// There are other variables that modify the state:
@@ -686,7 +671,7 @@ EXTERN int swap_exists_action INIT(= SEA_NONE);  ///< For dialog when swap file 
 EXTERN bool swap_exists_did_quit INIT(= false);  ///< Selected "quit" at the dialog.
 
 EXTERN char_u IObuff[IOSIZE];               ///< Buffer for sprintf, I/O, etc.
-EXTERN char_u NameBuff[MAXPATHL];           ///< Buffer for expanding file names
+EXTERN char NameBuff[MAXPATHL];             ///< Buffer for expanding file names
 EXTERN char msg_buf[MSG_BUF_LEN];           ///< Small buffer for messages
 EXTERN char os_buf[                         ///< Buffer for the os/ layer
 #if MAXPATHL > IOSIZE
@@ -750,9 +735,9 @@ EXTERN bool need_start_insertmode INIT(= false);  ///< start insert mode soon
                                 // including the terminating NUL
 
 EXTERN char last_mode[MODE_MAX_LENGTH] INIT(= "n");
-EXTERN char_u *last_cmdline INIT(= NULL);      // last command line (for ":)
-EXTERN char_u *repeat_cmdline INIT(= NULL);    // command line for "."
-EXTERN char_u *new_last_cmdline INIT(= NULL);  // new value for last_cmdline
+EXTERN char *last_cmdline INIT(= NULL);        // last command line (for ":)
+EXTERN char *repeat_cmdline INIT(= NULL);      // command line for "."
+EXTERN char *new_last_cmdline INIT(= NULL);    // new value for last_cmdline
 EXTERN char *autocmd_fname INIT(= NULL);       // fname for <afile> on cmdline
 EXTERN int autocmd_bufnr INIT(= 0);            // fnum for <abuf> on cmdline
 EXTERN char *autocmd_match INIT(= NULL);       // name for <amatch> on cmdline
@@ -776,7 +761,7 @@ EXTERN int keep_help_flag INIT(= false);  // doing :ta from help file
 // When a string option is NULL (which only happens in out-of-memory
 // situations), it is set to empty_option, to avoid having to check for NULL
 // everywhere.
-EXTERN char_u *empty_option INIT(= (char_u *)"");
+EXTERN char *empty_option INIT(= "");
 
 EXTERN bool redir_off INIT(= false);        // no redirection for a moment
 EXTERN FILE *redir_fd INIT(= NULL);         // message redirection file
@@ -816,7 +801,6 @@ EXTERN char *last_chdir_reason INIT(= NULL);
 EXTERN bool km_stopsel INIT(= false);
 EXTERN bool km_startsel INIT(= false);
 
-EXTERN int cedit_key INIT(= -1);     ///< key value of 'cedit' option
 EXTERN int cmdwin_type INIT(= 0);    ///< type of cmdline window or 0
 EXTERN int cmdwin_result INIT(= 0);  ///< result of cmdline window or 0
 EXTERN int cmdwin_level INIT(= 0);   ///< cmdline recursion level
@@ -940,7 +924,7 @@ EXTERN char e_patnotf2[] INIT(= N_("E486: Pattern not found: %s"));
 EXTERN char e_positive[] INIT(= N_("E487: Argument must be positive"));
 EXTERN char e_prev_dir[] INIT(= N_("E459: Cannot go back to previous directory"));
 
-EXTERN char e_quickfix[] INIT(= N_("E42: No Errors"));
+EXTERN char e_no_errors[] INIT(= N_("E42: No Errors"));
 EXTERN char e_loclist[] INIT(= N_("E776: No location list"));
 EXTERN char e_re_damg[] INIT(= N_("E43: Damaged match string"));
 EXTERN char e_re_corr[] INIT(= N_("E44: Corrupted regexp program"));
@@ -1020,6 +1004,8 @@ EXTERN char e_cannot_define_autocommands_for_all_events[] INIT(= N_("E1155: Cann
 EXTERN char e_resulting_text_too_long[] INIT(= N_("E1240: Resulting text too long"));
 
 EXTERN char e_line_number_out_of_range[] INIT(= N_("E1247: Line number out of range"));
+
+EXTERN char e_highlight_group_name_invalid_char[] INIT(= N_("E5248: Invalid character in group name"));
 
 EXTERN char e_highlight_group_name_too_long[] INIT(= N_("E1249: Highlight group name too long"));
 

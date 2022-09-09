@@ -52,11 +52,11 @@ static void save_patterns(int num_pat, char **pat, int *num_file, char ***file)
 {
   *file = xmalloc((size_t)num_pat * sizeof(char_u *));
   for (int i = 0; i < num_pat; i++) {
-    char_u *s = vim_strsave((char_u *)pat[i]);
+    char *s = xstrdup(pat[i]);
     // Be compatible with expand_filename(): halve the number of
     // backslashes.
     backslash_halve(s);
-    (*file)[i] = (char *)s;
+    (*file)[i] = s;
   }
   *num_file = num_pat;
 }
@@ -64,7 +64,7 @@ static void save_patterns(int num_pat, char **pat, int *num_file, char ***file)
 static bool have_wildcard(int num, char **file)
 {
   for (int i = 0; i < num; i++) {
-    if (path_has_wildcard((char_u *)file[i])) {
+    if (path_has_wildcard(file[i])) {
       return true;
     }
   }
@@ -74,7 +74,7 @@ static bool have_wildcard(int num, char **file)
 static bool have_dollars(int num, char **file)
 {
   for (int i = 0; i < num; i++) {
-    if (vim_strchr((char *)file[i], '$') != NULL) {
+    if (vim_strchr(file[i], '$') != NULL) {
       return true;
     }
   }
@@ -129,7 +129,7 @@ int os_expand_wildcards(int num_pat, char **pat, int *num_file, char ***file, in
 
   bool is_fish_shell =
 #if defined(UNIX)
-    STRNCMP(invocation_path_tail(p_sh, NULL), "fish", 4) == 0;
+    STRNCMP(invocation_path_tail((char_u *)p_sh, NULL), "fish", 4) == 0;
 #else
     false;
 #endif
@@ -160,7 +160,7 @@ int os_expand_wildcards(int num_pat, char **pat, int *num_file, char ***file, in
   }
 
   // get a name for the temp file
-  if ((tempname = vim_tempname()) == NULL) {
+  if ((tempname = (char_u *)vim_tempname()) == NULL) {
     emsg(_(e_notmp));
     return FAIL;
   }
@@ -182,14 +182,14 @@ int os_expand_wildcards(int num_pat, char **pat, int *num_file, char ***file, in
       && *(pat[0] + len - 1) == '`') {
     shell_style = STYLE_BT;
   } else if ((len = STRLEN(p_sh)) >= 3) {
-    if (STRCMP(p_sh + len - 3, "csh") == 0) {
+    if (strcmp(p_sh + len - 3, "csh") == 0) {
       shell_style = STYLE_GLOB;
-    } else if (STRCMP(p_sh + len - 3, "zsh") == 0) {
+    } else if (strcmp(p_sh + len - 3, "zsh") == 0) {
       shell_style = STYLE_PRINT;
     }
   }
   if (shell_style == STYLE_ECHO
-      && strstr(path_tail((char *)p_sh), "sh") != NULL) {
+      && strstr(path_tail(p_sh), "sh") != NULL) {
     shell_style = STYLE_VIMGLOB;
   }
 
@@ -503,12 +503,12 @@ int os_expand_wildcards(int num_pat, char **pat, int *num_file, char ***file, in
   // Move the file names to allocated memory.
   for (j = 0, i = 0; i < *num_file; i++) {
     // Require the files to exist. Helps when using /bin/sh
-    if (!(flags & EW_NOTFOUND) && !os_path_exists((char_u *)(*file)[i])) {
+    if (!(flags & EW_NOTFOUND) && !os_path_exists((*file)[i])) {
       continue;
     }
 
     // check if this entry should be included
-    dir = (os_isdir((char_u *)(*file)[i]));
+    dir = (os_isdir((*file)[i]));
     if ((dir && !(flags & EW_DIR)) || (!dir && !(flags & EW_FILE))) {
       continue;
     }
@@ -555,11 +555,11 @@ notfound:
 char **shell_build_argv(const char *cmd, const char *extra_args)
   FUNC_ATTR_NONNULL_RET
 {
-  size_t argc = tokenize(p_sh, NULL) + (cmd ? tokenize(p_shcf, NULL) : 0);
+  size_t argc = tokenize((char_u *)p_sh, NULL) + (cmd ? tokenize(p_shcf, NULL) : 0);
   char **rv = xmalloc((argc + 4) * sizeof(*rv));
 
   // Split 'shell'
-  size_t i = tokenize(p_sh, rv);
+  size_t i = tokenize((char_u *)p_sh, rv);
 
   if (extra_args) {
     rv[i++] = xstrdup(extra_args);        // Push a copy of `extra_args`
@@ -700,7 +700,7 @@ int call_shell(char_u *cmd, ShellOpts opts, char_u *extra_shell_arg)
 
   if (p_verbose > 3) {
     verbose_enter();
-    smsg(_("Executing command: \"%s\""), cmd == NULL ? p_sh : cmd);
+    smsg(_("Executing command: \"%s\""), cmd == NULL ? p_sh : (char *)cmd);
     msg_putchar('\n');
     verbose_leave();
   }
@@ -746,7 +746,7 @@ char_u *get_cmd_output(char_u *cmd, char_u *infile, ShellOpts flags, size_t *ret
   }
 
   // get a name for the temp file
-  char_u *tempname = vim_tempname();
+  char_u *tempname = (char_u *)vim_tempname();
   if (tempname == NULL) {
     emsg(_(e_notmp));
     return NULL;
@@ -911,7 +911,7 @@ static int do_os_system(char **argv, const char *input, size_t len, char **outpu
     out_data_ring(NULL, SIZE_MAX);
   }
   if (forward_output) {
-    // caller should decide if wait_return is invoked
+    // caller should decide if wait_return() is invoked
     no_wait_return++;
     msg_end();
     no_wait_return--;
@@ -1106,13 +1106,13 @@ static void out_data_append_to_screen(char *output, size_t *count, bool eof)
       //    incomplete UTF-8 sequence that could be composing with the last
       //    complete sequence.
       // This will be corrected when we switch to vterm based implementation
-      int i = *p ? utfc_ptr2len_len((char_u *)p, (int)(end - p)) : 1;
+      int i = *p ? utfc_ptr2len_len(p, (int)(end - p)) : 1;
       if (!eof && i == 1 && utf8len_tab_zero[*(uint8_t *)p] > (end - p)) {
         *count = (size_t)(p - output);
         goto end;
       }
 
-      (void)msg_outtrans_len_attr((char_u *)p, i, 0);
+      (void)msg_outtrans_len_attr(p, i, 0);
       p += i;
     }
   }
@@ -1208,7 +1208,7 @@ static void read_input(DynamicBuffer *buf)
 {
   size_t written = 0, l = 0, len = 0;
   linenr_T lnum = curbuf->b_op_start.lnum;
-  char_u *lp = ml_get(lnum);
+  char_u *lp = (char_u *)ml_get(lnum);
 
   for (;;) {
     l = strlen((char *)lp + written);
@@ -1240,7 +1240,7 @@ static void read_input(DynamicBuffer *buf)
       if (lnum > curbuf->b_op_end.lnum) {
         break;
       }
-      lp = ml_get(lnum);
+      lp = (char_u *)ml_get(lnum);
       written = 0;
     } else if (len > 0) {
       written += len;
@@ -1316,7 +1316,7 @@ static char *shell_xescape_xquote(const char *cmd)
   }
 
   const char *ecmd = cmd;
-  if (*p_sxe != NUL && STRCMP(p_sxq, "(") == 0) {
+  if (*p_sxe != NUL && strcmp(p_sxq, "(") == 0) {
     ecmd = (char *)vim_strsave_escaped_ext((char_u *)cmd, p_sxe, '^', false);
   }
   size_t ncmd_size = strlen(ecmd) + STRLEN(p_sxq) * 2 + 1;
@@ -1324,9 +1324,9 @@ static char *shell_xescape_xquote(const char *cmd)
 
   // When 'shellxquote' is ( append ).
   // When 'shellxquote' is "( append )".
-  if (STRCMP(p_sxq, "(") == 0) {
+  if (strcmp(p_sxq, "(") == 0) {
     vim_snprintf(ncmd, ncmd_size, "(%s)", ecmd);
-  } else if (STRCMP(p_sxq, "\"(") == 0) {
+  } else if (strcmp(p_sxq, "\"(") == 0) {
     vim_snprintf(ncmd, ncmd_size, "\"(%s)\"", ecmd);
   } else {
     vim_snprintf(ncmd, ncmd_size, "%s%s%s", p_sxq, ecmd, p_sxq);

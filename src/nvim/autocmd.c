@@ -686,7 +686,7 @@ const char *event_nr2name(event_T event)
 static bool event_ignored(event_T event)
   FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT
 {
-  char *p = (char *)p_ei;
+  char *p = p_ei;
 
   while (*p != NUL) {
     if (STRNICMP(p, "all", 3) == 0 && (p[3] == NUL || p[3] == ',')) {
@@ -703,7 +703,7 @@ static bool event_ignored(event_T event)
 // Return OK when the contents of p_ei is valid, FAIL otherwise.
 int check_ei(void)
 {
-  char *p = (char *)p_ei;
+  char *p = p_ei;
 
   while (*p) {
     if (STRNICMP(p, "all", 3) == 0 && (p[3] == NUL || p[3] == ',')) {
@@ -724,8 +724,8 @@ int check_ei(void)
 // Returns the old value of 'eventignore' in allocated memory.
 char *au_event_disable(char *what)
 {
-  char *save_ei = (char *)vim_strsave(p_ei);
-  char *new_ei = (char *)vim_strnsave(p_ei, STRLEN(p_ei) + STRLEN(what));
+  char *save_ei = xstrdup(p_ei);
+  char *new_ei = xstrnsave(p_ei, STRLEN(p_ei) + STRLEN(what));
   if (*what == ',' && *p_ei == NUL) {
     STRCPY(new_ei, what + 1);
   } else {
@@ -1119,6 +1119,7 @@ int autocmd_register(int64_t id, event_T event, char *pat, int patlen, int group
     if (event == EVENT_WINSCROLLED && !has_event(EVENT_WINSCROLLED)) {
       curwin->w_last_topline = curwin->w_topline;
       curwin->w_last_leftcol = curwin->w_leftcol;
+      curwin->w_last_skipcol = curwin->w_skipcol;
       curwin->w_last_width = curwin->w_width;
       curwin->w_last_height = curwin->w_height;
     }
@@ -1742,9 +1743,9 @@ bool apply_autocmds_group(event_T event, char *fname, char *fname_io, bool force
       fname = NULL;
     } else {
       if (event == EVENT_SYNTAX) {
-        fname = (char *)buf->b_p_syn;
+        fname = buf->b_p_syn;
       } else if (event == EVENT_FILETYPE) {
-        fname = (char *)buf->b_p_ft;
+        fname = buf->b_p_ft;
       } else {
         if (buf->b_sfname != NULL) {
           sfname = xstrdup(buf->b_sfname);
@@ -2235,7 +2236,7 @@ bool has_autocmd(event_T event, char *sfname, buf_T *buf)
 #ifdef BACKSLASH_IN_FILENAME
   // Replace all backslashes with forward slashes. This makes the
   // autocommand patterns portable between Unix and Windows.
-  sfname = vim_strsave(sfname);
+  sfname = xstrdup(sfname);
   forward_slash(sfname);
   forward_slash(fname);
 #endif

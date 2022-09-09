@@ -201,13 +201,16 @@ void ui_refresh(void)
     ext_widgets[i] = true;
   }
 
+  UI *compositor = uis[0];
+
   bool inclusive = ui_override();
-  for (size_t i = 0; i < ui_count; i++) {
+  for (size_t i = 1; i < ui_count; i++) {
     UI *ui = uis[i];
     width = MIN(ui->width, width);
     height = MIN(ui->height, height);
     for (UIExtension j = 0; (int)j < kUIExtCount; j++) {
-      ext_widgets[j] &= (ui->ui_ext[j] || inclusive);
+      bool in_compositor = ui->composed && compositor->ui_ext[j];
+      ext_widgets[j] &= (ui->ui_ext[j] || in_compositor || inclusive);
     }
   }
 
@@ -339,7 +342,7 @@ void vim_beep(unsigned val)
     // When 'debug' contains "beep" produce a message.  If we are sourcing
     // a script or executing a function give the user a hint where the beep
     // comes from.
-    if (vim_strchr((char *)p_debug, 'e') != NULL) {
+    if (vim_strchr(p_debug, 'e') != NULL) {
       msg_source(HL_ATTR(HLF_W));
       msg_attr(_("Beep!"), HL_ATTR(HLF_W));
     }
@@ -568,7 +571,7 @@ void ui_check_mouse(void)
   // - 'a' is in 'mouse' and "c" is in MOUSE_A, or
   // - the current buffer is a help file and 'h' is in 'mouse' and we are in a
   //   normal editing mode (not at hit-return message).
-  for (char_u *p = p_mouse; *p; p++) {
+  for (char *p = p_mouse; *p; p++) {
     switch (*p) {
     case 'a':
       if (vim_strchr(MOUSE_A, checkfor) != NULL) {

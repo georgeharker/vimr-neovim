@@ -422,9 +422,11 @@ local extension = {
   gdb = 'gdb',
   gdmo = 'gdmo',
   mo = 'gdmo',
-  tres = 'gdresource',
   tscn = 'gdresource',
+  tres = 'gdresource',
   gd = 'gdscript',
+  gdshader = 'gdshader',
+  shader = 'gdshader',
   ged = 'gedcom',
   gmi = 'gemtext',
   gemini = 'gemtext',
@@ -538,6 +540,7 @@ local extension = {
   mjs = 'javascript',
   javascript = 'javascript',
   js = 'javascript',
+  jsm = 'javascript',
   cjs = 'javascript',
   jsx = 'javascriptreact',
   clp = 'jess',
@@ -554,6 +557,8 @@ local extension = {
   ['json-patch'] = 'json',
   json5 = 'json5',
   jsonc = 'jsonc',
+  jsonnet = 'jsonnet',
+  libjsonnet = 'jsonnet',
   jsp = 'jsp',
   jl = 'julia',
   kv = 'kivy',
@@ -741,6 +746,7 @@ local extension = {
   php = 'php',
   phpt = 'php',
   phtml = 'php',
+  theme = 'php',
   pike = 'pike',
   pmod = 'pike',
   rcp = 'pilrc',
@@ -900,7 +906,9 @@ local extension = {
   sig = function(path, bufnr)
     return require('vim.filetype.detect').sig(bufnr)
   end,
-  sil = 'sil',
+  sil = function(path, bufnr)
+    return require('vim.filetype.detect').sil(bufnr)
+  end,
   sim = 'simula',
   ['s85'] = 'sinda',
   sin = 'sinda',
@@ -1011,6 +1019,11 @@ local extension = {
   dsm = 'vb',
   ctl = 'vb',
   vbs = 'vb',
+  vdmpp = 'vdmpp',
+  vpp = 'vdmpp',
+  vdmrt = 'vdmrt',
+  vdmsl = 'vdmsl',
+  vdm = 'vdmsl',
   vr = 'vera',
   vri = 'vera',
   vrh = 'vera',
@@ -1371,6 +1384,7 @@ local filename = {
   ['EDIT_DESCRIPTION'] = 'gitcommit',
   ['.gitconfig'] = 'gitconfig',
   ['.gitmodules'] = 'gitconfig',
+  ['.gitattributes'] = 'gitattributes',
   ['gitolite.conf'] = 'gitolite',
   ['git-rebase-todo'] = 'gitrebase',
   gkrellmrc = 'gkrellmrc',
@@ -1811,6 +1825,14 @@ local pattern = {
   ['.*/git/config'] = function(path, bufnr)
     if vim.env.XDG_CONFIG_HOME and path:find(vim.env.XDG_CONFIG_HOME .. '/git/config') then
       return 'gitconfig'
+    end
+  end,
+  ['.*%.git/info/attributes'] = 'gitattributes',
+  ['.*/etc/gitattributes'] = 'gitattributes',
+  ['.*/%.config/git/attributes'] = 'gitattributes',
+  ['.*/git/attributes'] = function(path, bufnr)
+    if vim.env.XDG_CONFIG_HOME and path:find(vim.env.XDG_CONFIG_HOME .. '/git/attributes') then
+      return 'gitattributes'
     end
   end,
   ['%.gitsendemail%.msg%.......'] = 'gitsendemail',

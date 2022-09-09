@@ -1880,6 +1880,22 @@ func Test_bufadd_bufload()
   exe 'bwipe ' .. buf2
   call assert_equal(0, bufexists(buf2))
 
+  " When 'buftype' is "nofile" then bufload() does not read the file.
+  " Other values too.
+  for val in [['nofile', 0],
+            \ ['nowrite', 1],
+            \ ['acwrite', 1],
+            \ ['quickfix', 0],
+            \ ['help', 1],
+            \ ['prompt', 0],
+            \ ]
+    bwipe! XotherName
+    let buf = bufadd('XotherName')
+    call setbufvar(buf, '&bt', val[0])
+    call bufload(buf)
+    call assert_equal(val[1] ? ['some', 'text'] : [''], getbufline(buf, 1, '$'), val[0])
+  endfor
+
   bwipe someName
   bwipe XotherName
   call assert_equal(0, bufexists('someName'))
@@ -1997,6 +2013,25 @@ func Test_getmousepos()
         \ column: 8,
         \ }, getmousepos())
   bwipe!
+endfunc
+
+" Test for glob()
+func Test_glob()
+  call assert_equal('', glob(v:_null_string))
+  call assert_equal('', globpath(v:_null_string, v:_null_string))
+
+  call writefile([], 'Xglob1')
+  call writefile([], 'XGLOB2')
+  set wildignorecase
+  " Sort output of glob() otherwise we end up with different
+  " ordering depending on whether file system is case-sensitive.
+  call assert_equal(['XGLOB2', 'Xglob1'], sort(glob('Xglob[12]', 0, 1)))
+  set wildignorecase&
+
+  call delete('Xglob1')
+  call delete('XGLOB2')
+
+  call assert_fails("call glob('*', 0, {})", 'E728:')
 endfunc
 
 func HasDefault(msg = 'msg')

@@ -106,7 +106,7 @@ static struct {
 /// Return NULL if there is no matching command.
 ///
 /// @param *p      end of the command (possibly including count)
-/// @param full    set to TRUE for a full match
+/// @param full    set to true for a full match
 /// @param xp      used for completion, NULL otherwise
 /// @param complp  completion flags or NULL
 char *find_ucmd(exarg_T *eap, char *p, int *full, expand_T *xp, int *complp)
@@ -127,7 +127,7 @@ char *find_ucmd(exarg_T *eap, char *p, int *full, expand_T *xp, int *complp)
     for (j = 0; j < gap->ga_len; j++) {
       uc = USER_CMD_GA(gap, j);
       cp = eap->cmd;
-      np = (char *)uc->uc_name;
+      np = uc->uc_name;
       k = 0;
       while (k < len && *np != NUL && *cp++ == *np++) {
         k++;
@@ -167,7 +167,7 @@ char *find_ucmd(exarg_T *eap, char *p, int *full, expand_T *xp, int *complp)
           }
           if (xp != NULL) {
             xp->xp_luaref = uc->uc_compl_luaref;
-            xp->xp_arg = (char *)uc->uc_compl_arg;
+            xp->xp_arg = uc->uc_compl_arg;
             xp->xp_script_ctx = uc->uc_script_ctx;
             xp->xp_script_ctx.sc_lnum += SOURCING_LNUM;
           }
@@ -216,7 +216,7 @@ const char *set_context_in_user_cmd(expand_T *xp, const char *arg_in)
   // Check for attributes
   while (*arg == '-') {
     arg++;  // Skip "-".
-    p = (const char *)skiptowhite((const char_u *)arg);
+    p = (const char *)skiptowhite(arg);
     if (*p == NUL) {
       // Cursor is still in the attribute.
       p = strchr(arg, '=');
@@ -248,7 +248,7 @@ const char *set_context_in_user_cmd(expand_T *xp, const char *arg_in)
   }
 
   // After the attributes comes the new command name.
-  p = (const char *)skiptowhite((const char_u *)arg);
+  p = (const char *)skiptowhite(arg);
   if (*p == NUL) {
     xp->xp_context = EXPAND_USER_COMMANDS;
     xp->xp_pattern = (char *)arg;
@@ -272,15 +272,15 @@ char *get_user_commands(expand_T *xp FUNC_ATTR_UNUSED, int idx)
   const buf_T *const buf = prevwin_curwin()->w_buffer;
 
   if (idx < buf->b_ucmds.ga_len) {
-    return (char *)USER_CMD_GA(&buf->b_ucmds, idx)->uc_name;
+    return USER_CMD_GA(&buf->b_ucmds, idx)->uc_name;
   }
 
   idx -= buf->b_ucmds.ga_len;
   if (idx < ucmds.ga_len) {
-    char *name = (char *)USER_CMD(idx)->uc_name;
+    char *name = USER_CMD(idx)->uc_name;
 
     for (int i = 0; i < buf->b_ucmds.ga_len; i++) {
-      if (STRCMP(name, USER_CMD_GA(&buf->b_ucmds, i)->uc_name) == 0) {
+      if (strcmp(name, USER_CMD_GA(&buf->b_ucmds, i)->uc_name) == 0) {
         // global command is overruled by buffer-local one
         return "";
       }
@@ -297,14 +297,14 @@ char *get_user_commands(expand_T *xp FUNC_ATTR_UNUSED, int idx)
 char *get_user_command_name(int idx, int cmdidx)
 {
   if (cmdidx == CMD_USER && idx < ucmds.ga_len) {
-    return (char *)USER_CMD(idx)->uc_name;
+    return USER_CMD(idx)->uc_name;
   }
   if (cmdidx == CMD_USER_BUF) {
     // In cmdwin, the alternative buffer should be used.
     const buf_T *const buf = prevwin_curwin()->w_buffer;
 
     if (idx < buf->b_ucmds.ga_len) {
-      return (char *)USER_CMD_GA(&buf->b_ucmds, idx)->uc_name;
+      return USER_CMD_GA(&buf->b_ucmds, idx)->uc_name;
     }
   }
   return NULL;
@@ -883,17 +883,17 @@ int uc_add_command(char *name, size_t name_len, const char *rep, uint32_t argt, 
 
     gap->ga_len++;
 
-    cmd->uc_name = (char_u *)p;
+    cmd->uc_name = p;
   }
 
-  cmd->uc_rep = (char_u *)rep_buf;
+  cmd->uc_rep = rep_buf;
   cmd->uc_argt = argt;
   cmd->uc_def = def;
   cmd->uc_compl = compl;
   cmd->uc_script_ctx = current_sctx;
   cmd->uc_script_ctx.sc_lnum += SOURCING_LNUM;
   nlua_set_sctx(&cmd->uc_script_ctx);
-  cmd->uc_compl_arg = (char_u *)compl_arg;
+  cmd->uc_compl_arg = compl_arg;
   cmd->uc_compl_luaref = compl_luaref;
   cmd->uc_preview_luaref = preview_luaref;
   cmd->uc_addr_type = addr_type;
@@ -930,7 +930,7 @@ void ex_command(exarg_T *eap)
   // Check for attributes
   while (*p == '-') {
     p++;
-    end = (char *)skiptowhite((char_u *)p);
+    end = skiptowhite(p);
     if (uc_scan_attr(p, (size_t)(end - p), &argt, &def, &flags, &compl, (char_u **)&compl_arg,
                      &addr_type_arg) == FAIL) {
       return;
@@ -1006,7 +1006,7 @@ void ex_delcommand(exarg_T *eap)
   for (;;) {
     for (i = 0; i < gap->ga_len; i++) {
       cmd = USER_CMD_GA(gap, i);
-      res = STRCMP(arg, cmd->uc_name);
+      res = strcmp(arg, cmd->uc_name);
       if (res <= 0) {
         break;
       }
@@ -1061,11 +1061,11 @@ bool uc_split_args_iter(const char *arg, size_t arglen, size_t *end, char *buf, 
       buf[l++] = arg[++pos];
     } else {
       buf[l++] = arg[pos];
-      if (ascii_iswhite(arg[pos + 1])) {
-        *end = pos + 1;
-        *len = l;
-        return false;
-      }
+    }
+    if (ascii_iswhite(arg[pos + 1])) {
+      *end = pos + 1;
+      *len = l;
+      return false;
     }
   }
 
@@ -1246,6 +1246,10 @@ size_t add_win_cmd_modifers(char *buf, const cmdmod_T *cmod, bool *multi_mods)
   // :vertical
   if (cmod->cmod_split & WSP_VERT) {
     result += add_cmd_modifier(buf, "vertical", multi_mods);
+  }
+  // :horizontal
+  if (cmod->cmod_split & WSP_HOR) {
+    result += add_cmd_modifier(buf, "horizontal", multi_mods);
   }
   return result;
 }
@@ -1569,7 +1573,7 @@ int do_ucmd(exarg_T *eap, bool preview)
   // Second round: copy result into "buf".
   buf = NULL;
   for (;;) {
-    p = (char *)cmd->uc_rep;        // source
+    p = cmd->uc_rep;        // source
     q = buf;                // destination
     totlen = 0;
 

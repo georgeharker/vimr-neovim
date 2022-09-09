@@ -25,6 +25,7 @@
 #include "nvim/screen.h"
 #include "nvim/search.h"
 #include "nvim/strings.h"
+#include "nvim/textformat.h"
 #include "nvim/undo.h"
 
 #ifdef INCLUDE_GENERATED_DECLARATIONS
@@ -33,12 +34,13 @@
 
 /// Set the integer values corresponding to the string setting of 'vartabstop'.
 /// "array" will be set, caller must free it if needed.
-/// Return false for an error.
-bool tabstop_set(char_u *var, long **array)
+///
+/// @return  false for an error.
+bool tabstop_set(char *var, long **array)
 {
   long valcount = 1;
   int t;
-  char_u *cp;
+  char *cp;
 
   if (var[0] == NUL || (var[0] == '0' && var[1] == NUL)) {
     *array = NULL;
@@ -49,8 +51,8 @@ bool tabstop_set(char_u *var, long **array)
     if (cp == var || cp[-1] == ',') {
       char *end;
 
-      if (strtol((char *)cp, &end, 10) <= 0) {
-        if (cp != (char_u *)end) {
+      if (strtol(cp, &end, 10) <= 0) {
+        if (cp != end) {
           emsg(_(e_positive));
         } else {
           semsg(_(e_invarg2), cp);
@@ -75,7 +77,7 @@ bool tabstop_set(char_u *var, long **array)
 
   t = 1;
   for (cp = var; *cp != NUL;) {
-    int n = atoi((char *)cp);
+    int n = atoi(cp);
 
     // Catch negative values, overflow and ridiculous big values.
     if (n <= 0 || n > TABSTOP_MAX) {
@@ -398,7 +400,7 @@ int get_indent_str(const char_u *ptr, int ts, bool list)
 /// Count the size (in window cells) of the indent in line "ptr", using
 /// variable tabstops.
 /// if "list" is true, count only screen size for tabs.
-int get_indent_str_vtab(const char_u *ptr, long ts, long *vts, bool list)
+int get_indent_str_vtab(const char *ptr, long ts, long *vts, bool list)
 {
   int count = 0;
 
@@ -452,7 +454,7 @@ int set_indent(int size, int flags)
   // characters needed for the indent.
   todo = size;
   ind_len = 0;
-  p = oldline = get_cursor_line_ptr();
+  p = oldline = (char_u *)get_cursor_line_ptr();
 
   // Calculate the buffer size for the new indent, and check to see if it
   // isn't already set.
@@ -708,18 +710,18 @@ int get_number_indent(linenr_T lnum)
 
   // In format_lines() (i.e. not insert mode), fo+=q is needed too...
   if ((State & MODE_INSERT) || has_format_option(FO_Q_COMS)) {
-    lead_len = get_leader_len((char *)ml_get(lnum), NULL, false, true);
+    lead_len = get_leader_len(ml_get(lnum), NULL, false, true);
   }
-  regmatch.regprog = vim_regcomp((char *)curbuf->b_p_flp, RE_MAGIC);
+  regmatch.regprog = vim_regcomp(curbuf->b_p_flp, RE_MAGIC);
 
   if (regmatch.regprog != NULL) {
     regmatch.rm_ic = false;
 
     // vim_regexec() expects a pointer to a line.  This lets us
     // start matching for the flp beyond any comment leader...
-    if (vim_regexec(&regmatch, (char *)ml_get(lnum) + lead_len, (colnr_T)0)) {
+    if (vim_regexec(&regmatch, ml_get(lnum) + lead_len, (colnr_T)0)) {
       pos.lnum = lnum;
-      pos.col = (colnr_T)(*regmatch.endp - ml_get(lnum));
+      pos.col = (colnr_T)(*regmatch.endp - (char_u *)ml_get(lnum));
       pos.coladd = 0;
     }
     vim_regfree(regmatch.regprog);
@@ -730,6 +732,47 @@ int get_number_indent(linenr_T lnum)
   }
   getvcol(curwin, &pos, &col, NULL, NULL);
   return (int)col;
+}
+
+/// This is called when 'breakindentopt' is changed and when a window is
+/// initialized
+bool briopt_check(win_T *wp)
+{
+  int bri_shift = 0;
+  int bri_min = 20;
+  bool bri_sbr = false;
+  int bri_list = 0;
+
+  char *p = wp->w_p_briopt;
+  while (*p != NUL) {
+    if (STRNCMP(p, "shift:", 6) == 0
+        && ((p[6] == '-' && ascii_isdigit(p[7])) || ascii_isdigit(p[6]))) {
+      p += 6;
+      bri_shift = getdigits_int(&p, true, 0);
+    } else if (STRNCMP(p, "min:", 4) == 0 && ascii_isdigit(p[4])) {
+      p += 4;
+      bri_min = getdigits_int(&p, true, 0);
+    } else if (STRNCMP(p, "sbr", 3) == 0) {
+      p += 3;
+      bri_sbr = true;
+    } else if (STRNCMP(p, "list:", 5) == 0) {
+      p += 5;
+      bri_list = (int)getdigits(&p, false, 0);
+    }
+    if (*p != ',' && *p != NUL) {
+      return false;
+    }
+    if (*p == ',') {
+      p++;
+    }
+  }
+
+  wp->w_briopt_shift = bri_shift;
+  wp->w_briopt_min = bri_min;
+  wp->w_briopt_sbr = bri_sbr;
+  wp->w_briopt_list  = bri_list;
+
+  return true;
 }
 
 // Return appropriate space number for breakindent, taking influencing
@@ -757,7 +800,7 @@ int get_breakindent_win(win_T *wp, char_u *line)
     prev_ts = wp->w_buffer->b_p_ts;
     prev_tick = buf_get_changedtick(wp->w_buffer);
     prev_vts = wp->w_buffer->b_p_vts_array;
-    prev_indent = get_indent_str_vtab(line,
+    prev_indent = get_indent_str_vtab((char *)line,
                                       wp->w_buffer->b_p_ts,
                                       wp->w_buffer->b_p_vts_array,
                                       wp->w_p_list);
@@ -770,7 +813,7 @@ int get_breakindent_win(win_T *wp, char_u *line)
   // add additional indent for numbered lists
   if (wp->w_briopt_list != 0) {
     regmatch_T regmatch = {
-      .regprog = vim_regcomp((char *)curbuf->b_p_flp,
+      .regprog = vim_regcomp(curbuf->b_p_flp,
                              RE_MAGIC + RE_STRING + RE_AUTO + RE_STRICT),
     };
 
@@ -814,7 +857,7 @@ int inindent(int extra)
   char_u *ptr;
   colnr_T col;
 
-  for (col = 0, ptr = get_cursor_line_ptr(); ascii_iswhite(*ptr); col++) {
+  for (col = 0, ptr = (char_u *)get_cursor_line_ptr(); ascii_iswhite(*ptr); col++) {
     ptr++;
   }
 
@@ -831,7 +874,7 @@ bool may_do_si(void)
   return curbuf->b_p_si && !curbuf->b_p_cin && *curbuf->b_p_inde == NUL && !p_paste;
 }
 
-// Get indent level from 'indentexpr'.
+/// Get indent level from 'indentexpr'.
 int get_expr_indent(void)
 {
   int indent = -1;
@@ -855,8 +898,8 @@ int get_expr_indent(void)
 
   // Need to make a copy, the 'indentexpr' option could be changed while
   // evaluating it.
-  char_u *inde_copy = vim_strsave(curbuf->b_p_inde);
-  indent = (int)eval_to_number((char *)inde_copy);
+  char *inde_copy = xstrdup(curbuf->b_p_inde);
+  indent = (int)eval_to_number(inde_copy);
   xfree(inde_copy);
 
   if (use_sandbox) {
@@ -936,7 +979,7 @@ int get_lisp_indent(void)
         continue;
       }
 
-      for (that = get_cursor_line_ptr(); *that != NUL; that++) {
+      for (that = (char_u *)get_cursor_line_ptr(); *that != NUL; that++) {
         if (*that == ';') {
           while (*(that + 1) != NUL) {
             that++;
@@ -986,19 +1029,21 @@ int get_lisp_indent(void)
       curwin->w_cursor.col = pos->col;
       col = pos->col;
 
-      that = get_cursor_line_ptr();
+      that = (char_u *)get_cursor_line_ptr();
 
       if (vi_lisp && (get_indent() == 0)) {
         amount = 2;
       } else {
         char_u *line = that;
-
-        amount = 0;
-
-        while (*that && col) {
-          amount += lbr_chartabsize_adv(line, &that, (colnr_T)amount);
+        chartabsize_T cts;
+        init_chartabsize_arg(&cts, curwin, pos->lnum, 0, (char *)line, (char *)line);
+        while (*cts.cts_ptr != NUL && col > 0) {
+          cts.cts_vcol += lbr_chartabsize_adv(&cts);
           col--;
         }
+        amount = cts.cts_vcol;
+        that = (char_u *)cts.cts_ptr;
+        clear_chartabsize_arg(&cts);
 
         // Some keywords require "body" indenting rules (the
         // non-standard-lisp ones are Scheme special forms):
@@ -1014,10 +1059,15 @@ int get_lisp_indent(void)
           }
           firsttry = amount;
 
-          while (ascii_iswhite(*that)) {
-            amount += lbr_chartabsize(line, that, (colnr_T)amount);
-            that++;
+          init_chartabsize_arg(&cts, curwin, (colnr_T)(that - line),
+                               amount, (char *)line, (char *)that);
+          while (ascii_iswhite(*cts.cts_ptr)) {
+            cts.cts_vcol += lbr_chartabsize(&cts);
+            cts.cts_ptr++;
           }
+          that = (char_u *)cts.cts_ptr;
+          amount = cts.cts_vcol;
+          clear_chartabsize_arg(&cts);
 
           if (*that && (*that != ';')) {
             // Not a comment line.
@@ -1030,33 +1080,38 @@ int get_lisp_indent(void)
             parencount = 0;
             quotecount = 0;
 
+            init_chartabsize_arg(&cts, curwin,
+                                 (colnr_T)(that - line), amount, (char *)line, (char *)that);
             if (vi_lisp || ((*that != '"') && (*that != '\'')
                             && (*that != '#') && ((*that < '0') || (*that > '9')))) {
-              while (*that
-                     && (!ascii_iswhite(*that) || quotecount || parencount)
-                     && (!((*that == '(' || *that == '[')
+              while (*cts.cts_ptr
+                     && (!ascii_iswhite(*cts.cts_ptr) || quotecount || parencount)
+                     && (!((*cts.cts_ptr == '(' || *cts.cts_ptr == '[')
                            && !quotecount && !parencount && vi_lisp))) {
-                if (*that == '"') {
+                if (*cts.cts_ptr == '"') {
                   quotecount = !quotecount;
                 }
-                if (((*that == '(') || (*that == '[')) && !quotecount) {
+                if (((*cts.cts_ptr == '(') || (*cts.cts_ptr == '[')) && !quotecount) {
                   parencount++;
                 }
-                if (((*that == ')') || (*that == ']')) && !quotecount) {
+                if (((*cts.cts_ptr == ')') || (*cts.cts_ptr == ']')) && !quotecount) {
                   parencount--;
                 }
-                if ((*that == '\\') && (*(that + 1) != NUL)) {
-                  amount += lbr_chartabsize_adv(line, &that, (colnr_T)amount);
+                if ((*cts.cts_ptr == '\\') && (*(cts.cts_ptr + 1) != NUL)) {
+                  cts.cts_vcol += lbr_chartabsize_adv(&cts);
                 }
 
-                amount += lbr_chartabsize_adv(line, &that, (colnr_T)amount);
+                cts.cts_vcol += lbr_chartabsize_adv(&cts);
               }
             }
 
-            while (ascii_iswhite(*that)) {
-              amount += lbr_chartabsize(line, that, (colnr_T)amount);
-              that++;
+            while (ascii_iswhite(*cts.cts_ptr)) {
+              cts.cts_vcol += lbr_chartabsize(&cts);
+              cts.cts_ptr++;
             }
+            that = (char_u *)cts.cts_ptr;
+            amount = cts.cts_vcol;
+            clear_chartabsize_arg(&cts);
 
             if (!*that || (*that == ';')) {
               amount = firsttry;
@@ -1077,7 +1132,7 @@ static int lisp_match(char_u *p)
 {
   char_u buf[LSIZE];
   int len;
-  char *word = (char *)(*curbuf->b_p_lw != NUL ? curbuf->b_p_lw : p_lispwords);
+  char *word = (char *)(*curbuf->b_p_lw != NUL ? (char_u *)curbuf->b_p_lw : p_lispwords);
 
   while (*word != NUL) {
     (void)copy_option_part(&word, (char *)buf, LSIZE, ",");

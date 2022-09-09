@@ -77,7 +77,7 @@ void win_redr_status(win_T *wp)
     width = is_stl_global ? Columns : wp->w_width;
 
     get_trans_bufname(wp->w_buffer);
-    p = NameBuff;
+    p = (char_u *)NameBuff;
     len = (int)STRLEN(p);
 
     if (bt_help(wp->w_buffer)
@@ -132,7 +132,7 @@ void win_redr_status(win_T *wp)
 
     row = is_stl_global ? (Rows - (int)p_ch - 1) : W_ENDROW(wp);
     col = is_stl_global ? 0 : wp->w_wincol;
-    grid_puts(&default_grid, p, row, col, attr);
+    grid_puts(&default_grid, (char *)p, row, col, attr);
     grid_fill(&default_grid, row, row + 1, len + col,
               this_ru_col + col, fillchar, fillchar, attr);
 
@@ -342,7 +342,7 @@ void win_redr_ruler(win_T *wp, bool always)
       }
 
       ScreenGrid *grid = part_of_status ? &default_grid : &msg_grid_adj;
-      grid_puts(grid, (char_u *)buffer, row, this_ru_col + off, attr);
+      grid_puts(grid, buffer, row, this_ru_col + off, attr);
       grid_fill(grid, row, row + 1,
                 this_ru_col + off + (int)STRLEN(buffer), off + width, fillchar,
                 fillchar, attr);
@@ -426,7 +426,7 @@ void win_redr_custom(win_T *wp, bool draw_winbar, bool draw_ruler)
   int len;
   int fillchar;
   char buf[MAXPATHL];
-  char_u *stl;
+  char *stl;
   char *p;
   stl_hlrec_t *hltab;
   StlClickRecord *tabtab;
@@ -455,7 +455,7 @@ void win_redr_custom(win_T *wp, bool draw_winbar, bool draw_ruler)
     maxwidth = Columns;
     use_sandbox = was_set_insecurely(wp, "tabline", 0);
   } else if (draw_winbar) {
-    stl = (char_u *)((*wp->w_p_wbr != NUL) ? wp->w_p_wbr : p_wbr);
+    stl = ((*wp->w_p_wbr != NUL) ? wp->w_p_wbr : p_wbr);
     row = -1;  // row zero is first row of text
     col = 0;
     grid = &wp->w_grid;
@@ -497,7 +497,7 @@ void win_redr_custom(win_T *wp, bool draw_winbar, bool draw_ruler)
         if (*++stl == '-') {
           stl++;
         }
-        if (atoi((char *)stl)) {
+        if (atoi(stl)) {
           while (ascii_isdigit(*stl)) {
             stl++;
           }
@@ -544,9 +544,9 @@ void win_redr_custom(win_T *wp, bool draw_winbar, bool draw_ruler)
 
   // Make a copy, because the statusline may include a function call that
   // might change the option value and free the memory.
-  stl = vim_strsave(stl);
+  stl = xstrdup(stl);
   width =
-    build_stl_str_hl(ewp, buf, sizeof(buf), (char *)stl, use_sandbox,
+    build_stl_str_hl(ewp, buf, sizeof(buf), stl, use_sandbox,
                      fillchar, maxwidth, &hltab, &tabtab);
   xfree(stl);
   ewp->w_p_crb = p_crb_save;
@@ -571,8 +571,8 @@ void win_redr_custom(win_T *wp, bool draw_winbar, bool draw_ruler)
   p = buf;
   for (n = 0; hltab[n].start != NULL; n++) {
     int textlen = (int)(hltab[n].start - p);
-    grid_puts_len(grid, (char_u *)p, textlen, row, col, curattr);
-    col += vim_strnsize((char_u *)p, textlen);
+    grid_puts_len(grid, p, textlen, row, col, curattr);
+    col += vim_strnsize(p, textlen);
     p = hltab[n].start;
 
     if (hltab[n].userhl == 0) {
@@ -586,8 +586,7 @@ void win_redr_custom(win_T *wp, bool draw_winbar, bool draw_ruler)
     }
   }
   // Make sure to use an empty string instead of p, if p is beyond buf + len.
-  grid_puts(grid, p >= buf + len ? (char_u *)"" : (char_u *)p, row, col,
-            curattr);
+  grid_puts(grid, p >= buf + len ? "" : p, row, col, curattr);
 
   grid_puts_line_flush(false);
 
@@ -608,7 +607,7 @@ void win_redr_custom(win_T *wp, bool draw_winbar, bool draw_ruler)
     .type = kStlClickDisabled,
   };
   for (n = 0; tabtab[n].start != NULL; n++) {
-    len += vim_strnsize((char_u *)p, (int)(tabtab[n].start - p));
+    len += vim_strnsize(p, (int)(tabtab[n].start - p));
     while (col < len) {
       click_defs[col++] = cur_click_def;
     }
@@ -712,7 +711,7 @@ int build_stl_str_hl(win_T *wp, char *out, size_t outlen, char *fmt, int use_san
   }
 
   // Get line & check if empty (cursorpos will show "0-1").
-  const char *line_ptr = (char *)ml_get_buf(wp->w_buffer, lnum, false);
+  const char *line_ptr = ml_get_buf(wp->w_buffer, lnum, false);
   bool empty_line = (*line_ptr == NUL);
 
   // Get the byte value now, in case we need it below. This is more

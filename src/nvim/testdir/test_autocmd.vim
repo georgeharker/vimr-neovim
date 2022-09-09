@@ -341,6 +341,39 @@ func Test_WinScrolled_close_curwin()
   call delete('Xtestout')
 endfunc
 
+func Test_WinScrolled_long_wrapped()
+  CheckRunVimInTerminal
+
+  let lines =<< trim END
+    set scrolloff=0
+    let height = winheight(0)
+    let width = winwidth(0)
+    let g:scrolled = 0
+    au WinScrolled * let g:scrolled += 1
+    call setline(1, repeat('foo', height * width))
+    call cursor(1, height * width)
+  END
+  call writefile(lines, 'Xtest_winscrolled_long_wrapped')
+  let buf = RunVimInTerminal('-S Xtest_winscrolled_long_wrapped', {'rows': 6})
+
+  call term_sendkeys(buf, ":echo g:scrolled\<CR>")
+  call WaitForAssert({-> assert_match('^0 ', term_getline(buf, 6))}, 1000)
+
+  call term_sendkeys(buf, 'gj')
+  call term_sendkeys(buf, ":echo g:scrolled\<CR>")
+  call WaitForAssert({-> assert_match('^1 ', term_getline(buf, 6))}, 1000)
+
+  call term_sendkeys(buf, '0')
+  call term_sendkeys(buf, ":echo g:scrolled\<CR>")
+  call WaitForAssert({-> assert_match('^2 ', term_getline(buf, 6))}, 1000)
+
+  call term_sendkeys(buf, '$')
+  call term_sendkeys(buf, ":echo g:scrolled\<CR>")
+  call WaitForAssert({-> assert_match('^3 ', term_getline(buf, 6))}, 1000)
+
+  call delete('Xtest_winscrolled_long_wrapped')
+endfunc
+
 func Test_WinClosed()
   " Test that the pattern is matched against the closed window's ID, and both
   " <amatch> and <afile> are set to it.
@@ -493,6 +526,26 @@ func Test_BufReadCmdHelpJump()
   au! BufReadCmd
 endfunc
 
+" BufReadCmd is triggered for a "nofile" buffer. Check all values.
+func Test_BufReadCmdNofile()
+  for val in ['nofile',
+            \ 'nowrite',
+            \ 'acwrite',
+            \ 'quickfix',
+            \ 'help',
+            \ 'prompt',
+            \ ]
+    new somefile
+    exe 'set buftype=' .. val
+    au BufReadCmd somefile call setline(1, 'triggered')
+    edit
+    call assert_equal('triggered', getline(1))
+
+    au! BufReadCmd
+    bwipe!
+  endfor
+endfunc
+
 func Test_augroup_deleted()
   " This caused a crash before E936 was introduced
   augroup x
@@ -587,9 +640,26 @@ func Test_BufEnter()
   " On MS-Windows we can't edit the directory, make sure we wipe the right
   " buffer.
   bwipe! Xdir
-
   call delete('Xdir', 'd')
   au! BufEnter
+
+  " Editing a "nofile" buffer doesn't read the file but does trigger BufEnter
+  " for historic reasons.  Also test other 'buftype' values.
+  for val in ['nofile',
+            \ 'nowrite',
+            \ 'acwrite',
+            \ 'quickfix',
+            \ 'help',
+            \ 'prompt',
+            \ ]
+    new somefile
+    exe 'set buftype=' .. val
+    au BufEnter somefile call setline(1, 'some text')
+    edit
+    call assert_equal('some text', getline(1))
+    bwipe!
+    au! BufEnter
+  endfor
 endfunc
 
 " Closing a window might cause an endless loop
@@ -1764,6 +1834,21 @@ func Test_BufReadCmd()
   call delete('Xcmd.test')
   au! BufReadCmd
   au! BufWriteCmd
+endfunc
+
+func Test_BufWriteCmd()
+  autocmd BufWriteCmd Xbufwritecmd let g:written = 1
+  new
+  file Xbufwritecmd
+  set buftype=acwrite
+  call mkdir('Xbufwritecmd')
+  write
+  " BufWriteCmd should be triggered even if a directory has the same name
+  call assert_equal(1, g:written)
+  call delete('Xbufwritecmd', 'd')
+  unlet g:written
+  au! BufWriteCmd
+  bwipe!
 endfunc
 
 func SetChangeMarks(start, end)

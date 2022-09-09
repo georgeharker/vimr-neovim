@@ -71,6 +71,7 @@
 #include "nvim/change.h"          // for changed_bytes
 #include "nvim/charset.h"         // for skipwhite, getwhitecols, skipbin
 #include "nvim/cursor.h"          // for get_cursor_line_ptr
+#include "nvim/decoration.h"
 #include "nvim/drawscreen.h"      // for NOT_VALID, redraw_later
 #include "nvim/eval/typval.h"     // for semsg
 #include "nvim/ex_cmds.h"         // for do_sub_msg
@@ -193,8 +194,8 @@ int did_set_spelltab;
 char *e_format = N_("E759: Format error in spell file");
 
 // Remember what "z?" replaced.
-char_u *repl_from = NULL;
-char_u *repl_to = NULL;
+char *repl_from = NULL;
+char *repl_to = NULL;
 
 /// Main spell-checking function.
 /// "ptr" points to a character that could be the start of a word.
@@ -220,7 +221,7 @@ size_t spell_check(win_T *wp, char_u *ptr, hlf_T *attrp, int *capcol, bool docou
   size_t nrlen = 0;              // found a number first
   size_t wrongcaplen = 0;
   bool count_word = docount;
-  bool use_camel_case = *wp->w_s->b_p_spo != NUL;
+  bool use_camel_case = (wp->w_s->b_p_spo_flags & SPO_CAMEL) != 0;
   bool camel_case = false;
 
   // A word never starts at a space or a control character. Return quickly
@@ -243,7 +244,7 @@ size_t spell_check(win_T *wp, char_u *ptr, hlf_T *attrp, int *capcol, bool docou
     if (*ptr == '0' && (ptr[1] == 'b' || ptr[1] == 'B')) {
       mi.mi_end = (char_u *)skipbin((char *)ptr + 2);
     } else if (*ptr == '0' && (ptr[1] == 'x' || ptr[1] == 'X')) {
-      mi.mi_end = skiphex(ptr + 2);
+      mi.mi_end = (char_u *)skiphex((char *)ptr + 2);
     } else {
       mi.mi_end = (char_u *)skipdigits((char *)ptr);
     }
@@ -571,7 +572,7 @@ static void find_word(matchinf_T *mip, int mode)
     arridx = endidx[endidxcnt];
     wlen = endlen[endidxcnt];
 
-    if (utf_head_off(ptr, ptr + wlen) > 0) {
+    if (utf_head_off((char *)ptr, (char *)ptr + wlen) > 0) {
       continue;             // not at first byte of character
     }
     if (spell_iswordp(ptr + wlen, mip->mi_win)) {
@@ -1198,6 +1199,24 @@ bool no_spell_checking(win_T *wp)
   return false;
 }
 
+static void decor_spell_nav_start(win_T *wp)
+{
+  decor_state = (DecorState){ 0 };
+  decor_redraw_reset(wp->w_buffer, &decor_state);
+}
+
+static bool decor_spell_nav_col(win_T *wp, linenr_T lnum, linenr_T *decor_lnum, int col,
+                                char **decor_error)
+{
+  if (*decor_lnum != lnum) {
+    decor_providers_invoke_spell(wp, lnum - 1, col, lnum - 1, -1, decor_error);
+    decor_redraw_line(wp->w_buffer, lnum - 1, &decor_state);
+    *decor_lnum = lnum;
+  }
+  decor_redraw_col(wp->w_buffer, col, col, false, &decor_state);
+  return decor_state.spell;
+}
+
 /// Moves to the next spell error.
 /// "curline" is false for "[s", "]s", "[S" and "]S".
 /// "curline" is true to find word under/after cursor in the same line.
@@ -1216,17 +1235,19 @@ size_t spell_move_to(win_T *wp, int dir, bool allwords, bool curline, hlf_T *att
   hlf_T attr = HLF_COUNT;
   size_t len;
   int has_syntax = syntax_present(wp);
-  int col;
+  colnr_T col;
   char_u *buf = NULL;
   size_t buflen = 0;
   int skip = 0;
-  int capcol = -1;
+  colnr_T capcol = -1;
   bool found_one = false;
   bool wrapped = false;
 
   if (no_spell_checking(wp)) {
     return 0;
   }
+
+  size_t ret = 0;
 
   // Start looking for bad word at the start of the line, because we can't
   // start halfway through a word, we don't know where it starts or ends.
@@ -1240,8 +1261,21 @@ size_t spell_move_to(win_T *wp, int dir, bool allwords, bool curline, hlf_T *att
   linenr_T lnum = wp->w_cursor.lnum;
   clearpos(&found_pos);
 
+  char *decor_error = NULL;
+  // Ephemeral extmarks are currently stored in the global decor_state.
+  // When looking for spell errors, we need to:
+  //  - temporarily reset decor_state
+  //  - run the _on_spell_nav decor callback for each line we look at
+  //  - detect if any spell marks are present
+  //  - restore decor_state to the value saved here.
+  // TODO(lewis6991): un-globalize decor_state and allow ephemeral marks to be stored into a
+  // temporary DecorState.
+  DecorState saved_decor_start = decor_state;
+  linenr_T decor_lnum = -1;
+  decor_spell_nav_start(wp);
+
   while (!got_int) {
-    char_u *line = ml_get_buf(wp->w_buffer, lnum, false);
+    char_u *line = (char_u *)ml_get_buf(wp->w_buffer, lnum, false);
 
     len = STRLEN(line);
     if (buflen < len + MAXWLEN + 2) {
@@ -1258,17 +1292,17 @@ size_t spell_move_to(win_T *wp, int dir, bool allwords, bool curline, hlf_T *att
 
     // For checking first word with a capital skip white space.
     if (capcol == 0) {
-      capcol = (int)getwhitecols(line);
+      capcol = (colnr_T)getwhitecols((char *)line);
     } else if (curline && wp == curwin) {
       // For spellbadword(): check if first word needs a capital.
-      col = (int)getwhitecols(line);
+      col = (colnr_T)getwhitecols((char *)line);
       if (check_need_cap(lnum, col)) {
         capcol = col;
       }
 
       // Need to get the line again, may have looked at the previous
       // one.
-      line = ml_get_buf(wp->w_buffer, lnum, false);
+      line = (char_u *)ml_get_buf(wp->w_buffer, lnum, false);
     }
 
     // Copy the line into "buf" and append the start of the next line if
@@ -1278,7 +1312,7 @@ size_t spell_move_to(win_T *wp, int dir, bool allwords, bool curline, hlf_T *att
     STRCPY(buf, line);
     if (lnum < wp->w_buffer->b_ml.ml_line_count) {
       spell_cat_line(buf + STRLEN(buf),
-                     ml_get_buf(wp->w_buffer, lnum + 1, false),
+                     (char_u *)ml_get_buf(wp->w_buffer, lnum + 1, false),
                      MAXWLEN);
     }
     char_u *p = buf + skip;
@@ -1308,33 +1342,37 @@ size_t spell_move_to(win_T *wp, int dir, bool allwords, bool curline, hlf_T *att
               || ((colnr_T)(curline
                             ? p - buf + (ptrdiff_t)len
                             : p - buf) > wp->w_cursor.col)) {
-            bool can_spell;
-            if (has_syntax) {
-              col = (int)(p - buf);
-              (void)syn_get_id(wp, lnum, (colnr_T)col,
-                               false, &can_spell, false);
-              if (!can_spell) {
-                attr = HLF_COUNT;
-              }
-            } else {
-              can_spell = true;
+            col = (colnr_T)(p - buf);
+
+            bool can_spell = (wp->w_s->b_p_spo_flags & SPO_NPBUFFER) == 0;
+
+            if (!can_spell) {
+              can_spell = decor_spell_nav_col(wp, lnum, &decor_lnum, col, &decor_error);
+            }
+
+            if (!can_spell && has_syntax) {
+              (void)syn_get_id(wp, lnum, col, false, &can_spell, false);
+            }
+
+            if (!can_spell) {
+              attr = HLF_COUNT;
             }
 
             if (can_spell) {
               found_one = true;
               found_pos = (pos_T) {
                 .lnum = lnum,
-                .col = (int)(p - buf),
+                .col = col,
                 .coladd = 0
               };
               if (dir == FORWARD) {
                 // No need to search further.
                 wp->w_cursor = found_pos;
-                xfree(buf);
                 if (attrp != NULL) {
                   *attrp = attr;
                 }
-                return len;
+                ret = len;
+                goto theend;
               } else if (curline) {
                 // Insert mode completion: put cursor after
                 // the bad word.
@@ -1358,8 +1396,8 @@ size_t spell_move_to(win_T *wp, int dir, bool allwords, bool curline, hlf_T *att
     if (dir == BACKWARD && found_pos.lnum != 0) {
       // Use the last match in the line (before the cursor).
       wp->w_cursor = found_pos;
-      xfree(buf);
-      return found_len;
+      ret = found_len;
+      goto theend;
     }
 
     if (curline) {
@@ -1429,8 +1467,12 @@ size_t spell_move_to(win_T *wp, int dir, bool allwords, bool curline, hlf_T *att
     line_breakcheck();
   }
 
+theend:
+  decor_state_free(&decor_state);
+  xfree(decor_error);
+  decor_state = saved_decor_start;
   xfree(buf);
-  return 0;
+  return ret;
 }
 
 // For spell checking: concatenate the start of the following line "line" into
@@ -1517,8 +1559,8 @@ static void spell_load_lang(char_u *lang)
 // use "latin1" for "latin9".  And limit to 60 characters (just in case).
 char_u *spell_enc(void)
 {
-  if (STRLEN(p_enc) < 60 && STRCMP(p_enc, "iso-8859-15") != 0) {
-    return p_enc;
+  if (STRLEN(p_enc) < 60 && strcmp(p_enc, "iso-8859-15") != 0) {
+    return (char_u *)p_enc;
   }
   return (char_u *)"latin1";
 }
@@ -1531,15 +1573,15 @@ static void int_wordlist_spl(char_u *fname)
                int_wordlist, spell_enc());
 }
 
-// Allocate a new slang_T for language "lang".  "lang" can be NULL.
-// Caller must fill "sl_next".
-slang_T *slang_alloc(char_u *lang)
+/// Allocate a new slang_T for language "lang".  "lang" can be NULL.
+/// Caller must fill "sl_next".
+slang_T *slang_alloc(char *lang)
   FUNC_ATTR_NONNULL_RET
 {
   slang_T *lp = xcalloc(1, sizeof(slang_T));
 
   if (lang != NULL) {
-    lp->sl_name = vim_strsave(lang);
+    lp->sl_name = xstrdup(lang);
   }
   ga_init(&lp->sl_rep, sizeof(fromto_T), 10);
   ga_init(&lp->sl_repsal, sizeof(fromto_T), 10);
@@ -1651,7 +1693,7 @@ void slang_clear_sug(slang_T *lp)
 static void spell_load_cb(char *fname, void *cookie)
 {
   spelload_T *slp = (spelload_T *)cookie;
-  slang_T *slang = spell_load_file((char_u *)fname, slp->sl_lang, NULL, false);
+  slang_T *slang = spell_load_file(fname, (char *)slp->sl_lang, NULL, false);
   if (slang != NULL) {
     // When a previously loaded file has NOBREAK also use it for the
     // ".add" files.
@@ -1801,25 +1843,25 @@ char *did_set_spelllang(win_T *wp)
 {
   garray_T ga;
   char *splp;
-  char_u *region;
-  char_u region_cp[3];
+  char *region;
+  char region_cp[3];
   bool filename;
   int region_mask;
   slang_T *slang;
   int c;
-  char_u lang[MAXWLEN + 1];
-  char_u spf_name[MAXPATHL];
+  char lang[MAXWLEN + 1];
+  char spf_name[MAXPATHL];
   int len;
-  char_u *p;
+  char *p;
   int round;
   char *spf;
-  char_u *use_region = NULL;
+  char *use_region = NULL;
   bool dont_use_region = false;
   bool nobreak = false;
   langp_T *lp, *lp2;
   static bool recursive = false;
   char *ret_msg = NULL;
-  char_u *spl_copy;
+  char *spl_copy;
 
   bufref_T bufref;
   set_bufref(&bufref, wp->w_buffer);
@@ -1837,22 +1879,22 @@ char *did_set_spelllang(win_T *wp)
 
   // Make a copy of 'spelllang', the SpellFileMissing autocommands may change
   // it under our fingers.
-  spl_copy = vim_strsave(wp->w_s->b_p_spl);
+  spl_copy = xstrdup(wp->w_s->b_p_spl);
 
   wp->w_s->b_cjk = 0;
 
   // Loop over comma separated language names.
-  for (splp = (char *)spl_copy; *splp != NUL;) {
+  for (splp = spl_copy; *splp != NUL;) {
     // Get one language name.
     copy_option_part(&splp, (char *)lang, MAXWLEN, ",");
     region = NULL;
     len = (int)STRLEN(lang);
 
-    if (!valid_spelllang(lang)) {
+    if (!valid_spelllang((char *)lang)) {
       continue;
     }
 
-    if (STRCMP(lang, "cjk") == 0) {
+    if (strcmp(lang, "cjk") == 0) {
       wp->w_s->b_cjk = 1;
       continue;
     }
@@ -1864,7 +1906,7 @@ char *did_set_spelllang(win_T *wp)
       filename = true;
 
       // Locate a region and remove it from the file name.
-      p = (char_u *)vim_strchr(path_tail((char *)lang), '_');
+      p = vim_strchr(path_tail((char *)lang), '_');
       if (p != NULL && ASCII_ISALPHA(p[1]) && ASCII_ISALPHA(p[2])
           && !ASCII_ISALPHA(p[3])) {
         STRLCPY(region_cp, p + 1, 3);
@@ -1876,7 +1918,7 @@ char *did_set_spelllang(win_T *wp)
 
       // Check if we loaded this language before.
       for (slang = first_lang; slang != NULL; slang = slang->sl_next) {
-        if (path_full_compare((char *)lang, (char *)slang->sl_fname, false, true)
+        if (path_full_compare((char *)lang, slang->sl_fname, false, true)
             == kEqualFiles) {
           break;
         }
@@ -1901,7 +1943,7 @@ char *did_set_spelllang(win_T *wp)
     if (region != NULL) {
       // If the region differs from what was used before then don't
       // use it for 'spellfile'.
-      if (use_region != NULL && STRCMP(region, use_region) != 0) {
+      if (use_region != NULL && strcmp(region, use_region) != 0) {
         dont_use_region = true;
       }
       use_region = region;
@@ -1910,9 +1952,9 @@ char *did_set_spelllang(win_T *wp)
     // If not found try loading the language now.
     if (slang == NULL) {
       if (filename) {
-        (void)spell_load_file(lang, lang, NULL, false);
+        (void)spell_load_file((char *)lang, (char *)lang, NULL, false);
       } else {
-        spell_load_lang(lang);
+        spell_load_lang((char_u *)lang);
         // SpellFileMissing autocommands may do anything, including
         // destroying the buffer we are using...
         if (!bufref_valid(&bufref)) {
@@ -1925,12 +1967,12 @@ char *did_set_spelllang(win_T *wp)
     // Loop over the languages, there can be several files for "lang".
     for (slang = first_lang; slang != NULL; slang = slang->sl_next) {
       if (filename
-          ? path_full_compare((char *)lang, (char *)slang->sl_fname, false, true) == kEqualFiles
+          ? path_full_compare((char *)lang, slang->sl_fname, false, true) == kEqualFiles
           : STRICMP(lang, slang->sl_name) == 0) {
         region_mask = REGION_ALL;
         if (!filename && region != NULL) {
           // find region in sl_regions
-          c = find_region(slang->sl_regions, region);
+          c = find_region(slang->sl_regions, (char_u *)region);
           if (c == REGION_ALL) {
             if (slang->sl_add) {
               if (*slang->sl_regions != NUL) {
@@ -1966,14 +2008,14 @@ char *did_set_spelllang(win_T *wp)
   // round 1: load first name in 'spellfile'.
   // round 2: load second name in 'spellfile.
   // etc.
-  spf = (char *)curwin->w_s->b_p_spf;
+  spf = curwin->w_s->b_p_spf;
   for (round = 0; round == 0 || *spf != NUL; round++) {
     if (round == 0) {
       // Internal wordlist, if there is one.
       if (int_wordlist == NULL) {
         continue;
       }
-      int_wordlist_spl(spf_name);
+      int_wordlist_spl((char_u *)spf_name);
     } else {
       // One entry in 'spellfile'.
       copy_option_part(&spf, (char *)spf_name, MAXPATHL - 5, ",");
@@ -1983,7 +2025,7 @@ char *did_set_spelllang(win_T *wp)
       for (c = 0; c < ga.ga_len; c++) {
         p = LANGP_ENTRY(ga, c)->lp_slang->sl_fname;
         if (p != NULL
-            && path_full_compare((char *)spf_name, (char *)p, false, true) == kEqualFiles) {
+            && path_full_compare((char *)spf_name, p, false, true) == kEqualFiles) {
           break;
         }
       }
@@ -1994,7 +2036,7 @@ char *did_set_spelllang(win_T *wp)
 
     // Check if it was loaded already.
     for (slang = first_lang; slang != NULL; slang = slang->sl_next) {
-      if (path_full_compare((char *)spf_name, (char *)slang->sl_fname, false, true)
+      if (path_full_compare((char *)spf_name, slang->sl_fname, false, true)
           == kEqualFiles) {
         break;
       }
@@ -2007,12 +2049,12 @@ char *did_set_spelllang(win_T *wp)
         STRCPY(lang, "internal wordlist");
       } else {
         STRLCPY(lang, path_tail((char *)spf_name), MAXWLEN + 1);
-        p = (char_u *)vim_strchr((char *)lang, '.');
+        p = vim_strchr((char *)lang, '.');
         if (p != NULL) {
           *p = NUL;             // truncate at ".encoding.add"
         }
       }
-      slang = spell_load_file(spf_name, lang, NULL, true);
+      slang = spell_load_file((char *)spf_name, (char *)lang, NULL, true);
 
       // If one of the languages has NOBREAK we assume the addition
       // files also have this.
@@ -2024,7 +2066,7 @@ char *did_set_spelllang(win_T *wp)
       region_mask = REGION_ALL;
       if (use_region != NULL && !dont_use_region) {
         // find region in sl_regions
-        c = find_region(slang->sl_regions, use_region);
+        c = find_region(slang->sl_regions, (char_u *)use_region);
         if (c != REGION_ALL) {
           region_mask = 1 << c;
         } else if (*slang->sl_regions != NUL) {
@@ -2104,8 +2146,8 @@ static void clear_midword(win_T *wp)
   XFREE_CLEAR(wp->w_s->b_spell_ismw_mb);
 }
 
-// Use the "sl_midword" field of language "lp" for buffer "buf".
-// They add up to any currently used midword characters.
+/// Use the "sl_midword" field of language "lp" for buffer "buf".
+/// They add up to any currently used midword characters.
 static void use_midword(slang_T *lp, win_T *wp)
   FUNC_ATTR_NONNULL_ALL
 {
@@ -2113,18 +2155,18 @@ static void use_midword(slang_T *lp, win_T *wp)
     return;
   }
 
-  for (char_u *p = lp->sl_midword; *p != NUL;) {
-    const int c = utf_ptr2char((char *)p);
-    const int l = utfc_ptr2len((char *)p);
+  for (char *p = (char *)lp->sl_midword; *p != NUL;) {
+    const int c = utf_ptr2char(p);
+    const int l = utfc_ptr2len(p);
     if (c < 256 && l <= 2) {
       wp->w_s->b_spell_ismw[c] = true;
     } else if (wp->w_s->b_spell_ismw_mb == NULL) {
       // First multi-byte char in "b_spell_ismw_mb".
-      wp->w_s->b_spell_ismw_mb = vim_strnsave(p, (size_t)l);
+      wp->w_s->b_spell_ismw_mb = xstrnsave(p, (size_t)l);
     } else {
       // Append multi-byte chars to "b_spell_ismw_mb".
       const int n = (int)STRLEN(wp->w_s->b_spell_ismw_mb);
-      char_u *bp = vim_strnsave(wp->w_s->b_spell_ismw_mb, (size_t)n + (size_t)l);
+      char *bp = xstrnsave(wp->w_s->b_spell_ismw_mb, (size_t)n + (size_t)l);
       xfree(wp->w_s->b_spell_ismw_mb);
       wp->w_s->b_spell_ismw_mb = bp;
       STRLCPY(bp + n, p, l + 1);
@@ -2359,7 +2401,7 @@ bool spell_iswordp(const char_u *p, const win_T *wp)
     if (c < 256
         ? wp->w_s->b_spell_ismw[c]
         : (wp->w_s->b_spell_ismw_mb != NULL
-           && vim_strchr((char *)wp->w_s->b_spell_ismw_mb, c) != NULL)) {
+           && vim_strchr(wp->w_s->b_spell_ismw_mb, c) != NULL)) {
       s = p + l;
     }
   }
@@ -2405,7 +2447,7 @@ static bool spell_iswordp_w(const int *p, const win_T *wp)
 
   if (*p <
       256 ? wp->w_s->b_spell_ismw[*p] : (wp->w_s->b_spell_ismw_mb != NULL
-                                         && vim_strchr((char *)wp->w_s->b_spell_ismw_mb,
+                                         && vim_strchr(wp->w_s->b_spell_ismw_mb,
                                                        *p) != NULL)) {
     s = p + 1;
   } else {
@@ -2470,21 +2512,21 @@ bool check_need_cap(linenr_T lnum, colnr_T col)
     return false;
   }
 
-  char_u *line = get_cursor_line_ptr();
+  char_u *line = (char_u *)get_cursor_line_ptr();
   char_u *line_copy = NULL;
   colnr_T endcol = 0;
-  if (getwhitecols(line) >= (int)col) {
+  if (getwhitecols((char *)line) >= (int)col) {
     // At start of line, check if previous line is empty or sentence
     // ends there.
     if (lnum == 1) {
       need_cap = true;
     } else {
-      line = ml_get(lnum - 1);
+      line = (char_u *)ml_get(lnum - 1);
       if (*skipwhite((char *)line) == NUL) {
         need_cap = true;
       } else {
         // Append a space in place of the line break.
-        line_copy = concat_str(line, (char_u *)" ");
+        line_copy = (char_u *)concat_str((char *)line, " ");
         line = line_copy;
         endcol = (colnr_T)STRLEN(line);
       }
@@ -2548,7 +2590,7 @@ void ex_spellrepall(exarg_T *eap)
 
     // Only replace when the right word isn't there yet.  This happens
     // when changing "etc" to "etc.".
-    char_u *line = get_cursor_line_ptr();
+    char_u *line = (char_u *)get_cursor_line_ptr();
     if (addlen <= 0 || STRNCMP(line + curwin->w_cursor.col,
                                repl_to, STRLEN(repl_to)) != 0) {
       char_u *p = xmalloc(STRLEN(line) + (size_t)addlen + 1);
@@ -3129,23 +3171,23 @@ void ex_spelldump(exarg_T *eap)
 /// @param ic  ignore case
 /// @param dir  direction for adding matches
 /// @param dumpflags_arg  DUMPFLAG_*
-void spell_dump_compl(char_u *pat, int ic, Direction *dir, int dumpflags_arg)
+void spell_dump_compl(char *pat, int ic, Direction *dir, int dumpflags_arg)
 {
   langp_T *lp;
   slang_T *slang;
   idx_T arridx[MAXWLEN];
   int curi[MAXWLEN];
-  char_u word[MAXWLEN];
+  char word[MAXWLEN];
   int c;
-  char_u *byts;
+  char *byts;
   idx_T *idxs;
   linenr_T lnum = 0;
   int depth;
   int n;
   int flags;
-  char_u *region_names = NULL;         // region names being used
+  char *region_names = NULL;         // region names being used
   bool do_region = true;                    // dump region names and numbers
-  char_u *p;
+  char *p;
   int dumpflags = dumpflags_arg;
   int patlen;
 
@@ -3155,11 +3197,11 @@ void spell_dump_compl(char_u *pat, int ic, Direction *dir, int dumpflags_arg)
     if (ic) {
       dumpflags |= DUMPFLAG_ICASE;
     } else {
-      n = captype(pat, NULL);
+      n = captype((char_u *)pat, NULL);
       if (n == WF_ONECAP) {
         dumpflags |= DUMPFLAG_ONECAP;
       } else if (n == WF_ALLCAP
-                 && (int)STRLEN(pat) > utfc_ptr2len((char *)pat)) {
+                 && (int)STRLEN(pat) > utfc_ptr2len(pat)) {
         dumpflags |= DUMPFLAG_ALLCAP;
       }
     }
@@ -3169,11 +3211,11 @@ void spell_dump_compl(char_u *pat, int ic, Direction *dir, int dumpflags_arg)
   // regions or none at all.
   for (int lpi = 0; lpi < curwin->w_s->b_langp.ga_len; lpi++) {
     lp = LANGP_ENTRY(curwin->w_s->b_langp, lpi);
-    p = lp->lp_slang->sl_regions;
+    p = (char *)lp->lp_slang->sl_regions;
     if (p[0] != 0) {
       if (region_names == NULL) {           // first language with regions
         region_names = p;
-      } else if (STRCMP(region_names, p) != 0) {
+      } else if (strcmp(region_names, p) != 0) {
         do_region = false;                  // region names are different
         break;
       }
@@ -3215,11 +3257,11 @@ void spell_dump_compl(char_u *pat, int ic, Direction *dir, int dumpflags_arg)
     for (int round = 1; round <= 2; round++) {
       if (round == 1) {
         dumpflags &= ~DUMPFLAG_KEEPCASE;
-        byts = slang->sl_fbyts;
+        byts = (char *)slang->sl_fbyts;
         idxs = slang->sl_fidxs;
       } else {
         dumpflags |= DUMPFLAG_KEEPCASE;
-        byts = slang->sl_kbyts;
+        byts = (char *)slang->sl_kbyts;
         idxs = slang->sl_kidxs;
       }
       if (byts == NULL) {
@@ -3239,7 +3281,7 @@ void spell_dump_compl(char_u *pat, int ic, Direction *dir, int dumpflags_arg)
           // Do one more byte at this node.
           n = arridx[depth] + curi[depth];
           curi[depth]++;
-          c = byts[n];
+          c = (uint8_t)byts[n];
           if (c == 0 || depth >= MAXWLEN - 1) {
             // End of word or reached maximum length, deal with the
             // word.
@@ -3262,7 +3304,7 @@ void spell_dump_compl(char_u *pat, int ic, Direction *dir, int dumpflags_arg)
               // when it's the first one.
               c = (int)((unsigned)flags >> 24);
               if (c == 0 || curi[depth] == 2) {
-                dump_word(slang, word, pat, dir,
+                dump_word(slang, (char_u *)word, (char_u *)pat, dir,
                           dumpflags, flags, lnum);
                 if (pat == NULL) {
                   lnum++;
@@ -3271,13 +3313,13 @@ void spell_dump_compl(char_u *pat, int ic, Direction *dir, int dumpflags_arg)
 
               // Apply the prefix, if there is one.
               if (c != 0) {
-                lnum = dump_prefixes(slang, word, pat, dir,
+                lnum = dump_prefixes(slang, (char_u *)word, (char_u *)pat, dir,
                                      dumpflags, flags, lnum);
               }
             }
           } else {
             // Normal char, go one level deeper.
-            word[depth++] = (char_u)c;
+            word[depth++] = (char)c;
             arridx[depth] = idxs[n];
             curi[depth] = 1;
 
@@ -3289,7 +3331,7 @@ void spell_dump_compl(char_u *pat, int ic, Direction *dir, int dumpflags_arg)
             // ignore case...
             assert(depth >= 0);
             if (depth <= patlen
-                && mb_strnicmp(word, pat, (size_t)depth) != 0) {
+                && mb_strnicmp((char *)word, pat, (size_t)depth) != 0) {
               depth--;
             }
           }
@@ -3371,7 +3413,7 @@ static void dump_word(slang_T *slang, char_u *word, char_u *pat, Direction *dir,
 
     ml_append(lnum, (char *)p, (colnr_T)0, false);
   } else if (((dumpflags & DUMPFLAG_ICASE)
-              ? mb_strnicmp(p, pat, STRLEN(pat)) == 0
+              ? mb_strnicmp((char *)p, (char *)pat, STRLEN(pat)) == 0
               : STRNCMP(p, pat, STRLEN(pat)) == 0)
              && ins_compl_add_infercase(p, (int)STRLEN(p),
                                         p_ic, NULL, *dir, false) == OK) {
@@ -3497,7 +3539,7 @@ int spell_word_start(int startcol)
     return startcol;
   }
 
-  char_u *line = get_cursor_line_ptr();
+  char_u *line = (char_u *)get_cursor_line_ptr();
   char_u *p;
 
   // Find a word character before "startcol".
@@ -3545,18 +3587,18 @@ int expand_spelling(linenr_T lnum, char_u *pat, char ***matchp)
   return ga.ga_len;
 }
 
-/// Return true if "val" is a valid 'spelllang' value.
-bool valid_spelllang(const char_u *val)
+/// @return  true if "val" is a valid 'spelllang' value.
+bool valid_spelllang(const char *val)
   FUNC_ATTR_NONNULL_ALL FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT
 {
   return valid_name(val, ".-_,@");
 }
 
-/// Return true if "val" is a valid 'spellfile' value.
-bool valid_spellfile(const char_u *val)
+/// @return  true if "val" is a valid 'spellfile' value.
+bool valid_spellfile(const char *val)
   FUNC_ATTR_NONNULL_ALL FUNC_ATTR_PURE FUNC_ATTR_WARN_UNUSED_RESULT
 {
-  for (const char_u *s = val; *s != NUL; s++) {
+  for (const char_u *s = (char_u *)val; *s != NUL; s++) {
     if (!vim_isfilec(*s) && *s != ',' && *s != ' ') {
       return false;
     }
@@ -3571,7 +3613,7 @@ char *did_set_spell_option(bool is_spellfile)
   if (is_spellfile) {
     int l = (int)STRLEN(curwin->w_s->b_p_spf);
     if (l > 0
-        && (l < 4 || STRCMP(curwin->w_s->b_p_spf + l - 4, ".add") != 0)) {
+        && (l < 4 || strcmp(curwin->w_s->b_p_spf + l - 4, ".add") != 0)) {
       errmsg = e_invarg;
     }
   }
@@ -3599,8 +3641,8 @@ char *compile_cap_prog(synblock_T *synblock)
     synblock->b_cap_prog = NULL;
   } else {
     // Prepend a ^ so that we only match at one column
-    char_u *re = concat_str((char_u *)"^", synblock->b_p_spc);
-    synblock->b_cap_prog = vim_regcomp((char *)re, RE_MAGIC);
+    char *re = concat_str("^", synblock->b_p_spc);
+    synblock->b_cap_prog = vim_regcomp(re, RE_MAGIC);
     xfree(re);
     if (synblock->b_cap_prog == NULL) {
       synblock->b_cap_prog = rp;         // restore the previous program

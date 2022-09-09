@@ -90,14 +90,14 @@ static char *(history_names[]) = {
 /// arguments of the ":history command.
 char *get_history_arg(expand_T *xp, int idx)
 {
-  static char_u compl[2] = { NUL, NUL };
-  char *short_names = ":=@>?/";
-  int short_names_count = (int)STRLEN(short_names);
-  int history_name_count = ARRAY_SIZE(history_names) - 1;
+  const char *short_names = ":=@>?/";
+  const int short_names_count = (int)STRLEN(short_names);
+  const int history_name_count = ARRAY_SIZE(history_names) - 1;
 
   if (idx < short_names_count) {
-    compl[0] = (char_u)short_names[idx];
-    return (char *)compl;
+    xp->xp_buf[0] = short_names[idx];
+    xp->xp_buf[1] = NUL;
+    return xp->xp_buf;
   }
   if (idx < short_names_count + history_name_count) {
     return history_names[idx - short_names_count];
@@ -186,7 +186,7 @@ static inline void clear_hist_entry(histentry_T *hisptr)
 /// If 'move_to_front' is true, matching entry is moved to end of history.
 ///
 /// @param move_to_front  Move the entry to the front if it exists
-static int in_history(int type, char_u *str, int move_to_front, int sep)
+static int in_history(int type, char *str, int move_to_front, int sep)
 {
   int last_i = -1;
 
@@ -201,8 +201,8 @@ static int in_history(int type, char_u *str, int move_to_front, int sep)
 
     // For search history, check that the separator character matches as
     // well.
-    char_u *p = history[type][i].hisstr;
-    if (STRCMP(str, p) == 0
+    char *p = history[type][i].hisstr;
+    if (strcmp(str, p) == 0
         && (type != HIST_SEARCH || sep == p[STRLEN(p) + 1])) {
       if (!move_to_front) {
         return true;
@@ -276,7 +276,7 @@ static int last_maptick = -1;           // last seen maptick
 /// @param histype  may be one of the HIST_ values.
 /// @param in_map   consider maptick when inside a mapping
 /// @param sep      separator character used (search hist)
-void add_to_history(int histype, char_u *new_entry, int in_map, int sep)
+void add_to_history(int histype, char *new_entry, int in_map, int sep)
 {
   histentry_T *hisptr;
 
@@ -313,10 +313,10 @@ void add_to_history(int histype, char_u *new_entry, int in_map, int sep)
 
     // Store the separator after the NUL of the string.
     size_t len = STRLEN(new_entry);
-    hisptr->hisstr = vim_strnsave(new_entry, len + 2);
+    hisptr->hisstr = xstrnsave(new_entry, len + 2);
     hisptr->timestamp = os_time();
     hisptr->additional_elements = NULL;
-    hisptr->hisstr[len + 1] = (char_u)sep;
+    hisptr->hisstr[len + 1] = (char)sep;
 
     hisptr->hisnum = ++hisnum[histype];
     if (histype == HIST_SEARCH && in_map) {
@@ -382,13 +382,13 @@ static int calc_hist_idx(int histype, int num)
 /// Get a history entry by its index.
 ///
 /// @param histype  may be one of the HIST_ values.
-static char_u *get_history_entry(int histype, int idx)
+static char *get_history_entry(int histype, int idx)
 {
   idx = calc_hist_idx(histype, idx);
   if (idx >= 0) {
     return history[histype][idx].hisstr;
   } else {
-    return (char_u *)"";
+    return "";
   }
 }
 
@@ -438,7 +438,7 @@ static int del_history_entry(int histype, char_u *str)
       if (hisptr->hisstr == NULL) {
         break;
       }
-      if (vim_regexec(&regmatch, (char *)hisptr->hisstr, (colnr_T)0)) {
+      if (vim_regexec(&regmatch, hisptr->hisstr, (colnr_T)0)) {
         found = true;
         hist_free_entry(hisptr);
       } else {
@@ -509,7 +509,7 @@ void f_histadd(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
     str = tv_get_string_buf(&argvars[1], buf);
     if (*str != NUL) {
       init_history();
-      add_to_history(histype, (char_u *)str, false, NUL);
+      add_to_history(histype, (char *)str, false, NUL);
       rettv->vval.v_number = true;
       return;
     }
@@ -556,7 +556,7 @@ void f_histget(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
       idx = (int)tv_get_number_chk(&argvars[1], NULL);
     }
     // -1 on type error
-    rettv->vval.v_string = (char *)vim_strsave(get_history_entry(type, idx));
+    rettv->vval.v_string = xstrdup(get_history_entry(type, idx));
   }
   rettv->v_type = VAR_STRING;
 }
@@ -643,14 +643,13 @@ void ex_history(exarg_T *eap)
           msg_putchar('\n');
           snprintf((char *)IObuff, IOSIZE, "%c%6d  ", i == idx ? '>' : ' ',
                    hist[i].hisnum);
-          if (vim_strsize((char *)hist[i].hisstr) > Columns - 10) {
-            trunc_string((char *)hist[i].hisstr, (char *)IObuff + STRLEN(IObuff),
+          if (vim_strsize(hist[i].hisstr) > Columns - 10) {
+            trunc_string(hist[i].hisstr, (char *)IObuff + STRLEN(IObuff),
                          Columns - 10, IOSIZE - (int)STRLEN(IObuff));
           } else {
             STRCAT(IObuff, hist[i].hisstr);
           }
           msg_outtrans((char *)IObuff);
-          ui_flush();
         }
         if (i == idx) {
           break;

@@ -621,7 +621,7 @@ void u_compute_hash(buf_T *buf, char_u *hash)
   context_sha256_T ctx;
   sha256_start(&ctx);
   for (linenr_T lnum = 1; lnum <= buf->b_ml.ml_line_count; lnum++) {
-    char_u *p = ml_get_buf(buf, lnum, false);
+    char_u *p = (char_u *)ml_get_buf(buf, lnum, false);
     sha256_update(&ctx, p, (uint32_t)(STRLEN(p) + 1));
   }
   sha256_finish(&ctx, hash);
@@ -651,7 +651,7 @@ char *u_get_undo_file_name(const char *const buf_ffname, const bool reading)
   char fname_buf[MAXPATHL];
   // Expand symlink in the file name, so that we put the undo file with the
   // actual file instead of with the symlink.
-  if (resolve_symlink((const char_u *)ffname, (char_u *)fname_buf) == OK) {
+  if (resolve_symlink(ffname, fname_buf) == OK) {
     ffname = fname_buf;
   }
 #endif
@@ -685,7 +685,7 @@ char *u_get_undo_file_name(const char *const buf_ffname, const bool reading)
         *p-- = NUL;
       }
 
-      bool has_directory = os_isdir((char_u *)dir_name);
+      bool has_directory = os_isdir(dir_name);
       if (!has_directory && *dirp == NUL && !reading) {
         // Last directory in the list does not exist, create it.
         int ret;
@@ -713,7 +713,7 @@ char *u_get_undo_file_name(const char *const buf_ffname, const bool reading)
 
     // When reading check if the file exists.
     if (undo_file_name != NULL
-        && (!reading || os_path_exists((char_u *)undo_file_name))) {
+        && (!reading || os_path_exists(undo_file_name))) {
       break;
     }
     XFREE_CLEAR(undo_file_name);
@@ -773,7 +773,7 @@ static bool serialize_header(bufinfo_T *bi, char_u *hash)
   undo_write_bytes(bi, (uintmax_t)buf->b_ml.ml_line_count, 4);
   size_t len = buf->b_u_line_ptr ? STRLEN(buf->b_u_line_ptr) : 0;
   undo_write_bytes(bi, len, 4);
-  if (len > 0 && !undo_write(bi, buf->b_u_line_ptr, len)) {
+  if (len > 0 && !undo_write(bi, (char_u *)buf->b_u_line_ptr, len)) {
     return false;
   }
   undo_write_bytes(bi, (uintmax_t)buf->b_u_line_lnum, 4);
@@ -1038,7 +1038,7 @@ static bool serialize_uep(bufinfo_T *bi, u_entry_T *uep)
     if (!undo_write_bytes(bi, len, 4)) {
       return false;
     }
-    if (len > 0 && !undo_write(bi, uep->ue_array[i], len)) {
+    if (len > 0 && !undo_write(bi, (char_u *)uep->ue_array[i], len)) {
       return false;
     }
   }
@@ -1064,7 +1064,7 @@ static u_entry_T *unserialize_uep(bufinfo_T *bi, bool *error, const char *file_n
       memset(array, 0, sizeof(char_u *) * (size_t)uep->ue_size);
     }
   }
-  uep->ue_array = array;
+  uep->ue_array = (char **)array;
 
   for (size_t i = 0; i < (size_t)uep->ue_size; i++) {
     int line_len = undo_read_4c(bi);
@@ -1177,7 +1177,7 @@ void u_write_undo(const char *const name, const bool forceit, buf_T *const buf, 
 
   // If the undo file already exists, verify that it actually is an undo
   // file, and delete it.
-  if (os_path_exists((char_u *)file_name)) {
+  if (os_path_exists(file_name)) {
     if (name == NULL || !forceit) {
       // Check we can read it and it's an undo file.
       fd = os_open(file_name, O_RDONLY, 0);
@@ -1593,7 +1593,7 @@ void u_read_undo(char *name, const char_u *hash, const char_u *orig_name FUNC_AT
   curbuf->b_u_oldhead = old_idx < 0 ? NULL : uhp_table[old_idx];
   curbuf->b_u_newhead = new_idx < 0 ? NULL : uhp_table[new_idx];
   curbuf->b_u_curhead = cur_idx < 0 ? NULL : uhp_table[cur_idx];
-  curbuf->b_u_line_ptr = line_ptr;
+  curbuf->b_u_line_ptr = (char *)line_ptr;
   curbuf->b_u_line_lnum = line_lnum;
   curbuf->b_u_line_colnr = line_colnr;
   curbuf->b_u_numhead = num_head;
@@ -2283,7 +2283,7 @@ static void u_undoredo(int undo, bool do_buf_event)
         // line.
         long i;
         for (i = 0; i < newsize && i < oldsize; i++) {
-          if (STRCMP(uep->ue_array[i], ml_get(top + 1 + (linenr_T)i)) != 0) {
+          if (strcmp(uep->ue_array[i], ml_get(top + 1 + (linenr_T)i)) != 0) {
             break;
           }
         }
@@ -2305,7 +2305,7 @@ static void u_undoredo(int undo, bool do_buf_event)
       // delete backwards, it goes faster in most cases
       long i;
       linenr_T lnum;
-      for (lnum = bot - 1, i = oldsize; --i >= 0; --lnum) {
+      for (lnum = bot - 1, i = oldsize; --i >= 0; lnum--) {
         // what can we do when we run out of memory?
         newarray[i] = u_save_line(lnum);
         // remember we deleted the last line in the buffer, and a
@@ -2327,9 +2327,9 @@ static void u_undoredo(int undo, bool do_buf_event)
         // If the file is empty, there is an empty line 1 that we
         // should get rid of, by replacing it with the new line
         if (empty_buffer && lnum == 0) {
-          ml_replace((linenr_T)1, (char *)uep->ue_array[i], true);
+          ml_replace((linenr_T)1, uep->ue_array[i], true);
         } else {
-          ml_append(lnum, (char *)uep->ue_array[i], (colnr_T)0, false);
+          ml_append(lnum, uep->ue_array[i], (colnr_T)0, false);
         }
         xfree(uep->ue_array[i]);
       }
@@ -2363,7 +2363,7 @@ static void u_undoredo(int undo, bool do_buf_event)
     u_newcount += newsize;
     u_oldcount += oldsize;
     uep->ue_size = oldsize;
-    uep->ue_array = newarray;
+    uep->ue_array = (char **)newarray;
     uep->ue_bot = top + newsize + 1;
 
     // insert this entry in front of the new entry list
@@ -2643,7 +2643,7 @@ void ex_undolist(exarg_T *eap)
         }
         vim_snprintf_add((char *)IObuff, IOSIZE, "  %3ld", uhp->uh_save_nr);
       }
-      GA_APPEND(char_u *, &ga, vim_strsave(IObuff));
+      GA_APPEND(char *, &ga, xstrdup((char *)IObuff));
     }
 
     uhp->uh_walk = mark;
@@ -2744,7 +2744,7 @@ void u_find_first_changed(void)
   linenr_T lnum;
   for (lnum = 1; lnum < curbuf->b_ml.ml_line_count
        && lnum <= uep->ue_size; lnum++) {
-    if (STRCMP(ml_get_buf(curbuf, lnum, false), uep->ue_array[lnum - 1]) != 0) {
+    if (strcmp(ml_get_buf(curbuf, lnum, false), uep->ue_array[lnum - 1]) != 0) {
       clearpos(&(uhp->uh_cursor));
       uhp->uh_cursor.lnum = lnum;
       return;
@@ -2960,7 +2960,7 @@ void u_saveline(linenr_T lnum)
   } else {
     curbuf->b_u_line_colnr = 0;
   }
-  curbuf->b_u_line_ptr = u_save_line(lnum);
+  curbuf->b_u_line_ptr = (char *)u_save_line(lnum);
 }
 
 /// clear the line saved for the "U" command
@@ -2992,12 +2992,12 @@ void u_undoline(void)
   }
 
   char_u *oldp = u_save_line(curbuf->b_u_line_lnum);
-  ml_replace(curbuf->b_u_line_lnum, (char *)curbuf->b_u_line_ptr, true);
+  ml_replace(curbuf->b_u_line_lnum, curbuf->b_u_line_ptr, true);
   changed_bytes(curbuf->b_u_line_lnum, 0);
   extmark_splice_cols(curbuf, (int)curbuf->b_u_line_lnum - 1, 0, (colnr_T)STRLEN(oldp),
                       (colnr_T)STRLEN(curbuf->b_u_line_ptr), kExtmarkUndo);
   xfree(curbuf->b_u_line_ptr);
-  curbuf->b_u_line_ptr = oldp;
+  curbuf->b_u_line_ptr = (char *)oldp;
 
   colnr_T t = curbuf->b_u_line_colnr;
   if (curwin->w_cursor.lnum == curbuf->b_u_line_lnum) {
@@ -3027,16 +3027,16 @@ void u_blockfree(buf_T *buf)
 /// @param lnum the line to copy
 static char_u *u_save_line(linenr_T lnum)
 {
-  return u_save_line_buf(curbuf, lnum);
+  return (char_u *)u_save_line_buf(curbuf, lnum);
 }
 
 /// Allocate memory and copy line into it
 ///
 /// @param lnum line to copy
 /// @param buf buffer to copy from
-static char_u *u_save_line_buf(buf_T *buf, linenr_T lnum)
+static char *u_save_line_buf(buf_T *buf, linenr_T lnum)
 {
-  return vim_strsave(ml_get_buf(buf, lnum, false));
+  return xstrdup(ml_get_buf(buf, lnum, false));
 }
 
 /// Check if the 'modified' flag is set, or 'ff' has changed (only need to
