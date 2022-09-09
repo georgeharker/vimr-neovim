@@ -96,9 +96,6 @@ EXTERN struct nvim_stats_s {
 EXTERN int Rows INIT(= DFLT_ROWS);     // nr of rows in the screen
 EXTERN int Columns INIT(= DFLT_COLS);  // nr of columns in the screen
 
-EXTERN NS ns_hl_active INIT(= 0);         // current ns that defines highlights
-EXTERN bool ns_hl_changed INIT(= false);  // highlight need update
-
 // We use 64-bit file functions here, if available.  E.g. ftello() returns
 // off_t instead of long, which helps if long is 32 bit and off_t is 64 bit.
 // We assume that when fseeko() is available then ftello() is too.
@@ -707,6 +704,10 @@ EXTERN int recoverymode INIT(= false);      // Set to true for "-r" option
 
 // typeahead buffer
 EXTERN typebuf_T typebuf INIT(= { NULL, NULL, 0, 0, 0, 0, 0, 0, 0 });
+
+/// Flag used to indicate that vgetorpeek() returned a char like Esc when the
+/// :normal argument was exhausted.
+EXTERN bool typebuf_was_empty INIT(= false);
 
 EXTERN int ex_normal_busy INIT(= 0);     // recursiveness of ex_normal()
 EXTERN int ex_normal_lock INIT(= 0);     // forbid use of ex_normal()

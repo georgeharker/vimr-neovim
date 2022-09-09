@@ -16,6 +16,7 @@
 #include "nvim/charset.h"
 #include "nvim/cursor.h"
 #include "nvim/digraph.h"
+#include "nvim/drawscreen.h"
 #include "nvim/edit.h"
 #include "nvim/eval.h"
 #include "nvim/event/loop.h"
@@ -25,6 +26,7 @@
 #include "nvim/fileio.h"
 #include "nvim/fold.h"
 #include "nvim/getchar.h"
+#include "nvim/grid.h"
 #include "nvim/highlight_group.h"
 #include "nvim/indent.h"
 #include "nvim/indent_c.h"
@@ -46,9 +48,8 @@
 #include "nvim/os/time.h"
 #include "nvim/path.h"
 #include "nvim/plines.h"
-#include "nvim/popupmnu.h"
+#include "nvim/popupmenu.h"
 #include "nvim/quickfix.h"
-#include "nvim/screen.h"
 #include "nvim/search.h"
 #include "nvim/spell.h"
 #include "nvim/state.h"
@@ -623,16 +624,17 @@ static int insert_execute(VimState *state, int key)
   }
 
   if (cindent_on() && ctrl_x_mode_none()) {
+    s->line_is_white = inindent(0);
     // A key name preceded by a bang means this key is not to be
     // inserted.  Skip ahead to the re-indenting below.
-    // A key name preceded by a star means that indenting has to be
-    // done before inserting the key.
-    s->line_is_white = inindent(0);
-    if (in_cinkeys(s->c, '!', s->line_is_white)) {
-      insert_do_cindent(s);
+    if (in_cinkeys(s->c, '!', s->line_is_white)
+        && stop_arrow() == OK) {
+      do_c_expr_indent();
       return 1;  // continue
     }
 
+    // A key name preceded by a star means that indenting has to be
+    // done before inserting the key.
     if (can_cindent && in_cinkeys(s->c, '*', s->line_is_white)
         && stop_arrow() == OK) {
       do_c_expr_indent();
@@ -1350,7 +1352,7 @@ void ins_redraw(bool ready)
   } else if (clear_cmdline || redraw_cmdline) {
     showmode();  // clear cmdline and show mode
   }
-  showruler(false);
+  show_cursor_info(false);
   setcursor();
   emsg_on_display = false;      // may remove error message now
 }
@@ -1749,7 +1751,7 @@ void change_indent(int type, int amount, int round, int replaced, int call_chang
         replace_push(replaced);
         replaced = NUL;
       }
-      ++start_col;
+      start_col++;
     }
   }
 
@@ -1915,7 +1917,7 @@ int get_literal(bool no_simplify)
         cc = cc * 10 + nc - '0';
       }
 
-      ++i;
+      i++;
     }
 
     if (cc > 255
@@ -1950,7 +1952,7 @@ int get_literal(bool no_simplify)
     cc = '\n';
   }
 
-  --no_mapping;
+  no_mapping--;
   if (nc) {
     vungetc(nc);
     // A character typed with i_CTRL-V_digit cannot have modifiers.
@@ -2621,7 +2623,7 @@ static void internal_format(int textwidth, int second_indent, int flags, int for
 
   if (!format_only && haveto_redraw) {
     update_topline(curwin);
-    redraw_curbuf_later(VALID);
+    redraw_curbuf_later(UPD_VALID);
   }
 }
 
@@ -3255,7 +3257,7 @@ int cursor_down(long n, int upd_topline)
         if (hasFolding(lnum, NULL, &last)) {
           lnum = last + 1;
         } else {
-          ++lnum;
+          lnum++;
         }
         if (lnum >= curbuf->b_ml.ml_line_count) {
           break;
@@ -3435,7 +3437,7 @@ void replace_push(int c)
     memmove(p + 1, p, (size_t)replace_offset);
   }
   *p = (char_u)c;
-  ++replace_stack_nr;
+  replace_stack_nr++;
 }
 
 /*
@@ -3470,7 +3472,7 @@ static void replace_join(int off)
 {
   for (ssize_t i = replace_stack_nr; --i >= 0;) {
     if (replace_stack[i] == NUL && off-- <= 0) {
-      --replace_stack_nr;
+      replace_stack_nr--;
       memmove(replace_stack + i, replace_stack + i + 1,
               (size_t)(replace_stack_nr - i));
       return;
@@ -3658,7 +3660,7 @@ void fix_indent(void)
 /// Check that "cinkeys" contains the key "keytyped",
 /// when == '*': Only if key is preceded with '*' (indent before insert)
 /// when == '!': Only if key is preceded with '!' (don't insert)
-/// when == ' ': Only if key is not preceded with '*' (indent afterwards)
+/// when == ' ': Only if key is not preceded with '*' or '!' (indent afterwards)
 ///
 /// "keytyped" can have a few special values:
 /// KEY_OPEN_FORW :
@@ -3698,7 +3700,7 @@ bool in_cinkeys(int keytyped, int when, bool line_is_empty)
     case '!':
       try_match = (*look == '!'); break;
     default:
-      try_match = (*look != '*'); break;
+      try_match = (*look != '*') && (*look != '!'); break;
     }
     if (*look == '*' || *look == '!') {
       look++;
@@ -3796,12 +3798,9 @@ bool in_cinkeys(int keytyped, int when, bool line_is_empty)
       while (*look == '>') {
         look++;
       }
-    }
-    /*
-     * Is it a word: "=word"?
-     */
-    else if (*look == '=' && look[1] != ',' && look[1] != NUL) {
-      ++look;
+      // Is it a word: "=word"?
+    } else if (*look == '=' && look[1] != ',' && look[1] != NUL) {
+      look++;
       if (*look == '~') {
         icase = true;
         look++;
@@ -5036,7 +5035,7 @@ static void ins_up(bool startcol)
     }
     if (old_topline != curwin->w_topline
         || old_topfill != curwin->w_topfill) {
-      redraw_later(curwin, VALID);
+      redraw_later(curwin, UPD_VALID);
     }
     start_arrow(&tpos);
     can_cindent = true;
@@ -5084,7 +5083,7 @@ static void ins_down(bool startcol)
     }
     if (old_topline != curwin->w_topline
         || old_topfill != curwin->w_topfill) {
-      redraw_later(curwin, VALID);
+      redraw_later(curwin, UPD_VALID);
     }
     start_arrow(&tpos);
     can_cindent = true;
@@ -5230,8 +5229,8 @@ static bool ins_tab(void)
     // Find first white before the cursor
     fpos = curwin->w_cursor;
     while (fpos.col > 0 && ascii_iswhite(ptr[-1])) {
-      --fpos.col;
-      --ptr;
+      fpos.col--;
+      ptr--;
     }
 
     // In Replace mode, don't change characters before the insert point.
@@ -5263,8 +5262,8 @@ static bool ins_tab(void)
           }
         }
       }
-      ++fpos.col;
-      ++ptr;
+      fpos.col++;
+      ptr++;
       vcol += i;
     }
 
@@ -5275,8 +5274,8 @@ static bool ins_tab(void)
       // Skip over the spaces we need.
       while (vcol < want_vcol && *ptr == ' ') {
         vcol += lbr_chartabsize(line, ptr, vcol);
-        ++ptr;
-        ++repl_off;
+        ptr++;
+        repl_off++;
       }
       if (vcol > want_vcol) {
         // Must have a char with 'showbreak' just before it.
@@ -5499,7 +5498,7 @@ static int ins_ctrl_ey(int tc)
     } else {
       scrollup_clamp();
     }
-    redraw_later(curwin, VALID);
+    redraw_later(curwin, UPD_VALID);
   } else {
     c = ins_copychar(curwin->w_cursor.lnum + (c == Ctrl_Y ? -1 : 1));
     if (c != NUL) {
@@ -5666,7 +5665,7 @@ static char_u *do_insert_char_pre(int c)
   return res;
 }
 
-bool can_cindent_get(void)
+bool get_can_cindent(void)
 {
   return can_cindent;
 }

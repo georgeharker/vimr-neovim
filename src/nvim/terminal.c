@@ -48,6 +48,7 @@
 #include "nvim/buffer.h"
 #include "nvim/change.h"
 #include "nvim/cursor.h"
+#include "nvim/drawscreen.h"
 #include "nvim/eval.h"
 #include "nvim/event/loop.h"
 #include "nvim/event/time.h"
@@ -68,8 +69,8 @@
 #include "nvim/mouse.h"
 #include "nvim/move.h"
 #include "nvim/option.h"
+#include "nvim/optionstr.h"
 #include "nvim/os/input.h"
-#include "nvim/screen.h"
 #include "nvim/state.h"
 #include "nvim/terminal.h"
 #include "nvim/ui.h"
@@ -1378,7 +1379,7 @@ static bool send_mouse_event(Terminal *term, int c)
     curwin->w_redr_status = true;
     curwin = save_curwin;
     curbuf = curwin->w_buffer;
-    redraw_later(mouse_win, NOT_VALID);
+    redraw_later(mouse_win, UPD_NOT_VALID);
     invalidate_terminal(term, -1, -1);
     // Only need to exit focus if the scrolled window is the terminal window
     return mouse_win == curwin;

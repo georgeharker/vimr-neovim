@@ -2724,6 +2724,30 @@ func Test_autocmd_FileReadCmd()
   delfunc ReadFileCmd
 endfunc
 
+" Test for passing invalid arguments to autocmd
+func Test_autocmd_invalid_args()
+  " Additional character after * for event
+  call assert_fails('autocmd *a Xfile set ff=unix', 'E215:')
+  augroup Test
+  augroup END
+  " Invalid autocmd event
+  call assert_fails('autocmd Bufabc Xfile set ft=vim', 'E216:')
+  " Invalid autocmd event in a autocmd group
+  call assert_fails('autocmd Test Bufabc Xfile set ft=vim', 'E216:')
+  augroup! Test
+  " Execute all autocmds
+  call assert_fails('doautocmd * BufEnter', 'E217:')
+  call assert_fails('augroup! x1a2b3', 'E367:')
+  call assert_fails('autocmd BufNew <buffer=999> pwd', 'E680:')
+endfunc
+
+" Test for deep nesting of autocmds
+func Test_autocmd_deep_nesting()
+  autocmd BufEnter Xfile doautocmd BufEnter Xfile
+  call assert_fails('doautocmd BufEnter Xfile', 'E218:')
+  autocmd! BufEnter Xfile
+endfunc
+
 " Tests for SigUSR1 autocmd event, which is only available on posix systems.
 func Test_autocmd_sigusr1()
   CheckUnix
@@ -2735,6 +2759,59 @@ func Test_autocmd_sigusr1()
 
   au! Signal
   unlet g:sigusr1_passed
+endfunc
+
+" Test for BufReadPre autocmd deleting the file
+func Test_BufReadPre_delfile()
+  augroup TestAuCmd
+    au!
+    autocmd BufReadPre Xfile call delete('Xfile')
+  augroup END
+  call writefile([], 'Xfile')
+  call assert_fails('new Xfile', 'E200:')
+  call assert_equal('Xfile', @%)
+  call assert_equal(1, &readonly)
+  call delete('Xfile')
+  augroup TestAuCmd
+    au!
+  augroup END
+  close!
+endfunc
+
+" Test for BufReadPre autocmd changing the current buffer
+func Test_BufReadPre_changebuf()
+  augroup TestAuCmd
+    au!
+    autocmd BufReadPre Xfile edit Xsomeotherfile
+  augroup END
+  call writefile([], 'Xfile')
+  call assert_fails('new Xfile', 'E201:')
+  call assert_equal('Xsomeotherfile', @%)
+  call assert_equal(1, &readonly)
+  call delete('Xfile')
+  augroup TestAuCmd
+    au!
+  augroup END
+  close!
+endfunc
+
+" Test for BufWipeouti autocmd changing the current buffer when reading a file
+" in an empty buffer with 'f' flag in 'cpo'
+func Test_BufDelete_changebuf()
+  new
+  augroup TestAuCmd
+    au!
+    autocmd BufWipeout * let bufnr = bufadd('somefile') | exe "b " .. bufnr
+  augroup END
+  let save_cpo = &cpo
+  set cpo+=f
+  call assert_fails('r Xfile', 'E484:')
+  call assert_equal('somefile', @%)
+  let &cpo = save_cpo
+  augroup TestAuCmd
+    au!
+  augroup END
+  close!
 endfunc
 
 " Test for the temporary internal window used to execute autocmds

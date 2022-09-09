@@ -448,13 +448,13 @@ int get_func_tv(const char_u *name, int len, typval_T *rettv, char **arg, funcex
       ret = FAIL;
       break;
     }
-    ++argcount;
+    argcount++;
     if (*argp != ',') {
       break;
     }
   }
   if (*argp == ')') {
-    ++argp;
+    argp++;
   } else {
     ret = FAIL;
   }
@@ -845,7 +845,7 @@ void call_user_func(ufunc_T *fp, int argcount, typval_T *argvars, typval_T *rett
     rettv->vval.v_number = -1;
     return;
   }
-  ++depth;
+  depth++;
   // Save search patterns and redo buffer.
   save_search_patterns();
   if (!ins_compl_active()) {
@@ -1017,7 +1017,7 @@ void call_user_func(ufunc_T *fp, int argcount, typval_T *argvars, typval_T *rett
 
   estack_push_ufunc(fp, 1);
   if (p_verbose >= 12) {
-    ++no_wait_return;
+    no_wait_return++;
     verbose_enter_scroll();
 
     smsg(_("calling %s"), SOURCING_NAME);
@@ -1051,7 +1051,7 @@ void call_user_func(ufunc_T *fp, int argcount, typval_T *argvars, typval_T *rett
     msg_puts("\n");  // don't overwrite this either
 
     verbose_leave_scroll();
-    --no_wait_return;
+    no_wait_return--;
   }
 
   const bool do_profiling_yes = do_profiling == PROF_YES;
@@ -1101,7 +1101,7 @@ void call_user_func(ufunc_T *fp, int argcount, typval_T *argvars, typval_T *rett
                DOCMD_NOWAIT|DOCMD_VERBOSE|DOCMD_REPEAT);
   }
 
-  --RedrawingDisabled;
+  RedrawingDisabled--;
 
   // when the function was aborted because of an error, return -1
   if ((did_emsg
@@ -1131,7 +1131,7 @@ void call_user_func(ufunc_T *fp, int argcount, typval_T *argvars, typval_T *rett
 
   // when being verbose, mention the return value
   if (p_verbose >= 12) {
-    ++no_wait_return;
+    no_wait_return++;
     verbose_enter_scroll();
 
     if (aborting()) {
@@ -1161,7 +1161,7 @@ void call_user_func(ufunc_T *fp, int argcount, typval_T *argvars, typval_T *rett
     msg_puts("\n");  // don't overwrite this either
 
     verbose_leave_scroll();
-    --no_wait_return;
+    no_wait_return--;
   }
 
   estack_pop();
@@ -1885,6 +1885,8 @@ theend:
   return name;
 }
 
+#define MAX_FUNC_NESTING 50
+
 /// ":function"
 void ex_function(exarg_T *eap)
 {
@@ -1929,7 +1931,7 @@ void ex_function(exarg_T *eap)
       todo = (int)func_hashtab.ht_used;
       for (hi = func_hashtab.ht_array; todo > 0 && !got_int; ++hi) {
         if (!HASHITEM_EMPTY(hi)) {
-          --todo;
+          todo--;
           fp = HI2UF(hi);
           if (message_filtered(fp->uf_name)) {
             continue;
@@ -1962,7 +1964,7 @@ void ex_function(exarg_T *eap)
         todo = (int)func_hashtab.ht_used;
         for (hi = func_hashtab.ht_array; todo > 0 && !got_int; ++hi) {
           if (!HASHITEM_EMPTY(hi)) {
-            --todo;
+            todo--;
             fp = HI2UF(hi);
             if (!isdigit(*fp->uf_name)
                 && vim_regexec(&regmatch, (char *)fp->uf_name, 0)) {
@@ -1974,7 +1976,7 @@ void ex_function(exarg_T *eap)
       }
     }
     if (*p == '/') {
-      ++p;
+      p++;
     }
     eap->nextcmd = (char *)check_nextcmd(p);
     return;
@@ -2096,9 +2098,8 @@ void ex_function(exarg_T *eap)
     }
     if (arg != NULL && (fudi.fd_di == NULL || !tv_is_func(fudi.fd_di->di_tv))) {
       int j = (*arg == K_SPECIAL) ? 3 : 0;
-      while (arg[j] != NUL && (j == 0 ? eval_isnamec1(arg[j])
-                                      : eval_isnamec(arg[j]))) {
-        ++j;
+      while (arg[j] != NUL && (j == 0 ? eval_isnamec1(arg[j]) : eval_isnamec(arg[j]))) {
+        j++;
       }
       if (arg[j] != NUL) {
         emsg_funcname((char *)e_invarg2, arg);
@@ -2305,8 +2306,12 @@ void ex_function(exarg_T *eap)
         p += eval_fname_script((const char *)p);
         xfree(trans_function_name((char **)&p, true, 0, NULL, NULL));
         if (*skipwhite((char *)p) == '(') {
-          nesting++;
-          indent += 2;
+          if (nesting == MAX_FUNC_NESTING - 1) {
+            emsg(_("E1058: function nesting too deep"));
+          } else {
+            nesting++;
+            indent += 2;
+          }
         }
       }
 
@@ -2645,10 +2650,10 @@ char *get_user_func_name(expand_T *xp, int idx)
   assert(hi);
   if (done < func_hashtab.ht_used) {
     if (done++ > 0) {
-      ++hi;
+      hi++;
     }
     while (HASHITEM_EMPTY(hi)) {
-      ++hi;
+      hi++;
     }
     fp = HI2UF(hi);
 
@@ -2856,7 +2861,7 @@ void ex_return(exarg_T *eap)
   }
 
   if (eap->skip) {
-    ++emsg_skip;
+    emsg_skip++;
   }
 
   eap->nextcmd = NULL;
@@ -2888,7 +2893,7 @@ void ex_return(exarg_T *eap)
   }
 
   if (eap->skip) {
-    --emsg_skip;
+    emsg_skip--;
   }
 }
 

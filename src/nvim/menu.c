@@ -23,7 +23,7 @@
 #include "nvim/memory.h"
 #include "nvim/menu.h"
 #include "nvim/message.h"
-#include "nvim/popupmnu.h"
+#include "nvim/popupmenu.h"
 #include "nvim/screen.h"
 #include "nvim/state.h"
 #include "nvim/strings.h"
@@ -952,7 +952,7 @@ char *set_context_in_menu_cmd(expand_T *xp, const char *cmd, char *arg, bool for
   }
 
   while (*p != NUL && ascii_iswhite(*p)) {
-    ++p;
+    p++;
   }
 
   arg = after_dot = p;
@@ -1807,9 +1807,9 @@ static char *menu_skip_part(char *p)
 {
   while (*p != NUL && *p != '.' && !ascii_iswhite(*p)) {
     if ((*p == '\\' || *p == Ctrl_V) && p[1] != NUL) {
-      ++p;
+      p++;
     }
-    ++p;
+    p++;
   }
   return p;
 }
@@ -1945,7 +1945,7 @@ static void menuitem_getinfo(const char *menu_name, const vimmenu_T *menu, int m
 
 /// "menu_info()" function
 /// Return information about a menu (including all the child menus)
-void f_menu_info(typval_T *argvars, typval_T *rettv, FunPtr fptr)
+void f_menu_info(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   tv_dict_alloc_ret(rettv);
   dict_T *const retdict = rettv->vval.v_dict;

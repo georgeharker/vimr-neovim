@@ -9,6 +9,7 @@
 #include "nvim/ascii.h"
 #include "nvim/autocmd.h"
 #include "nvim/charset.h"
+#include "nvim/cmdexpand.h"
 #include "nvim/debugger.h"
 #include "nvim/eval.h"
 #include "nvim/eval/userfunc.h"
@@ -16,7 +17,6 @@
 #include "nvim/ex_cmds2.h"
 #include "nvim/ex_docmd.h"
 #include "nvim/ex_eval.h"
-#include "nvim/ex_getln.h"
 #include "nvim/lua/executor.h"
 #include "nvim/memline.h"
 #include "nvim/option.h"
@@ -100,15 +100,36 @@ void estack_pop(void)
 }
 
 /// Get the current value for <sfile> in allocated memory.
-/// @param which  ESTACK_SFILE for <sfile> and ESTACK_STACK for <stack>.
+/// @param which  ESTACK_SFILE for <sfile>, ESTACK_STACK for <stack> or
+///               ESTACK_SCRIPT for <script>.
 char *estack_sfile(estack_arg_T which)
 {
-  estack_T *entry = ((estack_T *)exestack.ga_data) + exestack.ga_len - 1;
+  const estack_T *entry = ((estack_T *)exestack.ga_data) + exestack.ga_len - 1;
   if (which == ESTACK_SFILE && entry->es_type != ETYPE_UFUNC) {
     if (entry->es_name == NULL) {
       return NULL;
     }
     return xstrdup(entry->es_name);
+  }
+
+  // If evaluated in a function or autocommand, return the path of the script
+  // where it is defined, at script level the current script path is returned
+  // instead.
+  if (which == ESTACK_SCRIPT) {
+    // Walk the stack backwards, starting from the current frame.
+    for (int idx = exestack.ga_len - 1; idx >= 0; idx--, entry--) {
+      if (entry->es_type == ETYPE_UFUNC || entry->es_type == ETYPE_AUCMD) {
+        const sctx_T *const def_ctx = (entry->es_type == ETYPE_UFUNC
+                                       ? &entry->es_info.ufunc->uf_script_ctx
+                                       : &entry->es_info.aucmd->script_ctx);
+        return def_ctx->sc_sid > 0
+                ? xstrdup((char *)(SCRIPT_ITEM(def_ctx->sc_sid).sn_name))
+                : NULL;
+      } else if (entry->es_type == ETYPE_SCRIPT) {
+        return xstrdup(entry->es_name);
+      }
+    }
+    return NULL;
   }
 
   // Give information about each stack entry up to the root.
@@ -923,7 +944,7 @@ static int add_pack_dir_to_rtp(char_u *fname, bool is_pack)
     xstrlcat(new_rtp, afterdir, new_rtp_capacity);
   }
 
-  set_option_value("rtp", 0L, new_rtp, 0);
+  set_option_value_give_err("rtp", 0L, new_rtp, 0);
   xfree(new_rtp);
   retval = OK;
 
@@ -1941,9 +1962,6 @@ int do_source(char *fname, int check_other, int is_vimrc)
 
   cookie.level = ex_nesting_level;
 
-  // Keep the sourcing name/lnum, for recursive calls.
-  estack_push(ETYPE_SCRIPT, fname_exp, 0);
-
   // start measuring script load time if --startuptime was passed and
   // time_fd was successfully opened afterwards.
   proftime_T rel_time;
@@ -1966,6 +1984,9 @@ int do_source(char *fname, int check_other, int is_vimrc)
   const sctx_T save_current_sctx = current_sctx;
   si = get_current_script_id(&fname_exp, &current_sctx);
 
+  // Keep the sourcing name/lnum, for recursive calls.
+  estack_push(ETYPE_SCRIPT, (char *)si->sn_name, 0);
+
   if (l_do_profiling == PROF_YES) {
     bool forceit = false;
 
@@ -1983,30 +2004,27 @@ int do_source(char *fname, int check_other, int is_vimrc)
 
   cookie.conv.vc_type = CONV_NONE;              // no conversion
 
-  // Read the first line so we can check for a UTF-8 BOM.
-  firstline = (uint8_t *)getsourceline(0, (void *)&cookie, 0, true);
-  if (firstline != NULL && STRLEN(firstline) >= 3 && firstline[0] == 0xef
-      && firstline[1] == 0xbb && firstline[2] == 0xbf) {
-    // Found BOM; setup conversion, skip over BOM and recode the line.
-    convert_setup(&cookie.conv, (char_u *)"utf-8", p_enc);
-    p = (char *)string_convert(&cookie.conv, (char_u *)firstline + 3, NULL);
-    if (p == NULL) {
-      p = xstrdup((char *)firstline + 3);
-    }
-    xfree(firstline);
-    firstline = (uint8_t *)p;
-  }
-
   if (path_with_extension((const char *)fname_exp, "lua")) {
     const sctx_T current_sctx_backup = current_sctx;
     current_sctx.sc_sid = SID_LUA;
     current_sctx.sc_lnum = 0;
-    estack_push(ETYPE_SCRIPT, NULL, 0);
     // Source the file as lua
     nlua_exec_file((const char *)fname_exp);
     current_sctx = current_sctx_backup;
-    estack_pop();
   } else {
+    // Read the first line so we can check for a UTF-8 BOM.
+    firstline = (uint8_t *)getsourceline(0, (void *)&cookie, 0, true);
+    if (firstline != NULL && STRLEN(firstline) >= 3 && firstline[0] == 0xef
+        && firstline[1] == 0xbb && firstline[2] == 0xbf) {
+      // Found BOM; setup conversion, skip over BOM and recode the line.
+      convert_setup(&cookie.conv, (char_u *)"utf-8", p_enc);
+      p = (char *)string_convert(&cookie.conv, (char_u *)firstline + 3, NULL);
+      if (p == NULL) {
+        p = xstrdup((char *)firstline + 3);
+      }
+      xfree(firstline);
+      firstline = (uint8_t *)p;
+    }
     // Call do_cmdline, which will call getsourceline() to get the lines.
     do_cmdline((char *)firstline, getsourceline, (void *)&cookie,
                DOCMD_VERBOSE|DOCMD_NOWAIT|DOCMD_REPEAT);

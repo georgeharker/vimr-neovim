@@ -8,13 +8,14 @@
 #include "nvim/charset.h"
 #include "nvim/cursor.h"
 #include "nvim/diff.h"
+#include "nvim/drawscreen.h"
 #include "nvim/fold.h"
+#include "nvim/grid.h"
 #include "nvim/memline.h"
 #include "nvim/mouse.h"
 #include "nvim/move.h"
 #include "nvim/os_unix.h"
 #include "nvim/plines.h"
-#include "nvim/screen.h"
 #include "nvim/state.h"
 #include "nvim/strings.h"
 #include "nvim/syntax.h"
@@ -178,7 +179,7 @@ retnomove:
     }
     if (flags & MOUSE_MAY_STOP_VIS) {
       end_visual_mode();
-      redraw_curbuf_later(INVERTED);            // delete the inversion
+      redraw_curbuf_later(UPD_INVERTED);  // delete the inversion
     }
     return IN_BUFFER;
   }
@@ -278,7 +279,7 @@ retnomove:
                     : col >= fdc + (cmdwin_type == 0 && wp == curwin ? 0 : 1))
                 && (flags & MOUSE_MAY_STOP_VIS)))) {
       end_visual_mode();
-      redraw_curbuf_later(INVERTED);            // delete the inversion
+      redraw_curbuf_later(UPD_INVERTED);  // delete the inversion
     }
     if (cmdwin_type != 0 && wp != curwin) {
       // A click outside the command-line window: Use modeless
@@ -344,7 +345,7 @@ retnomove:
     // before moving the cursor for a left click, stop Visual mode
     if (flags & MOUSE_MAY_STOP_VIS) {
       end_visual_mode();
-      redraw_curbuf_later(INVERTED);            // delete the inversion
+      redraw_curbuf_later(UPD_INVERTED);  // delete the inversion
     }
 
     if (grid == 0) {
@@ -380,13 +381,13 @@ retnomove:
       check_topfill(curwin, false);
       curwin->w_valid &=
         ~(VALID_WROW|VALID_CROW|VALID_BOTLINE|VALID_BOTLINE_AP);
-      redraw_later(curwin, VALID);
+      redraw_later(curwin, UPD_VALID);
       row = 0;
     } else if (row >= curwin->w_height_inner) {
       count = 0;
       for (first = true; curwin->w_topline < curbuf->b_ml.ml_line_count;) {
         if (curwin->w_topfill > 0) {
-          ++count;
+          count++;
         } else {
           count += plines_win(curwin, curwin->w_topline, true);
         }
@@ -409,7 +410,7 @@ retnomove:
         }
       }
       check_topfill(curwin, false);
-      redraw_later(curwin, VALID);
+      redraw_later(curwin, UPD_VALID);
       curwin->w_valid &=
         ~(VALID_WROW|VALID_CROW|VALID_BOTLINE|VALID_BOTLINE_AP);
       row = curwin->w_height_inner - 1;
@@ -514,7 +515,7 @@ bool mouse_comp_pos(win_T *win, int *rowp, int *colp, linenr_T *lnump)
       break;                    // past end of file
     }
     row -= count;
-    ++lnum;
+    lnum++;
   }
 
   if (!retval) {

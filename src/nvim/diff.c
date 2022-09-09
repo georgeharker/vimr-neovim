@@ -20,6 +20,7 @@
 #include "nvim/charset.h"
 #include "nvim/cursor.h"
 #include "nvim/diff.h"
+#include "nvim/drawscreen.h"
 #include "nvim/eval.h"
 #include "nvim/ex_cmds.h"
 #include "nvim/ex_docmd.h"
@@ -33,10 +34,10 @@
 #include "nvim/move.h"
 #include "nvim/normal.h"
 #include "nvim/option.h"
+#include "nvim/optionstr.h"
 #include "nvim/os/os.h"
 #include "nvim/os/shell.h"
 #include "nvim/path.h"
-#include "nvim/screen.h"
 #include "nvim/strings.h"
 #include "nvim/ui.h"
 #include "nvim/undo.h"
@@ -119,7 +120,7 @@ void diff_buf_delete(buf_T *buf)
         // don't redraw right away, more might change or buffer state
         // is invalid right now
         need_diff_redraw = true;
-        redraw_later(curwin, VALID);
+        redraw_later(curwin, UPD_VALID);
       }
     }
   }
@@ -658,7 +659,7 @@ void diff_redraw(bool dofold)
       continue;
     }
 
-    redraw_later(wp, SOME_VALID);
+    redraw_later(wp, UPD_SOME_VALID);
     if (wp != curwin) {
       wp_other = wp;
     }
@@ -1373,7 +1374,7 @@ static void set_diff_option(win_T *wp, int value)
   curwin = wp;
   curbuf = curwin->w_buffer;
   curbuf->b_ro_locked++;
-  set_option_value("diff", (long)value, NULL, OPT_LOCAL);
+  set_option_value_give_err("diff", (long)value, NULL, OPT_LOCAL);
   curbuf->b_ro_locked--;
   curwin = old_curwin;
   curbuf = curwin->w_buffer;
@@ -1407,8 +1408,6 @@ void diff_win_options(win_T *wp, int addbuf)
     }
     wp->w_p_wrap = false;
   }
-  curwin = wp;  // -V519
-  curbuf = curwin->w_buffer;
 
   if (!wp->w_p_diff) {
     if (wp->w_p_diff_saved) {
@@ -1416,9 +1415,7 @@ void diff_win_options(win_T *wp, int addbuf)
     }
     wp->w_p_fdm_save = vim_strsave(wp->w_p_fdm);
   }
-  set_string_option_direct("fdm", -1, "diff", OPT_LOCAL | OPT_FREE, 0);
-  curwin = old_curwin;
-  curbuf = curwin->w_buffer;
+  set_string_option_direct_in_win(wp, "fdm", -1, "diff", OPT_LOCAL | OPT_FREE, 0);
 
   if (!wp->w_p_diff) {
     wp->w_p_fen_save = wp->w_p_fen;
@@ -1451,7 +1448,7 @@ void diff_win_options(win_T *wp, int addbuf)
   if (addbuf) {
     diff_buf_add(wp->w_buffer);
   }
-  redraw_later(wp, NOT_VALID);
+  redraw_later(wp, UPD_NOT_VALID);
 }
 
 /// Set options not to show diffs.  For the current window or all windows.

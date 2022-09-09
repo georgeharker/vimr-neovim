@@ -281,8 +281,8 @@ describe('API', function()
       ]]}
     end)
 
-    it('does\'t display messages when output=true', function()
-      local screen = Screen.new(40, 8)
+    it('doesn\'t display messages when output=true', function()
+      local screen = Screen.new(40, 6)
       screen:attach()
       screen:set_default_attr_ids({
         [0] = {bold=true, foreground=Screen.colors.Blue},
@@ -294,9 +294,21 @@ describe('API', function()
         {0:~                                       }|
         {0:~                                       }|
         {0:~                                       }|
-        {0:~                                       }|
-        {0:~                                       }|
                                                 |
+      ]]}
+      exec([[
+        func Print()
+          call nvim_exec('echo "hello"', v:true)
+        endfunc
+      ]])
+      feed([[:echon 1 | call Print() | echon 5<CR>]])
+      screen:expect{grid=[[
+        ^                                        |
+        {0:~                                       }|
+        {0:~                                       }|
+        {0:~                                       }|
+        {0:~                                       }|
+        15                                      |
       ]]}
     end)
   end)
@@ -3656,6 +3668,55 @@ describe('API', function()
         :^                                                           |
       ]])
     end)
+    it('does not move cursor or change search history/pattern #19878 #19890', function()
+      meths.buf_set_lines(0, 0, -1, true, {'foo', 'bar', 'foo', 'bar'})
+      eq({1, 0}, meths.win_get_cursor(0))
+      eq('', funcs.getreg('/'))
+      eq('', funcs.histget('search'))
+      feed(':')  -- call the API in cmdline mode to test whether it changes search history
+      eq({
+        cmd = 'normal',
+        args = {'x'},
+        bang = true,
+        range = {3, 4},
+        count = -1,
+        reg = '',
+        addr = 'line',
+        magic = {
+          file = false,
+          bar = false,
+        },
+        nargs = '+',
+        nextcmd = '',
+        mods = {
+          browse = false,
+          confirm = false,
+          emsg_silent = false,
+          filter = {
+            pattern = "",
+            force = false,
+          },
+          hide = false,
+          keepalt = false,
+          keepjumps = false,
+          keepmarks = false,
+          keeppatterns = false,
+          lockmarks = false,
+          noautocmd = false,
+          noswapfile = false,
+          sandbox = false,
+          silent = false,
+          split = "",
+          tab = 0,
+          unsilent = false,
+          verbose = -1,
+          vertical = false,
+        }
+      }, meths.parse_cmd('+2;/bar/normal! x', {}))
+      eq({1, 0}, meths.win_get_cursor(0))
+      eq('', funcs.getreg('/'))
+      eq('', funcs.histget('search'))
+    end)
   end)
   describe('nvim_cmd', function()
     it('works', function ()
@@ -3835,6 +3896,36 @@ describe('API', function()
       assert_alive()
       meths.cmd({ cmd = 'make', args = { 'foo', 'bar' } }, {})
       assert_alive()
+    end)
+    it('doesn\'t display messages when output=true', function()
+      local screen = Screen.new(40, 6)
+      screen:attach()
+      screen:set_default_attr_ids({
+        [0] = {bold=true, foreground=Screen.colors.Blue},
+      })
+      meths.cmd({cmd = 'echo', args = {[['hello']]}}, {output = true})
+      screen:expect{grid=[[
+        ^                                        |
+        {0:~                                       }|
+        {0:~                                       }|
+        {0:~                                       }|
+        {0:~                                       }|
+                                                |
+      ]]}
+      exec([[
+        func Print()
+          call nvim_cmd(#{cmd: 'echo', args: ['"hello"']}, #{output: v:true})
+        endfunc
+      ]])
+      feed([[:echon 1 | call Print() | echon 5<CR>]])
+      screen:expect{grid=[[
+        ^                                        |
+        {0:~                                       }|
+        {0:~                                       }|
+        {0:~                                       }|
+        {0:~                                       }|
+        15                                      |
+      ]]}
     end)
   end)
 end)

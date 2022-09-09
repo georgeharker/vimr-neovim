@@ -48,6 +48,7 @@
 #include "nvim/buffer.h"
 #include "nvim/change.h"
 #include "nvim/cursor.h"
+#include "nvim/drawscreen.h"
 #include "nvim/eval.h"
 #include "nvim/fileio.h"
 #include "nvim/func_attr.h"
@@ -66,7 +67,6 @@
 #include "nvim/os/process.h"
 #include "nvim/os_unix.h"
 #include "nvim/path.h"
-#include "nvim/screen.h"
 #include "nvim/sha256.h"
 #include "nvim/spell.h"
 #include "nvim/strings.h"
@@ -993,7 +993,7 @@ void ml_recover(bool checkext)
     set_fileformat(b0_ff - 1, OPT_LOCAL);
   }
   if (b0_fenc != NULL) {
-    set_option_value("fenc", 0L, (char *)b0_fenc, OPT_LOCAL);
+    set_option_value_give_err("fenc", 0L, (char *)b0_fenc, OPT_LOCAL);
     xfree(b0_fenc);
   }
   unchanged(curbuf, true, true);
@@ -1136,7 +1136,7 @@ void ml_recover(bool checkext)
             if (txt_start <= (int)HEADER_SIZE
                 || txt_start >= (int)dp->db_txt_end) {
               p = (char_u *)"???";
-              ++error;
+              error++;
             } else {
               p = (char_u *)dp + txt_start;
             }
@@ -1205,10 +1205,10 @@ void ml_recover(bool checkext)
   if (got_int) {
     emsg(_("E311: Recovery Interrupted"));
   } else if (error) {
-    ++no_wait_return;
+    no_wait_return++;
     msg(">>>>>>>>>>>>>");
     emsg(_("E312: Errors detected while recovering; look for lines starting with ???"));
-    --no_wait_return;
+    no_wait_return--;
     msg(_("See \":help E312\" for more information."));
     msg(">>>>>>>>>>>>>");
   } else {
@@ -1222,7 +1222,7 @@ void ml_recover(bool checkext)
     msg_puts(_("\nYou may want to delete the .swp file now.\n\n"));
     cmdline_row = msg_row;
   }
-  redraw_curbuf_later(NOT_VALID);
+  redraw_curbuf_later(UPD_NOT_VALID);
 
 theend:
   xfree(fname_used);
@@ -1655,12 +1655,12 @@ static int recov_file_names(char **names, char_u *path, int prepend_dot)
       p += i;               // file name has been expanded to full path
     }
     if (STRCMP(p, names[num_names]) != 0) {
-      ++num_names;
+      num_names++;
     } else {
       xfree(names[num_names]);
     }
   } else {
-    ++num_names;
+    num_names++;
   }
 
   return num_names;
@@ -2179,7 +2179,7 @@ static int ml_append_int(buf_T *buf, linenr_T lnum, char_u *line, colnr_T len, b
 
       memmove((char *)dp_right + dp_right->db_txt_start,
               line, (size_t)len);
-      ++line_count_right;
+      line_count_right++;
     }
     /*
      * may move lines from the left/old block to the right/new one.
@@ -2219,7 +2219,7 @@ static int ml_append_int(buf_T *buf, linenr_T lnum, char_u *line, colnr_T len, b
       }
       memmove((char *)dp_left + dp_left->db_txt_start,
               line, (size_t)len);
-      ++line_count_left;
+      line_count_left++;
     }
 
     if (db_idx < 0) {           // left block is new
@@ -2453,7 +2453,7 @@ int ml_replace(linenr_T lnum, char *line, bool copy)
 /// Do not use it after calling ml_replace().
 ///
 /// Check: The caller of this function should probably also call
-/// changed_lines(), unless update_screen(NOT_VALID) is used.
+/// changed_lines(), unless update_screen(UPD_NOT_VALID) is used.
 ///
 /// @return  FAIL for failure, OK otherwise
 int ml_replace_buf(buf_T *buf, linenr_T lnum, char_u *line, bool copy)
@@ -2993,9 +2993,9 @@ static bhdr_T *ml_find_line(buf_T *buf, linenr_T lnum, int action)
      * update high for insert/delete
      */
     if (action == ML_INSERT) {
-      ++high;
+      high++;
     } else if (action == ML_DELETE) {
-      --high;
+      high--;
     }
 
     dp = hp->bh_data;
@@ -3299,7 +3299,7 @@ static void attention_message(buf_T *buf, char_u *fname)
 {
   assert(buf->b_fname != NULL);
 
-  ++no_wait_return;
+  no_wait_return++;
   (void)emsg(_("E325: ATTENTION"));
   msg_puts(_("\nFound a swap file by the name \""));
   msg_home_replace(fname);
@@ -3334,7 +3334,7 @@ static void attention_message(buf_T *buf, char_u *fname)
   msg_outtrans((char *)fname);
   msg_puts(_("\"\n    to avoid this message.\n"));
   cmdline_row = msg_row;
-  --no_wait_return;
+  no_wait_return--;
 }
 
 /// Trigger the SwapExists autocommands.

@@ -9,6 +9,7 @@
 #include "nvim/buffer.h"
 #include "nvim/charset.h"
 #include "nvim/cursor.h"
+#include "nvim/drawscreen.h"
 #include "nvim/edit.h"
 #include "nvim/eval/funcs.h"
 #include "nvim/ex_docmd.h"
@@ -16,7 +17,6 @@
 #include "nvim/highlight_group.h"
 #include "nvim/move.h"
 #include "nvim/option.h"
-#include "nvim/screen.h"
 #include "nvim/sign.h"
 #include "nvim/syntax.h"
 #include "nvim/vim.h"
@@ -203,7 +203,7 @@ static void insert_sign(buf_T *buf, sign_entry_T *prev, sign_entry_T *next, int 
     // When adding first sign need to redraw the windows to create the
     // column for signs.
     if (buf->b_signlist == NULL) {
-      redraw_buf_later(buf, NOT_VALID);
+      redraw_buf_later(buf, UPD_NOT_VALID);
       changed_line_abv_curs();
     }
 
@@ -442,27 +442,24 @@ static linenr_T buf_change_sign_type(buf_T *buf, int markId, const char_u *group
 /// @param max_signs the number of signs, with priority for the ones
 ///        with the highest Ids.
 /// @return Attrs of the matching sign, or NULL
-sign_attrs_T *sign_get_attr(SignType type, sign_attrs_T sattrs[], int idx, int max_signs)
+SignTextAttrs *sign_get_attr(int idx, SignTextAttrs sattrs[], int max_signs)
 {
-  sign_attrs_T *matches[SIGN_SHOW_MAX];
-  int nr_matches = 0;
+  SignTextAttrs *matches[SIGN_SHOW_MAX];
+  int sattr_matches = 0;
 
   for (int i = 0; i < SIGN_SHOW_MAX; i++) {
-    if ((type == SIGN_TEXT && sattrs[i].sat_text != NULL)
-        || (type == SIGN_LINEHL && sattrs[i].sat_linehl != 0)
-        || (type == SIGN_NUMHL && sattrs[i].sat_numhl != 0)) {
-      matches[nr_matches] = &sattrs[i];
-      nr_matches++;
+    if (sattrs[i].text != NULL) {
+      matches[sattr_matches++] = &sattrs[i];
       // attr list is sorted with most important (priority, id), thus we
       // may stop as soon as we have max_signs matches
-      if (nr_matches >= max_signs) {
+      if (sattr_matches >= max_signs) {
         break;
       }
     }
   }
 
-  if (nr_matches > idx) {
-    return matches[nr_matches - idx - 1];
+  if (sattr_matches > idx) {
+    return matches[sattr_matches - idx - 1];
   }
 
   return NULL;
@@ -474,12 +471,12 @@ sign_attrs_T *sign_get_attr(SignType type, sign_attrs_T sattrs[], int idx, int m
 /// @param lnum Line in which to search
 /// @param sattrs Output array for attrs
 /// @return Number of signs of which attrs were found
-int buf_get_signattrs(buf_T *buf, linenr_T lnum, sign_attrs_T sattrs[])
+int buf_get_signattrs(buf_T *buf, linenr_T lnum, SignTextAttrs sattrs[], HlPriAttr *num_attrs,
+                      HlPriAttr *line_attrs, HlPriAttr *cul_attrs)
 {
   sign_entry_T *sign;
-  sign_T *sp;
 
-  int nr_matches = 0;
+  int sattr_matches = 0;
 
   FOR_ALL_SIGNS_IN_BUF(buf, sign) {
     if (sign->se_lnum > lnum) {
@@ -488,37 +485,39 @@ int buf_get_signattrs(buf_T *buf, linenr_T lnum, sign_attrs_T sattrs[])
       break;
     }
 
-    if (sign->se_lnum == lnum) {
-      sign_attrs_T sattr;
-      CLEAR_FIELD(sattr);
-      sattr.sat_typenr = sign->se_typenr;
-      sp = find_sign_by_typenr(sign->se_typenr);
-      if (sp != NULL) {
-        sattr.sat_text = sp->sn_text;
-        if (sattr.sat_text != NULL && sp->sn_text_hl != 0) {
-          sattr.sat_texthl = syn_id2attr(sp->sn_text_hl);
-        }
-        if (sp->sn_line_hl != 0) {
-          sattr.sat_linehl = syn_id2attr(sp->sn_line_hl);
-        }
-        if (sp->sn_cul_hl != 0) {
-          sattr.sat_culhl = syn_id2attr(sp->sn_cul_hl);
-        }
-        if (sp->sn_num_hl != 0) {
-          sattr.sat_numhl = syn_id2attr(sp->sn_num_hl);
-        }
-        // Store the priority so we can mesh in extmark signs later
-        sattr.sat_prio = sign->se_priority;
-      }
+    if (sign->se_lnum < lnum) {
+      continue;
+    }
 
-      sattrs[nr_matches] = sattr;
-      nr_matches++;
-      if (nr_matches == SIGN_SHOW_MAX) {
-        break;
+    sign_T *sp = find_sign_by_typenr(sign->se_typenr);
+    if (sp == NULL) {
+      continue;
+    }
+
+    if (sp->sn_text != NULL && sattr_matches < SIGN_SHOW_MAX) {
+      sattrs[sattr_matches++] = (SignTextAttrs) {
+        .text = sp->sn_text,
+        .hl_attr_id = sp->sn_text_hl == 0 ? 0 : syn_id2attr(sp->sn_text_hl),
+        .priority = sign->se_priority
+      };
+    }
+
+    struct { HlPriAttr *dest; int hl; } cattrs[] = {
+      { line_attrs, sp->sn_line_hl },
+      { num_attrs,  sp->sn_num_hl  },
+      { cul_attrs,  sp->sn_cul_hl  },
+      { NULL, -1 },
+    };
+    for (int i = 0; cattrs[i].dest; i++) {
+      if (cattrs[i].hl != 0 && sign->se_priority >= cattrs[i].dest->priority) {
+        *cattrs[i].dest = (HlPriAttr) {
+          .attr_id = syn_id2attr(cattrs[i].hl),
+          .priority = sign->se_priority
+        };
       }
     }
   }
-  return nr_matches;
+  return sattr_matches;
 }
 
 /// Delete sign 'id' in group 'group' from buffer 'buf'.
@@ -577,7 +576,7 @@ static linenr_T buf_delsign(buf_T *buf, linenr_T atlnum, int id, char_u *group)
   // When deleting the last sign the cursor position may change, because the
   // sign columns no longer shows.  And the 'signcolumn' may be hidden.
   if (buf->b_signlist == NULL) {
-    redraw_buf_later(buf, NOT_VALID);
+    redraw_buf_later(buf, UPD_NOT_VALID);
     changed_line_abv_curs();
   }
 
@@ -935,7 +934,7 @@ static int sign_define_by_name(char_u *name, char_u *icon, char_u *linehl, char_
     // non-empty sign list.
     FOR_ALL_WINDOWS_IN_TAB(wp, curtab) {
       if (wp->w_buffer->b_signlist != NULL) {
-        redraw_buf_later(wp->w_buffer, NOT_VALID);
+        redraw_buf_later(wp->w_buffer, UPD_NOT_VALID);
       }
     }
   }
@@ -1085,7 +1084,7 @@ static int sign_unplace(int sign_id, char_u *sign_group, buf_T *buf, linenr_T at
   }
   if (sign_id == 0) {
     // Delete all the signs in the specified buffer
-    redraw_buf_later(buf, NOT_VALID);
+    redraw_buf_later(buf, UPD_NOT_VALID);
     buf_delete_signs(buf, (char *)sign_group);
   } else {
     linenr_T lnum;
@@ -1965,7 +1964,7 @@ static void sign_define_multiple(list_T *l, list_T *retlist)
 }
 
 /// "sign_define()" function
-void f_sign_define(typval_T *argvars, typval_T *rettv, FunPtr fptr)
+void f_sign_define(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   const char *name;
 
@@ -1996,7 +1995,7 @@ void f_sign_define(typval_T *argvars, typval_T *rettv, FunPtr fptr)
 }
 
 /// "sign_getdefined()" function
-void f_sign_getdefined(typval_T *argvars, typval_T *rettv, FunPtr fptr)
+void f_sign_getdefined(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   const char *name = NULL;
 
@@ -2010,7 +2009,7 @@ void f_sign_getdefined(typval_T *argvars, typval_T *rettv, FunPtr fptr)
 }
 
 /// "sign_getplaced()" function
-void f_sign_getplaced(typval_T *argvars, typval_T *rettv, FunPtr fptr)
+void f_sign_getplaced(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   buf_T *buf = NULL;
   dict_T *dict;
@@ -2068,7 +2067,7 @@ void f_sign_getplaced(typval_T *argvars, typval_T *rettv, FunPtr fptr)
 }
 
 /// "sign_jump()" function
-void f_sign_jump(typval_T *argvars, typval_T *rettv, FunPtr fptr)
+void f_sign_jump(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   int sign_id;
   char *sign_group = NULL;
@@ -2226,7 +2225,7 @@ cleanup:
 }
 
 /// "sign_place()" function
-void f_sign_place(typval_T *argvars, typval_T *rettv, FunPtr fptr)
+void f_sign_place(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   dict_T *dict = NULL;
 
@@ -2244,7 +2243,7 @@ void f_sign_place(typval_T *argvars, typval_T *rettv, FunPtr fptr)
 }
 
 /// "sign_placelist()" function.  Place multiple signs.
-void f_sign_placelist(typval_T *argvars, typval_T *rettv, FunPtr fptr)
+void f_sign_placelist(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   int sign_id;
 
@@ -2284,7 +2283,7 @@ static void sign_undefine_multiple(list_T *l, list_T *retlist)
 }
 
 /// "sign_undefine()" function
-void f_sign_undefine(typval_T *argvars, typval_T *rettv, FunPtr fptr)
+void f_sign_undefine(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   const char *name;
 
@@ -2374,7 +2373,7 @@ cleanup:
 }
 
 /// "sign_unplace()" function
-void f_sign_unplace(typval_T *argvars, typval_T *rettv, FunPtr fptr)
+void f_sign_unplace(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   dict_T *dict = NULL;
 
@@ -2397,7 +2396,7 @@ void f_sign_unplace(typval_T *argvars, typval_T *rettv, FunPtr fptr)
 }
 
 /// "sign_unplacelist()" function
-void f_sign_unplacelist(typval_T *argvars, typval_T *rettv, FunPtr fptr)
+void f_sign_unplacelist(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   int retval;
 

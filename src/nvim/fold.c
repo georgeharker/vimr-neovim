@@ -14,6 +14,7 @@
 #include "nvim/charset.h"
 #include "nvim/cursor.h"
 #include "nvim/diff.h"
+#include "nvim/drawscreen.h"
 #include "nvim/eval.h"
 #include "nvim/ex_docmd.h"
 #include "nvim/ex_session.h"
@@ -31,7 +32,6 @@
 #include "nvim/option.h"
 #include "nvim/os/input.h"
 #include "nvim/plines.h"
-#include "nvim/screen.h"
 #include "nvim/search.h"
 #include "nvim/strings.h"
 #include "nvim/syntax.h"
@@ -394,7 +394,7 @@ void opFoldRange(pos_T firstpos, pos_T lastpos, int opening, int recurse, int ha
   }
   // Force a redraw to remove the Visual highlighting.
   if (had_visual) {
-    redraw_curbuf_later(INVERTED);
+    redraw_curbuf_later(UPD_INVERTED);
   }
 }
 
@@ -721,7 +721,7 @@ void deleteFold(win_T *const wp, const linenr_T start, const linenr_T end, const
     emsg(_(e_nofold));
     // Force a redraw to remove the Visual highlighting.
     if (had_visual) {
-      redraw_buf_later(wp->w_buffer, INVERTED);
+      redraw_buf_later(wp->w_buffer, UPD_INVERTED);
     }
   } else {
     // Deleting markers may make cursor column invalid
@@ -819,7 +819,7 @@ void foldUpdateAfterInsert(void)
 void foldUpdateAll(win_T *win)
 {
   win->w_foldinvalid = true;
-  redraw_later(win, NOT_VALID);
+  redraw_later(win, UPD_NOT_VALID);
 }
 
 // foldMoveTo() {{{2
@@ -863,7 +863,7 @@ int foldMoveTo(const bool updown, const int dir, const long count)
           if (fp - (fold_T *)gap->ga_data >= gap->ga_len) {
             break;
           }
-          --fp;
+          fp--;
         } else {
           if (fp == (fold_T *)gap->ga_data) {
             break;
@@ -1793,7 +1793,7 @@ static void foldtext_cleanup(char_u *str)
   char_u *cms_start = (char_u *)skipwhite((char *)curbuf->b_p_cms);
   size_t cms_slen = STRLEN(cms_start);
   while (cms_slen > 0 && ascii_iswhite(cms_start[cms_slen - 1])) {
-    --cms_slen;
+    cms_slen--;
   }
 
   // locate "%s" in 'commentstring', use the part before and after it.
@@ -1805,7 +1805,7 @@ static void foldtext_cleanup(char_u *str)
 
     // exclude white space before "%s"
     while (cms_slen > 0 && ascii_iswhite(cms_start[cms_slen - 1])) {
-      --cms_slen;
+      cms_slen--;
     }
 
     // skip "%s" and white space after it
@@ -3212,19 +3212,19 @@ static void foldclosed_both(typval_T *argvars, typval_T *rettv, int end)
 }
 
 /// "foldclosed()" function
-void f_foldclosed(typval_T *argvars, typval_T *rettv, FunPtr fptr)
+void f_foldclosed(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   foldclosed_both(argvars, rettv, false);
 }
 
 /// "foldclosedend()" function
-void f_foldclosedend(typval_T *argvars, typval_T *rettv, FunPtr fptr)
+void f_foldclosedend(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   foldclosed_both(argvars, rettv, true);
 }
 
 /// "foldlevel()" function
-void f_foldlevel(typval_T *argvars, typval_T *rettv, FunPtr fptr)
+void f_foldlevel(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   const linenr_T lnum = tv_get_lnum(argvars);
   if (lnum >= 1 && lnum <= curbuf->b_ml.ml_line_count) {
@@ -3233,7 +3233,7 @@ void f_foldlevel(typval_T *argvars, typval_T *rettv, FunPtr fptr)
 }
 
 /// "foldtext()" function
-void f_foldtext(typval_T *argvars, typval_T *rettv, FunPtr fptr)
+void f_foldtext(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   rettv->v_type = VAR_STRING;
   rettv->vval.v_string = NULL;
@@ -3279,7 +3279,7 @@ void f_foldtext(typval_T *argvars, typval_T *rettv, FunPtr fptr)
 }
 
 /// "foldtextresult(lnum)" function
-void f_foldtextresult(typval_T *argvars, typval_T *rettv, FunPtr fptr)
+void f_foldtextresult(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
   char_u buf[FOLD_TEXT_LEN];
   static bool entered = false;

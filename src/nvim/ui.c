@@ -13,10 +13,12 @@
 #include "nvim/cursor.h"
 #include "nvim/cursor_shape.h"
 #include "nvim/diff.h"
+#include "nvim/drawscreen.h"
 #include "nvim/event/loop.h"
 #include "nvim/ex_getln.h"
 #include "nvim/fold.h"
 #include "nvim/garray.h"
+#include "nvim/grid.h"
 #include "nvim/highlight.h"
 #include "nvim/log.h"
 #include "nvim/main.h"
@@ -30,8 +32,7 @@
 #include "nvim/os/signal.h"
 #include "nvim/os/time.h"
 #include "nvim/os_unix.h"
-#include "nvim/popupmnu.h"
-#include "nvim/screen.h"
+#include "nvim/popupmenu.h"
 #include "nvim/ui.h"
 #include "nvim/ui_compositor.h"
 #include "nvim/vim.h"
@@ -519,11 +520,10 @@ void ui_flush(void)
   }
   if (pending_mode_info_update) {
     Arena arena = ARENA_EMPTY;
-    arena_start(&arena, &ui_ext_fixblk);
     Array style = mode_style_array(&arena);
     bool enabled = (*p_guicursor != NUL);
     ui_call_mode_info_set(enabled, style);
-    arena_mem_free(arena_finish(&arena), &ui_ext_fixblk);
+    arena_mem_free(arena_finish(&arena));
     pending_mode_info_update = false;
   }
   if (pending_mode_update && !starting) {

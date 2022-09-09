@@ -11,6 +11,7 @@
 #include "nvim/buffer.h"
 #include "nvim/charset.h"
 #include "nvim/cursor.h"
+#include "nvim/drawscreen.h"
 #include "nvim/edit.h"
 #include "nvim/eval.h"
 #include "nvim/eval/userfunc.h"
@@ -20,10 +21,11 @@
 #include "nvim/ex_getln.h"
 #include "nvim/fileio.h"
 #include "nvim/getchar.h"
+#include "nvim/grid.h"
 #include "nvim/insexpand.h"
 #include "nvim/lua/executor.h"
 #include "nvim/map.h"
-#include "nvim/option.h"
+#include "nvim/optionstr.h"
 #include "nvim/os/input.h"
 #include "nvim/profile.h"
 #include "nvim/regexp.h"
@@ -1831,16 +1833,15 @@ bool apply_autocmds_group(event_T event, char *fname, char *fname_io, bool force
   char *tail = path_tail(fname);
 
   // Find first autocommand that matches
-  AutoPatCmd patcmd;
-  patcmd.curpat = first_autopat[(int)event];
-  patcmd.nextcmd = NULL;
-  patcmd.group = group;
-  patcmd.fname = fname;
-  patcmd.sfname = sfname;
-  patcmd.tail = tail;
-  patcmd.event = event;
-  patcmd.arg_bufnr = autocmd_bufnr;
-  patcmd.next = NULL;
+  AutoPatCmd patcmd = {
+    .curpat = first_autopat[(int)event],
+    .group = group,
+    .fname = fname,
+    .sfname = sfname,
+    .tail = tail,
+    .event = event,
+    .arg_bufnr = autocmd_bufnr,
+  };
   auto_next_pat(&patcmd, false);
 
   // found one, start executing the autocommands
@@ -2004,9 +2005,12 @@ void auto_next_pat(AutoPatCmd *apc, int stop_at_last)
   AutoPat *ap;
   AutoCmd *cp;
   char *s;
-  char **const sourcing_namep = &SOURCING_NAME;
 
-  XFREE_CLEAR(*sourcing_namep);
+  estack_T *const entry = ((estack_T *)exestack.ga_data) + exestack.ga_len - 1;
+
+  // Clear the exestack entry for this ETYPE_AUCMD entry.
+  XFREE_CLEAR(entry->es_name);
+  entry->es_info.aucmd = NULL;
 
   for (ap = apc->curpat; ap != NULL && !got_int; ap = ap->next) {
     apc->curpat = NULL;
@@ -2031,13 +2035,17 @@ void auto_next_pat(AutoPatCmd *apc, int stop_at_last)
         const size_t sourcing_name_len
           = (STRLEN(s) + strlen(name) + (size_t)ap->patlen + 1);
 
-        *sourcing_namep = xmalloc(sourcing_name_len);
-        snprintf(*sourcing_namep, sourcing_name_len, s, name, ap->pat);
+        char *const namep = xmalloc(sourcing_name_len);
+        snprintf(namep, sourcing_name_len, s, name, ap->pat);
         if (p_verbose >= 8) {
           verbose_enter();
-          smsg(_("Executing %s"), *sourcing_namep);
+          smsg(_("Executing %s"), namep);
           verbose_leave();
         }
+
+        // Update the exestack entry for this autocmd.
+        entry->es_name = namep;
+        entry->es_info.aucmd = apc;
 
         apc->curpat = ap;
         apc->nextcmd = ap->cmds;
@@ -2071,7 +2079,7 @@ static bool call_autocmd_callback(const AutoCmd *ac, const AutoPatCmd *apc)
     PUT(data, "buf", INTEGER_OBJ(autocmd_bufnr));
 
     if (apc->data) {
-      PUT(data, "data", copy_object(*apc->data));
+      PUT(data, "data", copy_object(*apc->data, NULL));
     }
 
     int group = apc->curpat->group;
@@ -2170,6 +2178,7 @@ char *getnextac(int c, void *cookie, int indent, bool do_concat)
   // lua code, so that it works properly
   autocmd_nested = ac->nested;
   current_sctx = ac->script_ctx;
+  acp->script_ctx = current_sctx;
 
   if (ac->exec.type == CALLABLE_CB) {
     if (call_autocmd_callback(ac, acp)) {

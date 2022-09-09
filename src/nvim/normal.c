@@ -22,6 +22,7 @@
 #include "nvim/cursor.h"
 #include "nvim/diff.h"
 #include "nvim/digraph.h"
+#include "nvim/drawscreen.h"
 #include "nvim/edit.h"
 #include "nvim/eval.h"
 #include "nvim/eval/userfunc.h"
@@ -34,7 +35,8 @@
 #include "nvim/fold.h"
 #include "nvim/getchar.h"
 #include "nvim/globals.h"
-#include "nvim/grid_defs.h"
+#include "nvim/grid.h"
+#include "nvim/help.h"
 #include "nvim/indent.h"
 #include "nvim/keycodes.h"
 #include "nvim/log.h"
@@ -55,7 +57,6 @@
 #include "nvim/plines.h"
 #include "nvim/profile.h"
 #include "nvim/quickfix.h"
-#include "nvim/screen.h"
 #include "nvim/search.h"
 #include "nvim/spell.h"
 #include "nvim/spellfile.h"
@@ -522,7 +523,7 @@ static bool normal_handle_special_visual_command(NormalState *s)
       && (nv_cmds[s->idx].cmd_flags & NV_STS)
       && !(mod_mask & MOD_MASK_SHIFT)) {
     end_visual_mode();
-    redraw_curbuf_later(INVERTED);
+    redraw_curbuf_later(UPD_INVERTED);
   }
 
   // Keys that work different when 'keymodel' contains "startsel"
@@ -1280,8 +1281,8 @@ static void normal_redraw(NormalState *s)
   validate_cursor();
 
   if (VIsual_active) {
-    redraw_curbuf_later(INVERTED);  // update inverted part
-    update_screen(INVERTED);
+    redraw_curbuf_later(UPD_INVERTED);  // update inverted part
+    update_screen(0);
   } else if (must_redraw) {
     update_screen(0);
   } else if (redraw_cmdline || clear_cmdline || redraw_mode) {
@@ -1321,7 +1322,7 @@ static void normal_redraw(NormalState *s)
   did_emsg = false;
   msg_didany = false;  // reset lines_left in msg_start()
   may_clear_sb_text();  // clear scroll-back text on next msg
-  showruler(false);
+  show_cursor_info(false);
 
   setcursor();
 }
@@ -1837,7 +1838,8 @@ bool do_mouse(oparg_T *oap, int c, int dir, long count, bool fixindent)
       }
       if (jump_flags) {
         jump_flags = jump_to_mouse(jump_flags, NULL, which_button);
-        update_curbuf(VIsual_active ? INVERTED : VALID);
+        redraw_curbuf_later(VIsual_active ? UPD_INVERTED : UPD_VALID);
+        update_screen(0);
         setcursor();
         ui_flush();  // Update before showing popup menu
       }
@@ -2184,7 +2186,7 @@ bool do_mouse(oparg_T *oap, int c, int dir, long count, bool fixindent)
       curwin->w_set_curswant = true;
     }
     if (is_click) {
-      redraw_curbuf_later(INVERTED);            // update the inversion
+      redraw_curbuf_later(UPD_INVERTED);  // update the inversion
     }
   } else if (VIsual_active && !old_active) {
     if (mod_mask & MOD_MASK_ALT) {
@@ -2309,7 +2311,7 @@ void reset_VIsual_and_resel(void)
 {
   if (VIsual_active) {
     end_visual_mode();
-    redraw_curbuf_later(INVERTED);      // delete the inversion later
+    redraw_curbuf_later(UPD_INVERTED);  // delete the inversion later
   }
   VIsual_reselect = false;
 }
@@ -2319,7 +2321,7 @@ void reset_VIsual(void)
 {
   if (VIsual_active) {
     end_visual_mode();
-    redraw_curbuf_later(INVERTED);      // delete the inversion later
+    redraw_curbuf_later(UPD_INVERTED);  // delete the inversion later
     VIsual_reselect = false;
   }
 }
@@ -2954,7 +2956,7 @@ void check_scrollbind(linenr_T topline_diff, long leftcol_diff)
         }
       }
 
-      redraw_later(curwin, VALID);
+      redraw_later(curwin, UPD_VALID);
       cursor_correct();
       curwin->w_redr_status = true;
     }
@@ -3488,7 +3490,7 @@ void scroll_redraw(int up, long count)
   if (moved) {
     curwin->w_viewport_invalid = true;
   }
-  redraw_later(curwin, VALID);
+  redraw_later(curwin, UPD_VALID);
 }
 
 /// Get the count specified after a 'z' command. Only the 'z<CR>', 'zl', 'zh',
@@ -3654,7 +3656,7 @@ static void nv_zet(cmdarg_T *cap)
 
   case 't':
     scroll_cursor_top(0, true);
-    redraw_later(curwin, VALID);
+    redraw_later(curwin, UPD_VALID);
     set_fraction(curwin);
     break;
 
@@ -3665,7 +3667,7 @@ static void nv_zet(cmdarg_T *cap)
 
   case 'z':
     scroll_cursor_halfway(true);
-    redraw_later(curwin, VALID);
+    redraw_later(curwin, UPD_VALID);
     set_fraction(curwin);
     break;
 
@@ -3688,7 +3690,7 @@ static void nv_zet(cmdarg_T *cap)
 
   case 'b':
     scroll_cursor_bot(0, true);
-    redraw_later(curwin, VALID);
+    redraw_later(curwin, UPD_VALID);
     set_fraction(curwin);
     break;
 
@@ -3740,7 +3742,7 @@ static void nv_zet(cmdarg_T *cap)
       }
       if (curwin->w_leftcol != col) {
         curwin->w_leftcol = col;
-        redraw_later(curwin, NOT_VALID);
+        redraw_later(curwin, UPD_NOT_VALID);
       }
     }
     break;
@@ -3761,7 +3763,7 @@ static void nv_zet(cmdarg_T *cap)
       }
       if (curwin->w_leftcol != col) {
         curwin->w_leftcol = col;
-        redraw_later(curwin, NOT_VALID);
+        redraw_later(curwin, UPD_NOT_VALID);
       }
     }
     break;
@@ -4096,7 +4098,7 @@ static void nv_clear(cmdarg_T *cap)
     FOR_ALL_WINDOWS_IN_TAB(wp, curtab) {
       wp->w_s->b_syn_slow = false;
     }
-    redraw_later(curwin, CLEAR);
+    redraw_later(curwin, UPD_CLEAR);
   }
 }
 
@@ -5817,7 +5819,7 @@ static void nv_visual(cmdarg_T *cap)
       showmode();
       may_trigger_modechanged();
     }
-    redraw_curbuf_later(INVERTED);          // update the inversion
+    redraw_curbuf_later(UPD_INVERTED);  // update the inversion
   } else {                // start Visual mode
     if (cap->count0 > 0 && resel_VIsual_mode != NUL) {
       // use previously selected part
@@ -5863,7 +5865,7 @@ static void nv_visual(cmdarg_T *cap)
       } else {
         curwin->w_set_curswant = true;
       }
-      redraw_curbuf_later(INVERTED);            // show the inversion
+      redraw_curbuf_later(UPD_INVERTED);  // show the inversion
     } else {
       if (!cap->arg) {
         // start Select mode when 'selectmode' contains "cmd"
@@ -5933,7 +5935,7 @@ static void n_start_visual_mode(int c)
   }
   // Only need to redraw this line, unless still need to redraw an old
   // Visual area (when 'lazyredraw' is set).
-  if (curwin->w_redr_type < INVERTED) {
+  if (curwin->w_redr_type < UPD_INVERTED) {
     curwin->w_old_cursor_lnum = curwin->w_cursor.lnum;
     curwin->w_old_visual_lnum = curwin->w_cursor.lnum;
   }
@@ -6020,7 +6022,7 @@ static void nv_gv_cmd(cmdarg_T *cap)
     may_start_select('c');
   }
   setmouse();
-  redraw_curbuf_later(INVERTED);
+  redraw_curbuf_later(UPD_INVERTED);
   showmode();
 }
 
@@ -6903,7 +6905,7 @@ static void nv_normal(cmdarg_T *cap)
     }
     if (VIsual_active) {
       end_visual_mode();                // stop Visual
-      redraw_curbuf_later(INVERTED);
+      redraw_curbuf_later(UPD_INVERTED);
     }
   } else {
     clearopbeep(cap->oap);
@@ -6945,10 +6947,10 @@ static void nv_esc(cmdarg_T *cap)
       got_int = false;          // don't stop executing autocommands et al.
       return;
     }
-  } else if (cmdwin_type != 0 && ex_normal_busy) {
+  } else if (cmdwin_type != 0 && ex_normal_busy && typebuf_was_empty) {
     // When :normal runs out of characters while in the command line window
-    // vgetorpeek() will return ESC.  Exit the cmdline window to break the
-    // loop.
+    // vgetorpeek() will repeatedly return ESC.  Exit the cmdline window to
+    // break the loop.
     cmdwin_result = K_IGNORE;
     return;
   }
@@ -6957,7 +6959,7 @@ static void nv_esc(cmdarg_T *cap)
     end_visual_mode();          // stop Visual
     check_cursor_col();         // make sure cursor is not beyond EOL
     curwin->w_set_curswant = true;
-    redraw_curbuf_later(INVERTED);
+    redraw_curbuf_later(UPD_INVERTED);
   } else if (no_reason) {
     vim_beep(BO_ESC);
   }

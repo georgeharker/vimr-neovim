@@ -9,10 +9,12 @@
 #include <string.h>
 
 #include "nvim/api/private/helpers.h"
+#include "nvim/arglist.h"
 #include "nvim/ascii.h"
 #include "nvim/buffer.h"
 #include "nvim/charset.h"
 #include "nvim/cursor.h"
+#include "nvim/drawscreen.h"
 #include "nvim/edit.h"
 #include "nvim/eval.h"
 #include "nvim/ex_cmds.h"
@@ -22,6 +24,7 @@
 #include "nvim/ex_getln.h"
 #include "nvim/fileio.h"
 #include "nvim/fold.h"
+#include "nvim/help.h"
 #include "nvim/highlight_group.h"
 #include "nvim/mark.h"
 #include "nvim/mbyte.h"
@@ -31,13 +34,13 @@
 #include "nvim/move.h"
 #include "nvim/normal.h"
 #include "nvim/option.h"
+#include "nvim/optionstr.h"
 #include "nvim/os/input.h"
 #include "nvim/os/os.h"
 #include "nvim/os_unix.h"
 #include "nvim/path.h"
 #include "nvim/quickfix.h"
 #include "nvim/regexp.h"
-#include "nvim/screen.h"
 #include "nvim/search.h"
 #include "nvim/strings.h"
 #include "nvim/ui.h"
@@ -3555,12 +3558,12 @@ static int qf_goto_cwindow(const qf_info_T *qi, bool resize, int sz, bool vertsp
 static void qf_set_cwindow_options(void)
 {
   // switch off 'swapfile'
-  set_option_value("swf", 0L, NULL, OPT_LOCAL);
-  set_option_value("bt", 0L, "quickfix", OPT_LOCAL);
-  set_option_value("bh", 0L, "hide", OPT_LOCAL);
+  set_option_value_give_err("swf", 0L, NULL, OPT_LOCAL);
+  set_option_value_give_err("bt", 0L, "quickfix", OPT_LOCAL);
+  set_option_value_give_err("bh", 0L, "hide", OPT_LOCAL);
   RESET_BINDING(curwin);
   curwin->w_p_diff = false;
-  set_option_value("fdm", 0L, "manual", OPT_LOCAL);
+  set_option_value_give_err("fdm", 0L, "manual", OPT_LOCAL);
 }
 
 // Open a new quickfix or location list window, load the quickfix buffer and
@@ -3707,7 +3710,7 @@ static void qf_win_goto(win_T *win, linenr_T lnum)
   curwin->w_cursor.coladd = 0;
   curwin->w_curswant = 0;
   update_topline(curwin);              // scroll to show the line
-  redraw_later(curwin, VALID);
+  redraw_later(curwin, UPD_VALID);
   curwin->w_redr_status = true;  // update ruler
   curwin = old_curwin;
   curbuf = curwin->w_buffer;
@@ -3827,38 +3830,11 @@ static buf_T *qf_find_buf(qf_info_T *qi)
   return NULL;
 }
 
-// Process the 'quickfixtextfunc' option value.
-bool qf_process_qftf_option(void)
+/// Process the 'quickfixtextfunc' option value.
+/// @return  OK or FAIL
+int qf_process_qftf_option(void)
 {
-  if (p_qftf == NULL || *p_qftf == NUL) {
-    callback_free(&qftf_cb);
-    return true;
-  }
-
-  typval_T *tv;
-  if (*p_qftf == '{') {
-    // Lambda expression
-    tv = eval_expr((char *)p_qftf);
-    if (tv == NULL) {
-      return false;
-    }
-  } else {
-    // treat everything else as a function name string
-    tv = xcalloc(1, sizeof(*tv));
-    tv->v_type = VAR_STRING;
-    tv->vval.v_string = (char *)vim_strsave(p_qftf);
-  }
-
-  Callback cb;
-  if (!callback_from_typval(&cb, tv)) {
-    tv_free(tv);
-    return false;
-  }
-
-  callback_free(&qftf_cb);
-  qftf_cb = cb;
-  tv_free(tv);
-  return true;
+  return option_set_callback_func(p_qftf, &qftf_cb);
 }
 
 /// Update the w:quickfix_title variable in the quickfix/location list window in
@@ -3922,7 +3898,7 @@ static void qf_update_buffer(qf_info_T *qi, qfline_T *old_last)
     // Only redraw when added lines are visible.  This avoids flickering when
     // the added lines are not visible.
     if ((win = qf_find_win(qi)) != NULL && old_line_count < win->w_botline) {
-      redraw_buf_later(buf, NOT_VALID);
+      redraw_buf_later(buf, UPD_NOT_VALID);
     }
   }
 }
@@ -4132,7 +4108,7 @@ static void qf_fill_buffer(qf_list_T *qfl, buf_T *buf, qfline_T *old_last, int q
     // resembles reading a file into a buffer, it's more logical when using
     // autocommands.
     curbuf->b_ro_locked++;
-    set_option_value("ft", 0L, "qf", OPT_LOCAL);
+    set_option_value_give_err("ft", 0L, "qf", OPT_LOCAL);
     curbuf->b_p_ma = false;
 
     keep_filetype = true;                 // don't detect 'filetype'
@@ -4142,7 +4118,7 @@ static void qf_fill_buffer(qf_list_T *qfl, buf_T *buf, qfline_T *old_last, int q
     curbuf->b_ro_locked--;
 
     // make sure it will be redrawn
-    redraw_curbuf_later(NOT_VALID);
+    redraw_curbuf_later(UPD_NOT_VALID);
   }
 
   // Restore KeyTyped, setting 'filetype' may reset it.
@@ -5779,7 +5755,7 @@ static int get_qfline_items(qfline_T *qfp, list_T *list)
 /// If qf_idx is -1, use the current list. Otherwise, use the specified list.
 /// If eidx is not 0, then return only the specified entry. Otherwise return
 /// all the entries.
-int get_errorlist(qf_info_T *qi_arg, win_T *wp, int qf_idx, int eidx, list_T *list)
+static int get_errorlist(qf_info_T *qi_arg, win_T *wp, int qf_idx, int eidx, list_T *list)
 {
   qf_info_T *qi = qi_arg;
 
@@ -6149,7 +6125,7 @@ static int qf_getprop_qftf(qf_list_T *qfl, dict_T *retdict)
 /// Return quickfix/location list details (title) as a dictionary.
 /// 'what' contains the details to return. If 'list_idx' is -1,
 /// then current list is used. Otherwise the specified list is used.
-int qf_get_properties(win_T *wp, dict_T *what, dict_T *retdict)
+static int qf_get_properties(win_T *wp, dict_T *what, dict_T *retdict)
 {
   qf_info_T *qi = &ql_info;
   dictitem_T *di = NULL;
@@ -7086,6 +7062,7 @@ void ex_helpgrep(exarg_T *eap)
     }
   }
 
+  bool updated = false;
   // Make 'cpoptions' empty, the 'l' flag should not be used here.
   char *const save_cpo = p_cpo;
   p_cpo = (char *)empty_option;
@@ -7116,14 +7093,24 @@ void ex_helpgrep(exarg_T *eap)
     qfl->qf_ptr = qfl->qf_start;
     qfl->qf_index = 1;
     qf_list_changed(qfl);
-    qf_update_buffer(qi, NULL);
+    updated = true;
   }
 
   if ((char_u *)p_cpo == empty_option) {
     p_cpo = save_cpo;
   } else {
-    // Darn, some plugin changed the value.
+    // Darn, some plugin changed the value.  If it's still empty it was
+    // changed and restored, need to restore in the complicated way.
+    if (*p_cpo == NUL) {
+      set_option_value_give_err("cpo", 0L, save_cpo, 0);
+    }
     free_string_option((char_u *)save_cpo);
+  }
+
+  if (updated) {
+    // This may open a window and source scripts, do this after 'cpo' was
+    // restored.
+    qf_update_buffer(qi, NULL);
   }
 
   if (au_name != NULL) {
@@ -7156,4 +7143,138 @@ void ex_helpgrep(exarg_T *eap)
       curwin->w_llist = qi;
     }
   }
+}
+
+static void get_qf_loc_list(int is_qf, win_T *wp, typval_T *what_arg, typval_T *rettv)
+{
+  if (what_arg->v_type == VAR_UNKNOWN) {
+    tv_list_alloc_ret(rettv, kListLenMayKnow);
+    if (is_qf || wp != NULL) {
+      (void)get_errorlist(NULL, wp, -1, 0, rettv->vval.v_list);
+    }
+  } else {
+    tv_dict_alloc_ret(rettv);
+    if (is_qf || wp != NULL) {
+      if (what_arg->v_type == VAR_DICT) {
+        dict_T *d = what_arg->vval.v_dict;
+
+        if (d != NULL) {
+          qf_get_properties(wp, d, rettv->vval.v_dict);
+        }
+      } else {
+        emsg(_(e_dictreq));
+      }
+    }
+  }
+}
+
+/// "getloclist()" function
+void f_getloclist(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
+{
+  win_T *wp = find_win_by_nr_or_id(&argvars[0]);
+  get_qf_loc_list(false, wp, &argvars[1], rettv);
+}
+
+/// "getqflist()" functions
+void f_getqflist(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
+{
+  get_qf_loc_list(true, NULL, &argvars[0], rettv);
+}
+
+/// Create quickfix/location list from VimL values
+///
+/// Used by `setqflist()` and `setloclist()` functions. Accepts invalid
+/// args argument in which case errors out, including VAR_UNKNOWN parameters.
+///
+/// @param[in,out]  wp  Window to create location list for. May be NULL in
+///                     which case quickfix list will be created.
+/// @param[in]  args  [list, action, what]
+/// @param[in]  args[0]  Quickfix list contents.
+/// @param[in]  args[1]  Optional. Action to perform:
+///                      append to an existing list, replace its content,
+///                      or create a new one.
+/// @param[in]  args[2]  Optional. Quickfix list properties or title.
+///                      Defaults to caller function name.
+/// @param[out]  rettv  Return value: 0 in case of success, -1 otherwise.
+static void set_qf_ll_list(win_T *wp, typval_T *args, typval_T *rettv)
+  FUNC_ATTR_NONNULL_ARG(2, 3)
+{
+  static char *e_invact = N_("E927: Invalid action: '%s'");
+  const char *title = NULL;
+  char action = ' ';
+  static int recursive = 0;
+  rettv->vval.v_number = -1;
+  dict_T *what = NULL;
+
+  typval_T *list_arg = &args[0];
+  if (list_arg->v_type != VAR_LIST) {
+    emsg(_(e_listreq));
+    return;
+  } else if (recursive != 0) {
+    emsg(_(e_au_recursive));
+    return;
+  }
+
+  typval_T *action_arg = &args[1];
+  if (action_arg->v_type == VAR_UNKNOWN) {
+    // Option argument was not given.
+    goto skip_args;
+  } else if (action_arg->v_type != VAR_STRING) {
+    emsg(_(e_stringreq));
+    return;
+  }
+  const char *const act = tv_get_string_chk(action_arg);
+  if ((*act == 'a' || *act == 'r' || *act == ' ' || *act == 'f')
+      && act[1] == NUL) {
+    action = *act;
+  } else {
+    semsg(_(e_invact), act);
+    return;
+  }
+
+  typval_T *const what_arg = &args[2];
+  if (what_arg->v_type == VAR_UNKNOWN) {
+    // Option argument was not given.
+    goto skip_args;
+  } else if (what_arg->v_type == VAR_STRING) {
+    title = tv_get_string_chk(what_arg);
+    if (!title) {
+      // Type error. Error already printed by tv_get_string_chk().
+      return;
+    }
+  } else if (what_arg->v_type == VAR_DICT && what_arg->vval.v_dict != NULL) {
+    what = what_arg->vval.v_dict;
+  } else {
+    emsg(_(e_dictreq));
+    return;
+  }
+
+skip_args:
+  if (!title) {
+    title = (wp ? ":setloclist()" : ":setqflist()");
+  }
+
+  recursive++;
+  list_T *const l = list_arg->vval.v_list;
+  if (set_errorlist(wp, l, action, (char *)title, what) == OK) {
+    rettv->vval.v_number = 0;
+  }
+  recursive--;
+}
+
+/// "setloclist()" function
+void f_setloclist(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
+{
+  rettv->vval.v_number = -1;
+
+  win_T *win = find_win_by_nr_or_id(&argvars[0]);
+  if (win != NULL) {
+    set_qf_ll_list(win, &argvars[1], rettv);
+  }
+}
+
+/// "setqflist()" function
+void f_setqflist(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
+{
+  set_qf_ll_list(NULL, argvars, rettv);
 }
