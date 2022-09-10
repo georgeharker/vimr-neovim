@@ -1403,7 +1403,7 @@ Dictionary nvim_buf_get_info(Buffer buffer, Error *err)
     PUT(rv, "filename", STRING_OBJ(cstr_to_string((char *)buf->b_ffname)));
   }
 
-  PUT(rv, "modified", BOOLEAN_OBJ(false));
+  PUT(rv, "modified", BOOLEAN_OBJ(buf->b_changed));
   PUT(rv, "buftype", STRING_OBJ(cstr_to_string((const char *) buf->b_p_bt)));
   PUT(rv, "buflisted", BOOLEAN_OBJ(buf->b_p_bl));
 
