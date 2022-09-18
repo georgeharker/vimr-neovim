@@ -746,7 +746,7 @@ void win_set_minimal_style(win_T *wp)
   parse_winhl_opt(wp);
 
   // signcolumn: use 'auto'
-  if (wp->w_p_scl[0] != 'a' || STRLEN(wp->w_p_scl) >= 8) {
+  if (wp->w_p_scl[0] != 'a' || strlen(wp->w_p_scl) >= 8) {
     free_string_option(wp->w_p_scl);
     wp->w_p_scl = xstrdup("auto");
   }
@@ -6193,8 +6193,7 @@ void win_set_inner_size(win_T *wp, bool valid_cursor)
 
     // There is no point in adjusting the scroll position when exiting.  Some
     // values might be invalid.
-    // Skip scroll_to_fraction() when 'cmdheight' was set to one from zero.
-    if (!exiting && !made_cmdheight_nonzero && valid_cursor) {
+    if (!exiting && valid_cursor) {
       scroll_to_fraction(wp, prev_height);
     }
     redraw_later(wp, UPD_NOT_VALID);  // UPD_SOME_VALID??
@@ -6467,10 +6466,10 @@ char_u *file_name_in_line(char_u *line, int col, int options, long count, char_u
     // Also accept " line 999" with and without the same translation as
     // used in last_set_msg().
     p = ptr + len;
-    if (STRNCMP(p, line_english, STRLEN(line_english)) == 0) {
-      p += STRLEN(line_english);
-    } else if (STRNCMP(p, line_transl, STRLEN(line_transl)) == 0) {
-      p += STRLEN(line_transl);
+    if (STRNCMP(p, line_english, strlen(line_english)) == 0) {
+      p += strlen(line_english);
+    } else if (STRNCMP(p, line_transl, strlen(line_transl)) == 0) {
+      p += strlen(line_transl);
     } else {
       p = skipwhite(p);
     }

@@ -83,7 +83,7 @@
 #include "nvim/undo.h"
 #include "nvim/vim.h"
 #include "nvim/window.h"
-#ifdef WIN32
+#ifdef MSWIN
 # include "nvim/os/pty_conpty_win.h"
 #endif
 #include "nvim/api/extmark.h"
@@ -654,8 +654,8 @@ void set_init_3(void)
     // Default for p_sp is "| tee", for p_srr is ">".
     // For known shells it is changed here to include stderr.
     //
-    if (FNAMECMP(p, "csh") == 0
-        || FNAMECMP(p, "tcsh") == 0) {
+    if (path_fnamecmp(p, "csh") == 0
+        || path_fnamecmp(p, "tcsh") == 0) {
       if (do_sp) {
         p_sp = "|& tee";
         options[idx_sp].def_val = p_sp;
@@ -664,16 +664,16 @@ void set_init_3(void)
         p_srr = ">&";
         options[idx_srr].def_val = p_srr;
       }
-    } else if (FNAMECMP(p, "sh") == 0
-               || FNAMECMP(p, "ksh") == 0
-               || FNAMECMP(p, "mksh") == 0
-               || FNAMECMP(p, "pdksh") == 0
-               || FNAMECMP(p, "zsh") == 0
-               || FNAMECMP(p, "zsh-beta") == 0
-               || FNAMECMP(p, "bash") == 0
-               || FNAMECMP(p, "fish") == 0
-               || FNAMECMP(p, "ash") == 0
-               || FNAMECMP(p, "dash") == 0) {
+    } else if (path_fnamecmp(p, "sh") == 0
+               || path_fnamecmp(p, "ksh") == 0
+               || path_fnamecmp(p, "mksh") == 0
+               || path_fnamecmp(p, "pdksh") == 0
+               || path_fnamecmp(p, "zsh") == 0
+               || path_fnamecmp(p, "zsh-beta") == 0
+               || path_fnamecmp(p, "bash") == 0
+               || path_fnamecmp(p, "fish") == 0
+               || path_fnamecmp(p, "ash") == 0
+               || path_fnamecmp(p, "dash") == 0) {
       // Always use POSIX shell style redirection if we reach this
       if (do_sp) {
         p_sp = "2>&1| tee";
@@ -1237,19 +1237,19 @@ int do_set(char *arg, int opt_flags)
                 *errbuf = NUL;
                 i = getdigits_int(&arg, true, 0);
                 if (i & 1) {
-                  STRLCAT(errbuf, "b,", sizeof(errbuf));
+                  xstrlcat(errbuf, "b,", sizeof(errbuf));
                 }
                 if (i & 2) {
-                  STRLCAT(errbuf, "s,", sizeof(errbuf));
+                  xstrlcat(errbuf, "s,", sizeof(errbuf));
                 }
                 if (i & 4) {
-                  STRLCAT(errbuf, "h,l,", sizeof(errbuf));
+                  xstrlcat(errbuf, "h,l,", sizeof(errbuf));
                 }
                 if (i & 8) {
-                  STRLCAT(errbuf, "<,>,", sizeof(errbuf));
+                  xstrlcat(errbuf, "<,>,", sizeof(errbuf));
                 }
                 if (i & 16) {
-                  STRLCAT(errbuf, "[,],", sizeof(errbuf));
+                  xstrlcat(errbuf, "[,],", sizeof(errbuf));
                 }
                 save_arg = (char_u *)arg;
                 arg = errbuf;
@@ -1266,7 +1266,7 @@ int do_set(char *arg, int opt_flags)
               // we need to remove the backslashes.
 
               // get a bit too much
-              newlen = (unsigned)STRLEN(arg) + 1;
+              newlen = (unsigned)strlen(arg) + 1;
               if (adding || prepending || removing) {
                 newlen += (unsigned)STRLEN(origval) + 1;
               }
@@ -1274,7 +1274,7 @@ int do_set(char *arg, int opt_flags)
               s = newval;
 
               // Copy the string, skip over escaped chars.
-              // For WIN32 backslashes before normal
+              // For MS-Windows backslashes before normal
               // file name characters are not removed, and keep
               // backslash at start, for "\\machine\path", but
               // do remove it for "\\\\machine\\path".
@@ -1312,7 +1312,7 @@ int do_set(char *arg, int opt_flags)
                 s = option_expand(opt_idx, newval);
                 if (s != NULL) {
                   xfree(newval);
-                  newlen = (unsigned)STRLEN(s) + 1;
+                  newlen = (unsigned)strlen(s) + 1;
                   if (adding || prepending || removing) {
                     newlen += (unsigned)STRLEN(origval) + 1;
                   }
@@ -1357,10 +1357,10 @@ int do_set(char *arg, int opt_flags)
                     i--;
                   }
                   memmove(newval + i + comma, newval,
-                          STRLEN(newval) + 1);
+                          strlen(newval) + 1);
                   memmove(newval, origval, (size_t)i);
                 } else {
-                  i = (int)STRLEN(newval);
+                  i = (int)strlen(newval);
                   STRMOVE(newval + i + comma, origval);
                 }
                 if (comma) {
@@ -1507,7 +1507,7 @@ skip:
 
     if (errmsg != NULL) {
       STRLCPY(IObuff, _(errmsg), IOSIZE);
-      i = (int)STRLEN(IObuff) + 2;
+      i = (int)strlen(IObuff) + 2;
       if (i + (arg - startarg) < IOSIZE) {
         // append the argument with the error
         STRCAT(IObuff, ": ");
@@ -1694,7 +1694,7 @@ static char *option_expand(int opt_idx, char *val)
 
   // If val is longer than MAXPATHL no meaningful expansion can be done,
   // expand_env() would truncate the string.
-  if (val == NULL || STRLEN(val) > MAXPATHL) {
+  if (val == NULL || strlen(val) > MAXPATHL) {
     return NULL;
   }
 
@@ -1891,14 +1891,15 @@ void set_option_sctx_idx(int opt_idx, int opt_flags, sctx_T script_ctx)
   int both = (opt_flags & (OPT_LOCAL | OPT_GLOBAL)) == 0;
   int indir = (int)options[opt_idx].indir;
   nlua_set_sctx(&script_ctx);
-  const LastSet last_set = {
-    .script_ctx = {
-      script_ctx.sc_sid,
-      script_ctx.sc_seq,
-      script_ctx.sc_lnum + SOURCING_LNUM
-    },
-    current_channel_id
+  LastSet last_set = {
+    .script_ctx = script_ctx,
+    .channel_id = current_channel_id,
   };
+
+  // Modeline already has the line number set.
+  if (!(opt_flags & OPT_MODELINE)) {
+    last_set.script_ctx.sc_lnum += SOURCING_LNUM;
+  }
 
   // Remember where the option was set.  For local options need to do that
   // in the buffer or window structure.
@@ -2570,9 +2571,10 @@ static char *set_num_option(int opt_idx, char_u *varp, long value, char *errbuf,
       Rows = (int)p_lines;
       Columns = (int)p_columns;
       check_screensize();
-      if (cmdline_row > Rows - p_ch && Rows > p_ch) {
-        assert(p_ch >= 0 && Rows - p_ch <= INT_MAX);
-        cmdline_row = (int)(Rows - p_ch);
+      int new_row = (int)(Rows - MAX(p_ch, 1));
+      if (cmdline_row > new_row && Rows > p_ch) {
+        assert(p_ch >= 0 && new_row <= INT_MAX);
+        cmdline_row = new_row;
       }
     }
     if (p_window >= Rows || !option_was_set("window")) {
@@ -2753,7 +2755,7 @@ int findoption_len(const char *const arg, const size_t len)
   } else {
     // Nvim: handle option aliases.
     if (STRNCMP(options[opt_idx].fullname, "viminfo", 7) == 0) {
-      if (STRLEN(options[opt_idx].fullname) == 7) {
+      if (strlen(options[opt_idx].fullname) == 7) {
         return findoption_len("shada", 5);
       }
       assert(strcmp(options[opt_idx].fullname, "viminfofile") == 0);
@@ -3274,7 +3276,7 @@ static void showoptions(int all, int opt_flags)
           len = 1;                      // a toggle option fits always
         } else {
           option_value2string(p, opt_flags);
-          len = (int)STRLEN(p->fullname) + vim_strsize((char *)NameBuff) + 1;
+          len = (int)strlen(p->fullname) + vim_strsize((char *)NameBuff) + 1;
         }
         if ((len <= INC - GAP && run == 1)
             || (len > INC - GAP && run == 2)) {
@@ -3558,14 +3560,12 @@ static int put_setstring(FILE *fd, char *cmd, char *name, char **valuep, uint64_
     if (valuep == &p_pt) {
       s = (char_u *)(*valuep);
       while (*s != NUL) {
-        if (put_escstr(fd, (char_u *)str2special((const char **)&s, false,
-                                                 false), 2)
-            == FAIL) {
+        if (put_escstr(fd, (char_u *)str2special((const char **)&s, false, false), 2) == FAIL) {
           return FAIL;
         }
       }
     } else if ((flags & P_EXPAND) != 0) {
-      size_t size = (size_t)STRLEN(*valuep) + 1;
+      size_t size = (size_t)strlen(*valuep) + 1;
 
       // replace home directory in the whole option value into "buf"
       buf = xmalloc(size);

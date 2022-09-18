@@ -1217,7 +1217,7 @@ static int find_tagfunc_tags(char_u *pat, garray_T *ga, int *match_count, int fl
       }
       // Other elements will be stored as "\tKEY:VALUE"
       // Allocate space for the key and the colon
-      len += STRLEN(dict_key) + 1;
+      len += strlen(dict_key) + 1;
     });
 
     if (has_extra) {
@@ -1971,7 +1971,7 @@ parse_line:
           *tagp.tagname_end = NUL;
           match = vim_regexec(&orgpat.regmatch, tagp.tagname, (colnr_T)0);
           if (match) {
-            matchoff = (int)(orgpat.regmatch.startp[0] - (char_u *)tagp.tagname);
+            matchoff = (int)(orgpat.regmatch.startp[0] - tagp.tagname);
             if (orgpat.regmatch.rm_ic) {
               orgpat.regmatch.rm_ic = false;
               match_no_ic = vim_regexec(&orgpat.regmatch, tagp.tagname, (colnr_T)0);

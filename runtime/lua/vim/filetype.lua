@@ -177,6 +177,7 @@ local extension = {
   bbappend = 'bitbake',
   bbclass = 'bitbake',
   bl = 'blank',
+  blp = 'blueprint',
   bsd = 'bsdl',
   bsdl = 'bsdl',
   bst = 'bst',
@@ -610,6 +611,7 @@ local extension = {
   nse = 'lua',
   rockspec = 'lua',
   lua = 'lua',
+  lrc = 'lyrics',
   m = function(path, bufnr)
     return require('vim.filetype.detect').m(bufnr)
   end,
@@ -958,6 +960,7 @@ local extension = {
   srec = 'srec',
   mot = 'srec',
   ['s19'] = 'srec',
+  srt = 'srt',
   st = 'st',
   imata = 'stata',
   ['do'] = 'stata',
@@ -1019,6 +1022,7 @@ local extension = {
   dsm = 'vb',
   ctl = 'vb',
   vbs = 'vb',
+  vdf = 'vdf',
   vdmpp = 'vdmpp',
   vpp = 'vdmpp',
   vdmrt = 'vdmrt',
@@ -1385,6 +1389,7 @@ local filename = {
   ['.gitconfig'] = 'gitconfig',
   ['.gitmodules'] = 'gitconfig',
   ['.gitattributes'] = 'gitattributes',
+  ['.gitignore'] = 'gitignore',
   ['gitolite.conf'] = 'gitolite',
   ['git-rebase-todo'] = 'gitrebase',
   gkrellmrc = 'gkrellmrc',
@@ -1833,6 +1838,13 @@ local pattern = {
   ['.*/git/attributes'] = function(path, bufnr)
     if vim.env.XDG_CONFIG_HOME and path:find(vim.env.XDG_CONFIG_HOME .. '/git/attributes') then
       return 'gitattributes'
+    end
+  end,
+  ['.*%.git/info/exclude'] = 'gitignore',
+  ['.*/%.config/git/ignore'] = 'gitignore',
+  ['.*/git/ignore'] = function(path, bufnr)
+    if vim.env.XDG_CONFIG_HOME and path:find(vim.env.XDG_CONFIG_HOME .. '/git/ignore') then
+      return 'gitignore'
     end
   end,
   ['%.gitsendemail%.msg%.......'] = 'gitsendemail',
