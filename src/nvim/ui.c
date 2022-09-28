@@ -513,7 +513,7 @@ void ui_flush(void)
     return;
   }
   cmdline_ui_flush();
-  win_ui_flush();
+  win_ui_flush(false);
   msg_ext_ui_flush();
   msg_scroll_flush();
 

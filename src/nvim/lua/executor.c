@@ -1658,7 +1658,7 @@ void ex_luado(exarg_T *const eap)
   }
   lua_pop(lstate, 1);
   check_cursor();
-  update_screen(UPD_NOT_VALID);
+  redraw_curbuf_later(UPD_NOT_VALID);
 }
 
 /// Run lua file
@@ -2036,7 +2036,8 @@ int nlua_do_ucmd(ucmd_T *cmd, exarg_T *eap, bool preview)
   }
   lua_setfield(lstate, -2, "fargs");
 
-  lua_pushstring(lstate, (const char *)&eap->regname);
+  char reg[2] = { (char)eap->regname, NUL };
+  lua_pushstring(lstate, reg);
   lua_setfield(lstate, -2, "reg");
 
   lua_pushinteger(lstate, eap->addr_count);

@@ -116,6 +116,8 @@ struct bw_info {
 #endif
 
 static char *e_auchangedbuf = N_("E812: Autocommands changed buffer or buffer name");
+static char e_no_matching_autocommands_for_buftype_str_buffer[]
+  = N_("E676: No matching autocommands for buftype=%s buffer");
 
 void filemess(buf_T *buf, char *name, char *s, int attr)
 {
@@ -2366,7 +2368,7 @@ int buf_write(buf_T *buf, char *fname, char *sfname, linenr_T start, linenr_T en
       no_wait_return--;
       msg_scroll = msg_save;
       if (nofile_err) {
-        emsg(_("E676: No matching autocommands for acwrite buffer"));
+        semsg(_(e_no_matching_autocommands_for_buftype_str_buffer), curbuf->b_p_bt);
       }
 
       if (nofile_err
@@ -2534,8 +2536,8 @@ int buf_write(buf_T *buf, char *fname, char *sfname, linenr_T start, linenr_T en
       goto fail;
     }
 
-    // Check if the timestamp hasn't changed since reading the file.
-    if (overwriting) {
+    // If 'forceit' is false, check if the timestamp hasn't changed since reading the file.
+    if (overwriting && !forceit) {
       retval = check_mtime(buf, &file_info_old);
       if (retval == FAIL) {
         goto fail;
