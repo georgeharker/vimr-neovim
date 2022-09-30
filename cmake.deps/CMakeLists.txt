@@ -184,11 +184,11 @@ set(LUA_COMPAT53_URL https://github.com/keplerproject/lua-compat-5.3/archive/v0.
 set(LUA_COMPAT53_SHA256 ad05540d2d96a48725bb79a1def35cf6652a4e2ec26376e2617c8ce2baa6f416)
 
 # cat.exe curl.exe curl-ca-bundle.crt diff.exe tee.exe xxd.exe
-set(WINTOOLS_URL https://github.com/neovim/deps/raw/d66e306abf5b846484b4f2adffd896bce7e065d2/opt/win32tools.zip)
-set(WINTOOLS_SHA256 2fb2f8d69070b3f16e029913fb95008e6be33893d77fc358012396c275a0fdb7)
+set(WINTOOLS_URL https://github.com/neovim/deps/raw/c1e7dd8de9e1b18d11dcfa0a192cd029262e5303/opt/win32tools.zip)
+set(WINTOOLS_SHA256 3c4c490a3d392ceeb1347cb77cc821a31900b688a2189276d3a1131a3f21daf1)
 
-set(WINGUI_URL https://github.com/equalsraf/neovim-qt/releases/download/v0.2.16.1/neovim-qt.zip)
-set(WINGUI_SHA256 ddb4492db03da407703fb0ab271c4eb060250d1a7d71200e2b3b981cb0de59de)
+set(WINGUI_URL https://github.com/equalsraf/neovim-qt/releases/download/v0.2.17/neovim-qt.zip)
+set(WINGUI_SHA256 502e386eef677c2c2e0c11d8cbb27f3e12b4d96818369417e8da4129c4580c25)
 
 set(WIN32YANK_X86_URL https://github.com/equalsraf/win32yank/releases/download/v0.0.4/win32yank-x86.zip)
 set(WIN32YANK_X86_SHA256 62f34e5a46c5d4a7b3f3b512e1ff7b77fedd432f42581cbe825233a996eed62c)
@@ -210,8 +210,8 @@ set(TREESITTER_LUA_SHA256 564594fe0ffd2f2fb3578a15019b723e1bc94ac82cb6a0103a6b3b
 set(TREESITTER_VIM_URL https://github.com/vigoux/tree-sitter-viml/archive/v0.2.0.tar.gz)
 set(TREESITTER_VIM_SHA256 608dcc31a7948cb66ae7f45494620e2e9face1af75598205541f80d782ec4501)
 
-set(TREESITTER_HELP_URL https://github.com/neovim/tree-sitter-vimdoc/archive/2ba61cf9e7236d0ae3ce5c526bbd689ace3ff3bd.tar.gz)
-set(TREESITTER_HELP_SHA256 ce89e486c2cc52c0d82edf0600d0f67af9ae9e4b438673224633d0c9f47c62be)
+set(TREESITTER_HELP_URL https://github.com/neovim/tree-sitter-vimdoc/archive/v1.1.0.tar.gz)
+set(TREESITTER_HELP_SHA256 4c0ef80c6dc09acab362478950ec6be58a4ab1cbf2d95754b8fbb566e4c647a1)
 
 set(TREESITTER_URL https://github.com/tree-sitter/tree-sitter/archive/v0.20.7.tar.gz)
 set(TREESITTER_SHA256 b355e968ec2d0241bbd96748e00a9038f83968f85d822ecb9940cbe4c42e182e)
