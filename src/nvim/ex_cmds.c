@@ -266,13 +266,12 @@ void ex_align(exarg_T *eap)
   }
 
   for (curwin->w_cursor.lnum = eap->line1;
-       curwin->w_cursor.lnum <= eap->line2; ++curwin->w_cursor.lnum) {
+       curwin->w_cursor.lnum <= eap->line2; curwin->w_cursor.lnum++) {
     if (eap->cmdidx == CMD_left) {              // left align
       new_indent = indent;
     } else {
       has_tab = false;          // avoid uninit warnings
-      len = linelen(eap->cmdidx == CMD_right ? &has_tab
-                                             : NULL) - get_indent();
+      len = linelen(eap->cmdidx == CMD_right ? &has_tab : NULL) - get_indent();
 
       if (len <= 0) {                           // skip blank lines
         continue;
@@ -1544,84 +1543,72 @@ char *make_filter_cmd(char *cmd, char *itmp, char *otmp)
 
   size_t len = strlen(cmd) + 1;  // At least enough space for cmd + NULL.
 
-  len += is_fish_shell ?  sizeof("begin; " "; end") - 1
-                       :  is_pwsh ? sizeof("Start-Process ")
-                                  : sizeof("(" ")") - 1;
+  len += is_fish_shell ? sizeof("begin; " "; end") - 1
+                       : !is_pwsh ? sizeof("(" ")") - 1
+                                  : 0;
 
   if (itmp != NULL) {
-    len += is_pwsh  ? strlen(itmp) + sizeof(" -RedirectStandardInput ")
+    len += is_pwsh  ? strlen(itmp) + sizeof("& { Get-Content " " | & " " }") - 1
                     : strlen(itmp) + sizeof(" { " " < " " } ") - 1;
   }
   if (otmp != NULL) {
     len += strlen(otmp) + strlen(p_srr) + 2;  // two extra spaces ("  "),
   }
 
-  const char *const cmd_args = strchr(cmd, ' ');
-  len += (is_pwsh && cmd_args)
-      ? strlen(" -ArgumentList ") + 2  // two extra quotes
-      : 0;
-
   char *const buf = xmalloc(len);
 
   if (is_pwsh) {
-    xstrlcpy(buf, "Start-Process ", len);
-    if (cmd_args == NULL) {
-      xstrlcat(buf, cmd, len);
+    if (itmp != NULL) {
+      xstrlcpy(buf, "& { Get-Content ", len - 1);  // FIXME: should we add "-Encoding utf8"?
+      xstrlcat(buf, (const char *)itmp, len - 1);
+      xstrlcat(buf, " | & ", len - 1);  // FIXME: add `&` ourself or leave to user?
+      xstrlcat(buf, cmd, len - 1);
+      xstrlcat(buf, " }", len - 1);
     } else {
-      xstrlcpy(buf + strlen(buf), cmd, (size_t)(cmd_args - cmd + 1));
-      xstrlcat(buf, " -ArgumentList \"", len);
-      xstrlcat(buf, cmd_args + 1, len);  // +1 to skip the leading space.
-      xstrlcat(buf, "\"", len);
+      xstrlcpy(buf, cmd, len - 1);
     }
+  } else {
 #if defined(UNIX)
     // Put delimiters around the command (for concatenated commands) when
     // redirecting input and/or output.
-  } else if (itmp != NULL || otmp != NULL) {
-    char *fmt = is_fish_shell ? "begin; %s; end"
-                              :       "(%s)";
-    vim_snprintf(buf, len, fmt, cmd);
-#endif
+    if (itmp != NULL || otmp != NULL) {
+      char *fmt = is_fish_shell ? "begin; %s; end"
+        :       "(%s)";
+      vim_snprintf(buf, len, fmt, cmd);
+    } else {
+      xstrlcpy(buf, cmd, len);
+    }
+
+    if (itmp != NULL) {
+      xstrlcat(buf, " < ", len - 1);
+      xstrlcat(buf, (const char *)itmp, len - 1);
+    }
+#else
     // For shells that don't understand braces around commands, at least allow
     // the use of commands in a pipe.
-  } else {
-    xstrlcpy(buf, cmd, len);
-  }
-
-#if defined(UNIX)
-  if (itmp != NULL) {
-    if (is_pwsh) {
-      xstrlcat(buf, " -RedirectStandardInput ", len - 1);
-    } else {
-      xstrlcat(buf, " < ", len - 1);
-    }
-    xstrlcat(buf, itmp, len - 1);
-  }
-#else
-  if (itmp != NULL) {
-    // If there is a pipe, we have to put the '<' in front of it.
-    // Don't do this when 'shellquote' is not empty, otherwise the
-    // redirection would be inside the quotes.
-    if (*p_shq == NUL) {
-      char *const p = find_pipe(buf);
-      if (p != NULL) {
-        *p = NUL;
+    xstrlcpy(buf, (char *)cmd, len);
+    if (itmp != NULL) {
+      // If there is a pipe, we have to put the '<' in front of it.
+      // Don't do this when 'shellquote' is not empty, otherwise the
+      // redirection would be inside the quotes.
+      if (*p_shq == NUL) {
+        char *const p = find_pipe(buf);
+        if (p != NULL) {
+          *p = NUL;
+        }
       }
-    }
-    if (is_pwsh) {
-      xstrlcat(buf, " -RedirectStandardInput ", len);
-    } else {
       xstrlcat(buf, " < ", len);
-    }
-    xstrlcat(buf, itmp, len);
-    if (*p_shq == NUL) {
-      const char *const p = find_pipe(cmd);
-      if (p != NULL) {
-        xstrlcat(buf, " ", len - 1);  // Insert a space before the '|' for DOS
-        xstrlcat(buf, p, len - 1);
+      xstrlcat(buf, (const char *)itmp, len);
+      if (*p_shq == NUL) {
+        const char *const p = find_pipe((const char *)cmd);
+        if (p != NULL) {
+          xstrlcat(buf, " ", len - 1);  // Insert a space before the '|' for DOS
+          xstrlcat(buf, p, len - 1);
+        }
       }
     }
-  }
 #endif
+  }
   if (otmp != NULL) {
     append_redir(buf, len, p_srr, otmp);
   }
@@ -3252,7 +3239,7 @@ void sub_set_replacement(SubReplacementString sub)
 /// @param[in]  save Save pattern to options, history
 ///
 /// @returns true if :substitute can be replaced with a join command
-static bool sub_joining_lines(exarg_T *eap, char *pat, char *sub, char *cmd, bool save)
+static bool sub_joining_lines(exarg_T *eap, char *pat, const char *sub, const char *cmd, bool save)
   FUNC_ATTR_NONNULL_ARG(1, 3, 4)
 {
   // TODO(vim): find a generic solution to make line-joining operations more
@@ -3422,6 +3409,30 @@ static int check_regexp_delim(int c)
 /// @return 0, 1 or 2. See show_cmdpreview() for more information on what the return value means.
 static int do_sub(exarg_T *eap, proftime_T timeout, long cmdpreview_ns, handle_T cmdpreview_bufnr)
 {
+#define ADJUST_SUB_FIRSTLNUM() \
+  do { \
+    /* For a multi-line match, make a copy of the last matched */ \
+    /* line and continue in that one. */ \
+    if (nmatch > 1) { \
+      sub_firstlnum += (linenr_T)nmatch - 1; \
+      xfree(sub_firstline); \
+      sub_firstline = xstrdup(ml_get(sub_firstlnum)); \
+      /* When going beyond the last line, stop substituting. */ \
+      if (sub_firstlnum <= line2) { \
+        do_again = true; \
+      } else { \
+        subflags.do_all = false; \
+      } \
+    } \
+    if (skip_match) { \
+      /* Already hit end of the buffer, sub_firstlnum is one */ \
+      /* less than what it ought to be. */ \
+      xfree(sub_firstline); \
+      sub_firstline = xstrdup(""); \
+      copycol = 0; \
+    } \
+  } while (0)
+
   long i = 0;
   regmmatch_T regmatch;
   static subflags_T subflags = {
@@ -3888,7 +3899,8 @@ static int do_sub(exarg_T *eap, proftime_T timeout, long cmdpreview_ns, handle_T
 
               update_topline(curwin);
               validate_cursor();
-              update_screen(UPD_SOME_VALID);
+              redraw_later(curwin, UPD_SOME_VALID);
+              update_screen();
               highlight_match = false;
               redraw_later(curwin, UPD_SOME_VALID);
 
@@ -3991,30 +4003,6 @@ static int do_sub(exarg_T *eap, proftime_T timeout, long cmdpreview_ns, handle_T
           current_match.end.lnum = sub_firstlnum + (linenr_T)nmatch;
           skip_match = true;
         }
-
-#define ADJUST_SUB_FIRSTLNUM() \
-  do { \
-    /* For a multi-line match, make a copy of the last matched */ \
-    /* line and continue in that one. */ \
-    if (nmatch > 1) { \
-      sub_firstlnum += (linenr_T)nmatch - 1; \
-      xfree(sub_firstline); \
-      sub_firstline = xstrdup(ml_get(sub_firstlnum)); \
-      /* When going beyond the last line, stop substituting. */ \
-      if (sub_firstlnum <= line2) { \
-        do_again = true; \
-      } else { \
-        subflags.do_all = false; \
-      } \
-    } \
-    if (skip_match) { \
-      /* Already hit end of the buffer, sub_firstlnum is one */ \
-      /* less than what it ought to be. */ \
-      xfree(sub_firstline); \
-      sub_firstline = xstrdup(""); \
-      copycol = 0; \
-    } \
-  } while (0)
 
         // Save the line numbers for the preview buffer
         // NOTE: If the pattern matches a final newline, the next line will

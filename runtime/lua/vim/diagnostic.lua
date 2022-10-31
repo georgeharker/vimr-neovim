@@ -357,19 +357,6 @@ local function execute_scheduled_display(namespace, bufnr)
   M.show(namespace, bufnr, nil, args)
 end
 
---- @deprecated
---- Callback scheduled when leaving Insert mode.
----
---- called from the Vimscript autocommand.
----
---- See @ref schedule_display()
----
----@private
-function M._execute_scheduled_display(namespace, bufnr)
-  vim.deprecate('vim.diagnostic._execute_scheduled_display', nil, '0.9')
-  execute_scheduled_display(namespace, bufnr)
-end
-
 --- Table of autocmd events to fire the update for displaying new diagnostic information
 local insert_leave_auto_cmds = { 'InsertLeave', 'CursorHoldI' }
 
@@ -810,7 +797,7 @@ function M.get_prev_pos(opts)
 end
 
 --- Move to the previous diagnostic in the current buffer.
----@param opts table See |vim.diagnostic.goto_next()|
+---@param opts table|nil See |vim.diagnostic.goto_next()|
 function M.goto_prev(opts)
   return diagnostic_move_pos(opts, M.get_prev_pos(opts))
 end

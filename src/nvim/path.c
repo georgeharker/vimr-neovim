@@ -645,7 +645,7 @@ static size_t do_path_expand(garray_T *gap, const char *path, size_t wildoff, in
 #ifndef MSWIN
                    || (!p_fic && (flags & EW_ICASE) && mb_isalpha(utf_ptr2char((char *)path_end)))
 #endif
-                   )) {
+                   )) {  // NOLINT(whitespace/parens)
       e = p;
     }
     len = (size_t)(utfc_ptr2len((char *)path_end));
@@ -787,7 +787,7 @@ static int find_previous_pathsep(char_u *path, char_u **psep)
 {
   // skip the current separator
   if (*psep > path && vim_ispathsep(**psep)) {
-    --*psep;
+    (*psep)--;
   }
 
   // find the previous separator
@@ -2362,16 +2362,9 @@ static int path_to_absolute(const char *fname, char *buf, size_t len, int force)
     }
 #endif
     if (p != NULL) {
-      // relative to root
-      if (p == fname) {
-        // only one path component
-        relative_directory[0] = PATHSEP;
-        relative_directory[1] = NUL;
-      } else {
-        assert(p >= fname);
-        memcpy(relative_directory, fname, (size_t)(p - fname));
-        relative_directory[p - fname] = NUL;
-      }
+      assert(p >= fname);
+      memcpy(relative_directory, fname, (size_t)(p - fname + 1));
+      relative_directory[p - fname + 1] = NUL;
       end_of_path = p + 1;
     } else {
       relative_directory[0] = NUL;

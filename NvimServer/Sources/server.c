@@ -354,7 +354,7 @@ static void scroll(void **argv) {
       custom_ui_scroll(vertDir, abs(vert), row, column);
     }
 
-    update_screen(UPD_VALID);
+    update_screen();
     setcursor();
     ui_flush();
   });

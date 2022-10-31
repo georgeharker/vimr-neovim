@@ -1413,13 +1413,16 @@ static void suspend_event(void **argv)
 
 static void tui_suspend(UI *ui)
 {
-#ifdef UNIX
   TUIData *data = ui->data;
+#ifdef UNIX
   // kill(0, SIGTSTP) won't stop the UI thread, so we must poll for SIGCONT
   // before continuing. This is done in another callback to avoid
   // loop_poll_events recursion
   multiqueue_put_event(data->loop->fast_events,
                        event_create(suspend_event, 1, ui));
+#else
+  // Resume the main thread as suspending isn't implemented.
+  CONTINUE(data->bridge);
 #endif
 }
 
@@ -2096,7 +2099,7 @@ static void augment_terminfo(TUIData *data, const char *term, long vte_version, 
   // Dickey ncurses terminfo does not include the setrgbf and setrgbb
   // capabilities, proposed by Rüdiger Sonderfeld on 2013-10-15.  Adding
   // them here when terminfo lacks them is an augmentation, not a fixup.
-  // https://gist.github.com/XVilka/8346728
+  // https://github.com/termstandard/colors
 
   // At this time (2017-07-12) it seems like all terminals that support rgb
   // color codes can use semicolons in the terminal code and be fine.

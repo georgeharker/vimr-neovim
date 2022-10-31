@@ -539,6 +539,7 @@ void unchanged(buf_T *buf, int ff, bool always_inc_changedtick)
 void save_file_ff(buf_T *buf)
 {
   buf->b_start_ffc = (unsigned char)(*buf->b_p_ff);
+  buf->b_start_eof = buf->b_p_eof;
   buf->b_start_eol = buf->b_p_eol;
   buf->b_start_bomb = buf->b_p_bomb;
 
@@ -573,7 +574,8 @@ bool file_ff_differs(buf_T *buf, bool ignore_empty)
   if (buf->b_start_ffc != *buf->b_p_ff) {
     return true;
   }
-  if ((buf->b_p_bin || !buf->b_p_fixeol) && buf->b_start_eol != buf->b_p_eol) {
+  if ((buf->b_p_bin || !buf->b_p_fixeol)
+      && (buf->b_start_eof != buf->b_p_eof || buf->b_start_eol != buf->b_p_eol)) {
     return true;
   }
   if (!buf->b_p_bin && buf->b_start_bomb != buf->b_p_bomb) {
@@ -1814,19 +1816,19 @@ int open_line(int dir, int flags, int second_line_indent, bool *did_do_comment)
     vreplace_mode = 0;
   }
 
-  // May do lisp indenting.
-  if (!p_paste
-      && leader == NULL
-      && curbuf->b_p_lisp
-      && curbuf->b_p_ai) {
-    fixthisline(get_lisp_indent);
-    ai_col = (colnr_T)getwhitecols_curline();
-  }
-
-  // May do indenting after opening a new line.
-  if (do_cindent) {
-    do_c_expr_indent();
-    ai_col = (colnr_T)getwhitecols_curline();
+  if (!p_paste) {
+    if (leader == NULL
+        && !use_indentexpr_for_lisp()
+        && curbuf->b_p_lisp
+        && curbuf->b_p_ai) {
+      // do lisp indenting
+      fixthisline(get_lisp_indent);
+      ai_col = (colnr_T)getwhitecols_curline();
+    } else if (do_cindent || (curbuf->b_p_ai && use_indentexpr_for_lisp())) {
+      // do 'cindent' or 'indentexpr' indenting
+      do_c_expr_indent();
+      ai_col = (colnr_T)getwhitecols_curline();
+    }
   }
 
   if (vreplace_mode != 0) {

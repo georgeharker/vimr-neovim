@@ -1,6 +1,7 @@
 # CMAKE REFERENCE
 #   intro: https://codingnest.com/basic-cmake/
 #   best practices (3.0+): https://gist.github.com/mbinna/c61dbb39bca0e4fb7d1f73b0d66a4fd1
+#   pitfalls: https://izzys.casa/2019/02/everything-you-never-wanted-to-know-about-cmake/
 
 # Version should match the tested CMAKE_URL in .github/workflows/ci.yml.
 cmake_minimum_required(VERSION 3.10)
@@ -142,8 +143,6 @@ set(NVIM_API_PRERELEASE false)
 
 set(NVIM_VERSION_BUILD_TYPE "${CMAKE_BUILD_TYPE}")
 # NVIM_VERSION_CFLAGS set further below.
-
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Log level (MIN_LOG_LEVEL in log.h)
 if("${MIN_LOG_LEVEL}" MATCHES "^$")
@@ -619,7 +618,6 @@ endif()
 #
 find_program(LUACHECK_PRG luacheck)
 find_program(STYLUA_PRG stylua)
-find_program(FLAKE8_PRG flake8)
 find_program(UNCRUSTIFY_PRG uncrustify)
 find_program(SHELLCHECK_PRG shellcheck)
 
@@ -646,14 +644,6 @@ add_custom_target(lintlua)
 add_dependencies(lintlua lintlua-luacheck lintlua-stylua)
 
 include(InstallHelpers)
-add_glob_targets(
-  TARGET lintpy
-  COMMAND ${FLAKE8_PRG}
-  FLAGS --max-line-length 88
-  GLOB_DIRS contrib scripts src test
-  GLOB_PAT *.py
-  TOUCH_STRATEGY SINGLE
-  )
 
 add_glob_targets(
   TARGET lintsh
@@ -669,7 +659,7 @@ add_custom_target(lintcommit
 add_dependencies(lintcommit nvim)
 
 add_custom_target(lint)
-add_dependencies(lint check-single-includes lintc lintlua lintpy lintsh lintcommit lintuncrustify)
+add_dependencies(lint check-single-includes lintc lintlua lintsh lintcommit lintuncrustify)
 
 #
 # Format
@@ -732,6 +722,7 @@ if(BUSTED_PRG)
         -DTEST_DIR=${CMAKE_CURRENT_SOURCE_DIR}/test
         -DBUILD_DIR=${CMAKE_BINARY_DIR}
         -DTEST_TYPE=unit
+        -DCIRRUS_CI=$ENV{CIRRUS_CI}
         -P ${PROJECT_SOURCE_DIR}/cmake/RunTests.cmake
       DEPENDS ${UNITTEST_PREREQS}
       ${TEST_TARGET_ARGS})
@@ -762,6 +753,7 @@ if(BUSTED_PRG)
       -DTEST_DIR=${CMAKE_CURRENT_SOURCE_DIR}/test
       -DBUILD_DIR=${CMAKE_BINARY_DIR}
       -DTEST_TYPE=functional
+      -DCIRRUS_CI=$ENV{CIRRUS_CI}
       -P ${PROJECT_SOURCE_DIR}/cmake/RunTests.cmake
     DEPENDS ${FUNCTIONALTEST_PREREQS}
     ${TEST_TARGET_ARGS})
@@ -777,6 +769,7 @@ if(BUSTED_PRG)
       -DTEST_DIR=${CMAKE_CURRENT_SOURCE_DIR}/test
       -DBUILD_DIR=${CMAKE_BINARY_DIR}
       -DTEST_TYPE=benchmark
+      -DCIRRUS_CI=$ENV{CIRRUS_CI}
       -P ${PROJECT_SOURCE_DIR}/cmake/RunTests.cmake
     DEPENDS ${BENCHMARK_PREREQS}
     ${TEST_TARGET_ARGS})
@@ -794,6 +787,7 @@ if(BUSTED_LUA_PRG)
       -DTEST_DIR=${CMAKE_CURRENT_SOURCE_DIR}/test
       -DBUILD_DIR=${CMAKE_BINARY_DIR}
       -DTEST_TYPE=functional
+      -DCIRRUS_CI=$ENV{CIRRUS_CI}
       -P ${PROJECT_SOURCE_DIR}/cmake/RunTests.cmake
     DEPENDS ${FUNCTIONALTEST_PREREQS}
     ${TEST_TARGET_ARGS})
