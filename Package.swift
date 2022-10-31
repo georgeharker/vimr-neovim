@@ -4,7 +4,7 @@ import PackageDescription
 
 let package = Package(
   name: "NvimServer",
-  platforms: [.macOS(.v10_13)],
+  platforms: [.macOS(.v10_15)],
   products: [
     .library(name: "NvimServerTypes", targets: ["NvimServerTypes"]),
     .library(name: "RxNeovim", targets: ["RxNeovim"]),
