@@ -1403,7 +1403,10 @@ Dictionary nvim_buf_get_info(Buffer buffer, Error *err)
     return rv;
   }
 
-  if (buf->b_ffname != NULL) {
+  if (buf->b_ffname == NULL) {
+    String empty_str = { .data = ((void*)0), .size = 0 };
+    PUT(rv, "filename", STRING_OBJ(empty_str));
+  } else {
     PUT(rv, "filename", STRING_OBJ(cstr_to_string((char *)buf->b_ffname)));
   }
 
