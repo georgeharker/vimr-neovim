@@ -1,4 +1,4 @@
-// Auto generated for nvim version 0.8.0.
+// Auto generated for nvim version 0.9.0.
 // See bin/generate_api_methods.py
 
 import Foundation
@@ -2313,6 +2313,50 @@ extension RxNeovimApi {
 
     return self
       .rpc(method: "nvim_set_hl", params: params, expectsReturnValue: expectsReturnValue)
+      .asCompletable()
+  }
+
+  public func setHlNs(
+    ns_id: Int,
+    expectsReturnValue: Bool = false
+  ) -> Completable {
+
+    let params: [RxNeovimApi.Value] = [
+        .int(Int64(ns_id)),
+    ]
+
+    if expectsReturnValue {
+      return self
+        .checkBlocked(
+          self.rpc(method: "nvim_set_hl_ns", params: params, expectsReturnValue: expectsReturnValue)
+        )
+        .asCompletable()
+    }
+
+    return self
+      .rpc(method: "nvim_set_hl_ns", params: params, expectsReturnValue: expectsReturnValue)
+      .asCompletable()
+  }
+
+  public func setHlNsFast(
+    ns_id: Int,
+    expectsReturnValue: Bool = false
+  ) -> Completable {
+
+    let params: [RxNeovimApi.Value] = [
+        .int(Int64(ns_id)),
+    ]
+
+    if expectsReturnValue {
+      return self
+        .checkBlocked(
+          self.rpc(method: "nvim_set_hl_ns_fast", params: params, expectsReturnValue: expectsReturnValue)
+        )
+        .asCompletable()
+    }
+
+    return self
+      .rpc(method: "nvim_set_hl_ns_fast", params: params, expectsReturnValue: expectsReturnValue)
       .asCompletable()
   }
 
@@ -4719,6 +4763,30 @@ extension RxNeovimApi {
     return self
       .rpc(method: "nvim_win_call", params: params, expectsReturnValue: true)
       .map(transform)
+  }
+
+  public func winSetHlNs(
+    window: RxNeovimApi.Window,
+    ns_id: Int,
+    expectsReturnValue: Bool = false
+  ) -> Completable {
+
+    let params: [RxNeovimApi.Value] = [
+        .int(Int64(window.handle)),
+        .int(Int64(ns_id)),
+    ]
+
+    if expectsReturnValue {
+      return self
+        .checkBlocked(
+          self.rpc(method: "nvim_win_set_hl_ns", params: params, expectsReturnValue: expectsReturnValue)
+        )
+        .asCompletable()
+    }
+
+    return self
+      .rpc(method: "nvim_win_set_hl_ns", params: params, expectsReturnValue: expectsReturnValue)
+      .asCompletable()
   }
 
 }
