@@ -133,8 +133,7 @@ static struct vimvar {
   char *vv_name;  ///< Name of the variable, without v:.
   TV_DICTITEM_STRUCT(VIMVAR_KEY_LEN + 1) vv_di;  ///< Value and name for key (max 16 chars).
   char vv_flags;  ///< Flags: #VV_COMPAT, #VV_RO, #VV_RO_SBX.
-} vimvars[] =
-{
+} vimvars[] = {
   // VV_ tails differing from upcased string literals:
   // VV_CC_FROM "charconvert_from"
   // VV_CC_TO "charconvert_to"
@@ -3052,7 +3051,7 @@ static int eval7(char **arg, typval_T *rettv, int evaluate, int want_string)
   case '#':
     if ((*arg)[1] == '{') {
       (*arg)++;
-      ret = dict_get_tv(arg, rettv, evaluate, true);
+      ret = eval_dict(arg, rettv, evaluate, true);
     } else {
       ret = NOTDONE;
     }
@@ -3063,7 +3062,7 @@ static int eval7(char **arg, typval_T *rettv, int evaluate, int want_string)
   case '{':
     ret = get_lambda_tv(arg, rettv, evaluate);
     if (ret == NOTDONE) {
-      ret = dict_get_tv(arg, rettv, evaluate, false);
+      ret = eval_dict(arg, rettv, evaluate, false);
     }
     break;
 
@@ -4596,7 +4595,7 @@ static int get_literal_key(char **arg, typval_T *tv)
 /// "literal" is true for #{key: val}
 ///
 /// @return  OK or FAIL.  Returns NOTDONE for {expr}.
-static int dict_get_tv(char **arg, typval_T *rettv, int evaluate, bool literal)
+static int eval_dict(char **arg, typval_T *rettv, int evaluate, bool literal)
 {
   typval_T tv;
   char *key = NULL;

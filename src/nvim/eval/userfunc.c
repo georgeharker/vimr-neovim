@@ -460,7 +460,7 @@ int get_func_tv(const char_u *name, int len, typval_T *rettv, char **arg, funcex
     int i = 0;
 
     if (get_vim_var_nr(VV_TESTING)) {
-      // Prepare for calling garbagecollect_for_testing(), need to know
+      // Prepare for calling test_garbagecollect_now(), need to know
       // what variables are used on the call stack.
       if (funcargs.ga_itemsize == 0) {
         ga_init(&funcargs, (int)sizeof(typval_T *), 50);
@@ -998,7 +998,7 @@ void call_user_func(ufunc_T *fp, int argcount, typval_T *argvars, typval_T *rett
       listitem_T *li = &fc->l_listitems[ai];
 
       *TV_LIST_ITEM_TV(li) = argvars[i];
-      TV_LIST_ITEM_TV(li)->v_lock =  VAR_FIXED;
+      TV_LIST_ITEM_TV(li)->v_lock = VAR_FIXED;
       tv_list_append(&fc->l_varlist, li);
     }
   }
