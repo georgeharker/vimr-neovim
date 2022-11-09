@@ -121,9 +121,8 @@ bool os_isrealdir(const char *name)
   fs_loop_unlock();
   if (S_ISLNK(request.statbuf.st_mode)) {
     return false;
-  } else {
-    return S_ISDIR(request.statbuf.st_mode);
   }
+  return S_ISDIR(request.statbuf.st_mode);
 }
 
 /// Check if the given path exists and is a directory.
@@ -249,9 +248,8 @@ bool os_can_exe(const char *name, char **abspath, bool use_path)
         && is_executable(name, abspath)) {
 #endif
       return true;
-    } else {
-      return false;
     }
+    return false;
   }
 
   return is_executable_in_path(name, abspath);
@@ -756,9 +754,8 @@ int32_t os_getperm(const char *name)
   int stat_result = os_stat(name, &statbuf);
   if (stat_result == kLibuvSuccess) {
     return (int32_t)statbuf.st_mode;
-  } else {
-    return stat_result;
   }
+  return stat_result;
 }
 
 /// Set the permission of a file.
@@ -943,6 +940,37 @@ int os_mkdir_recurse(const char *const dir, int32_t mode, char **const failed_di
     }
   }
   xfree(curdir);
+  return 0;
+}
+
+/// Create the parent directory of a file if it does not exist
+///
+/// @param[in] fname Full path of the file name whose parent directories
+///                  we want to create
+/// @param[in] mode  Permissions for the newly-created directory.
+///
+/// @return `0` for success, libuv error code for failure.
+int os_file_mkdir(char *fname, int32_t mode)
+  FUNC_ATTR_NONNULL_ALL FUNC_ATTR_WARN_UNUSED_RESULT
+{
+  if (!dir_of_file_exists((char_u *)fname)) {
+    char *tail = path_tail_with_sep(fname);
+    char *last_char = tail + strlen(tail) - 1;
+    if (vim_ispathsep(*last_char)) {
+      emsg(_(e_noname));
+      return -1;
+    }
+    char c = *tail;
+    *tail = NUL;
+    int r;
+    char *failed_dir;
+    if ((r = os_mkdir_recurse(fname, mode, &failed_dir) < 0)) {
+      semsg(_(e_mkdir), failed_dir, os_strerror(r));
+      xfree(failed_dir);
+    }
+    *tail = c;
+    return r;
+  }
   return 0;
 }
 

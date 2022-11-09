@@ -805,17 +805,17 @@ bool get_prevcol_hl_flag(win_T *wp, match_T *search_hl, long curcol)
                                 || (prevcol > (long)search_hl->startcol
                                     && search_hl->endcol == MAXCOL))) {
     return true;
-  } else {
-    cur = wp->w_match_head;
-    while (cur != NULL) {
-      if (!cur->mit_hl.is_addpos && (prevcol == (long)cur->mit_hl.startcol
-                                     || (prevcol > (long)cur->mit_hl.startcol
-                                         && cur->mit_hl.endcol == MAXCOL))) {
-        return true;
-      }
-      cur = cur->mit_next;
-    }
   }
+  cur = wp->w_match_head;
+  while (cur != NULL) {
+    if (!cur->mit_hl.is_addpos && (prevcol == (long)cur->mit_hl.startcol
+                                   || (prevcol > (long)cur->mit_hl.startcol
+                                       && cur->mit_hl.endcol == MAXCOL))) {
+      return true;
+    }
+    cur = cur->mit_next;
+  }
+
   return false;
 }
 
@@ -1206,7 +1206,7 @@ void ex_match(exarg_T *eap)
       semsg(_(e_invarg2), eap->arg);
       return;
     }
-    end = skip_regexp(p + 1, *p, true, NULL);
+    end = skip_regexp(p + 1, *p, true);
     if (!eap->skip) {
       if (*end != NUL && !ends_excmd(*skipwhite(end + 1))) {
         xfree(g);

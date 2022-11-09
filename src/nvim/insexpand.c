@@ -18,6 +18,7 @@
 #include "nvim/edit.h"
 #include "nvim/eval.h"
 #include "nvim/eval/typval.h"
+#include "nvim/eval/userfunc.h"
 #include "nvim/ex_docmd.h"
 #include "nvim/ex_eval.h"
 #include "nvim/ex_getln.h"
@@ -55,24 +56,26 @@
 
 #define CTRL_X_WANT_IDENT       0x100
 
-#define CTRL_X_NORMAL           0  ///< CTRL-N CTRL-P completion, default
-#define CTRL_X_NOT_DEFINED_YET  1
-#define CTRL_X_SCROLL           2
-#define CTRL_X_WHOLE_LINE       3
-#define CTRL_X_FILES            4
-#define CTRL_X_TAGS             (5 + CTRL_X_WANT_IDENT)
-#define CTRL_X_PATH_PATTERNS    (6 + CTRL_X_WANT_IDENT)
-#define CTRL_X_PATH_DEFINES     (7 + CTRL_X_WANT_IDENT)
-#define CTRL_X_FINISHED         8
-#define CTRL_X_DICTIONARY       (9 + CTRL_X_WANT_IDENT)
-#define CTRL_X_THESAURUS        (10 + CTRL_X_WANT_IDENT)
-#define CTRL_X_CMDLINE          11
-#define CTRL_X_FUNCTION         12
-#define CTRL_X_OMNI             13
-#define CTRL_X_SPELL            14
-#define CTRL_X_LOCAL_MSG        15  ///< only used in "ctrl_x_msgs"
-#define CTRL_X_EVAL             16  ///< for builtin function complete()
-#define CTRL_X_CMDLINE_CTRL_X   17  ///< CTRL-X typed in CTRL_X_CMDLINE
+enum {
+  CTRL_X_NORMAL = 0,  ///< CTRL-N CTRL-P completion, default
+  CTRL_X_NOT_DEFINED_YET = 1,
+  CTRL_X_SCROLL = 2,
+  CTRL_X_WHOLE_LINE = 3,
+  CTRL_X_FILES = 4,
+  CTRL_X_TAGS = (5 + CTRL_X_WANT_IDENT),
+  CTRL_X_PATH_PATTERNS = (6 + CTRL_X_WANT_IDENT),
+  CTRL_X_PATH_DEFINES = (7 + CTRL_X_WANT_IDENT),
+  CTRL_X_FINISHED = 8,
+  CTRL_X_DICTIONARY = (9 + CTRL_X_WANT_IDENT),
+  CTRL_X_THESAURUS = (10 + CTRL_X_WANT_IDENT),
+  CTRL_X_CMDLINE = 11,
+  CTRL_X_FUNCTION = 12,
+  CTRL_X_OMNI = 13,
+  CTRL_X_SPELL = 14,
+  CTRL_X_LOCAL_MSG = 15,       ///< only used in "ctrl_x_msgs"
+  CTRL_X_EVAL = 16,            ///< for builtin function complete()
+  CTRL_X_CMDLINE_CTRL_X = 17,  ///< CTRL-X typed in CTRL_X_CMDLINE
+};
 
 #define CTRL_X_MSG(i) ctrl_x_msgs[(i) & ~CTRL_X_WANT_IDENT]
 
@@ -2224,6 +2227,91 @@ static buf_T *ins_compl_next_buf(buf_T *buf, int flag)
   return buf;
 }
 
+static Callback cfu_cb;    ///< 'completefunc' callback function
+static Callback ofu_cb;    ///< 'omnifunc' callback function
+static Callback tsrfu_cb;  ///< 'thesaurusfunc' callback function
+
+/// Copy a global callback function to a buffer local callback.
+static void copy_global_to_buflocal_cb(Callback *globcb, Callback *bufcb)
+{
+  callback_free(bufcb);
+  if (globcb->type != kCallbackNone) {
+    callback_copy(bufcb, globcb);
+  }
+}
+
+/// Parse the 'completefunc' option value and set the callback function.
+/// Invoked when the 'completefunc' option is set. The option value can be a
+/// name of a function (string), or function(<name>) or funcref(<name>) or a
+/// lambda expression.
+int set_completefunc_option(void)
+{
+  int retval = option_set_callback_func(curbuf->b_p_cfu, &cfu_cb);
+  if (retval == OK) {
+    set_buflocal_cfu_callback(curbuf);
+  }
+
+  return retval;
+}
+
+/// Copy the global 'completefunc' callback function to the buffer-local
+/// 'completefunc' callback for "buf".
+void set_buflocal_cfu_callback(buf_T *buf)
+{
+  copy_global_to_buflocal_cb(&cfu_cb, &buf->b_cfu_cb);
+}
+
+/// Parse the 'omnifunc' option value and set the callback function.
+/// Invoked when the 'omnifunc' option is set. The option value can be a
+/// name of a function (string), or function(<name>) or funcref(<name>) or a
+/// lambda expression.
+int set_omnifunc_option(void)
+{
+  int retval = option_set_callback_func(curbuf->b_p_ofu, &ofu_cb);
+  if (retval == OK) {
+    set_buflocal_ofu_callback(curbuf);
+  }
+
+  return retval;
+}
+
+/// Copy the global 'omnifunc' callback function to the buffer-local 'omnifunc'
+/// callback for "buf".
+void set_buflocal_ofu_callback(buf_T *buf)
+{
+  copy_global_to_buflocal_cb(&ofu_cb, &buf->b_ofu_cb);
+}
+
+/// Parse the 'thesaurusfunc' option value and set the callback function.
+/// Invoked when the 'thesaurusfunc' option is set. The option value can be a
+/// name of a function (string), or function(<name>) or funcref(<name>) or a
+/// lambda expression.
+int set_thesaurusfunc_option(void)
+{
+  int retval;
+
+  if (*curbuf->b_p_tsrfu != NUL) {
+    // buffer-local option set
+    retval = option_set_callback_func(curbuf->b_p_tsrfu, &curbuf->b_tsrfu_cb);
+  } else {
+    // global option set
+    retval = option_set_callback_func(p_tsrfu, &tsrfu_cb);
+  }
+
+  return retval;
+}
+
+/// Mark the global 'completefunc' 'omnifunc' and 'thesaurusfunc' callbacks with
+/// "copyID" so that they are not garbage collected.
+bool set_ref_in_insexpand_funcs(int copyID)
+{
+  bool abort = set_ref_in_callback(&cfu_cb, copyID, NULL, NULL);
+  abort = abort || set_ref_in_callback(&ofu_cb, copyID, NULL, NULL);
+  abort = abort || set_ref_in_callback(&tsrfu_cb, copyID, NULL, NULL);
+
+  return abort;
+}
+
 /// Get the user-defined completion function name for completion "type"
 static char_u *get_complete_funcname(int type)
 {
@@ -2239,10 +2327,23 @@ static char_u *get_complete_funcname(int type)
   }
 }
 
-/// Execute user defined complete function 'completefunc' or 'omnifunc', and
-/// get matches in "matches".
+/// Get the callback to use for insert mode completion.
+static Callback *get_insert_callback(int type)
+{
+  if (type == CTRL_X_FUNCTION) {
+    return &curbuf->b_cfu_cb;
+  }
+  if (type == CTRL_X_OMNI) {
+    return &curbuf->b_ofu_cb;
+  }
+  // CTRL_X_THESAURUS
+  return (*curbuf->b_p_tsrfu != NUL) ? &curbuf->b_tsrfu_cb : &tsrfu_cb;
+}
+
+/// Execute user defined complete function 'completefunc', 'omnifunc' or
+/// 'thesaurusfunc', and get matches in "matches".
 ///
-/// @param type  CTRL_X_OMNI or CTRL_X_FUNCTION
+/// @param type  either CTRL_X_OMNI or CTRL_X_FUNCTION or CTRL_X_THESAURUS
 static void expand_by_function(int type, char_u *base)
 {
   list_T *matchlist = NULL;
@@ -2272,8 +2373,10 @@ static void expand_by_function(int type, char_u *base)
   // Insert mode in another buffer.
   textlock++;
 
+  Callback *cb = get_insert_callback(type);
+
   // Call a function, which returns a list or dict.
-  if (call_vim_function((char *)funcname, 2, args, &rettv) == OK) {
+  if (callback_call(cb, 2, args, &rettv)) {
     switch (rettv.v_type) {
     case VAR_LIST:
       matchlist = rettv.vval.v_list;
@@ -3851,7 +3954,8 @@ static int get_userdefined_compl_info(colnr_T curs_col)
 
   pos_T pos = curwin->w_cursor;
   textlock++;
-  colnr_T col = (colnr_T)call_func_retnr((char *)funcname, 2, args);
+  Callback *cb = get_insert_callback(ctrl_x_mode);
+  colnr_T col = (colnr_T)callback_call_retnr(cb, 2, args);
   textlock--;
 
   State = save_State;
@@ -4354,6 +4458,9 @@ static unsigned quote_meta(char_u *dest, char_u *src, int len)
 void free_insexpand_stuff(void)
 {
   XFREE_CLEAR(compl_orig_text);
+  callback_free(&cfu_cb);
+  callback_free(&ofu_cb);
+  callback_free(&tsrfu_cb);
 }
 #endif
 

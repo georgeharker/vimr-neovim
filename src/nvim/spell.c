@@ -112,11 +112,13 @@
 #include "nvim/vim.h"             // for curwin, strlen, STRLCPY, STRNCMP
 
 // Result values.  Lower number is accepted over higher one.
-#define SP_BANNED       (-1)
-#define SP_RARE         0
-#define SP_OK           1
-#define SP_LOCAL        2
-#define SP_BAD          3
+enum {
+  SP_BANNED = -1,
+  SP_RARE = 0,
+  SP_OK = 1,
+  SP_LOCAL = 2,
+  SP_BAD = 3,
+};
 
 // First language that is loaded, start of the linked list of loaded
 // languages.
@@ -3145,7 +3147,7 @@ void ex_spelldump(exarg_T *eap)
   }
   char *spl;
   long dummy;
-  (void)get_option_value("spl", &dummy, &spl, OPT_LOCAL);
+  (void)get_option_value("spl", &dummy, &spl, NULL, OPT_LOCAL);
 
   // Create a new empty buffer in a new window.
   do_cmdline_cmd("new");

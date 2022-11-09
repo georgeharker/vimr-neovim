@@ -598,6 +598,49 @@ void stl_clear_click_defs(StlClickDefinition *const click_defs, const long click
   }
 }
 
+/// Allocate or resize the click definitions array if needed.
+StlClickDefinition *stl_alloc_click_defs(StlClickDefinition *cdp, long width, size_t *size)
+{
+  if (*size < (size_t)width) {
+    xfree(cdp);
+    *size = (size_t)width;
+    cdp = xcalloc(*size, sizeof(StlClickDefinition));
+  }
+  return cdp;
+}
+
+/// Fill the click definitions array if needed.
+void stl_fill_click_defs(StlClickDefinition *click_defs, StlClickRecord *click_recs, char *buf,
+                         int width, bool tabline)
+{
+  if (click_defs == NULL) {
+    return;
+  }
+
+  int col = 0;
+  int len = 0;
+
+  StlClickDefinition cur_click_def = {
+    .type = kStlClickDisabled,
+  };
+  for (int i = 0; click_recs[i].start != NULL; i++) {
+    len += vim_strnsize(buf, (int)(click_recs[i].start - buf));
+    while (col < len) {
+      click_defs[col++] = cur_click_def;
+    }
+    buf = (char *)click_recs[i].start;
+    cur_click_def = click_recs[i].def;
+    if (!tabline && !(cur_click_def.type == kStlClickDisabled
+                      || cur_click_def.type == kStlClickFuncRun)) {
+      // window bar and status line only support click functions
+      cur_click_def.type = kStlClickDisabled;
+    }
+  }
+  while (col < width) {
+    click_defs[col++] = cur_click_def;
+  }
+}
+
 /// Set cursor to its position in the current window.
 void setcursor(void)
 {
@@ -956,16 +999,7 @@ void draw_tabline(void)
 
   // Use the 'tabline' option if it's set.
   if (*p_tal != NUL) {
-    int saved_did_emsg = did_emsg;
-
-    // Check for an error.  If there is one we would loop in redrawing the
-    // screen.  Avoid that by making 'tabline' empty.
-    did_emsg = false;
     win_redr_custom(NULL, false, false);
-    if (did_emsg) {
-      set_string_option_direct("tabline", -1, "", OPT_FREE, SID_ERROR);
-    }
-    did_emsg |= saved_did_emsg;
   } else {
     FOR_ALL_TABS(tp) {
       tabcount++;

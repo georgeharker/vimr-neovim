@@ -238,9 +238,8 @@ int win_chartabsize(win_T *wp, char *p, colnr_T col)
   buf_T *buf = wp->w_buffer;
   if (*p == TAB && (!wp->w_p_list || wp->w_p_lcs_chars.tab1)) {
     return tabstop_padding(col, buf->b_p_ts, buf->b_p_vts_array);
-  } else {
-    return ptr2cells(p);
   }
+  return ptr2cells(p);
 }
 
 /// Return the number of characters the string 's' will take on the screen,
@@ -444,9 +443,9 @@ int win_lbr_chartabsize(chartabsize_T *cts, int *headp)
   // May have to add something for 'breakindent' and/or 'showbreak'
   // string at start of line.
   // Set *headp to the size of what we add.
+  // Do not use 'showbreak' at the NUL after the text.
   added = 0;
-
-  char *const sbr = (char *)get_showbreak_value(wp);
+  char *const sbr = c == NUL ? empty_option : (char *)get_showbreak_value(wp);
   if ((*sbr != NUL || wp->w_p_bri) && wp->w_p_wrap && vcol != 0) {
     colnr_T sbrlen = 0;
     int numberwidth = win_col_off(wp);

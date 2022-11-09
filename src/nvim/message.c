@@ -59,8 +59,10 @@ struct msgchunk_S {
 };
 
 // Magic chars used in confirm dialog strings
-#define DLG_BUTTON_SEP  '\n'
-#define DLG_HOTKEY_CHAR '&'
+enum {
+  DLG_BUTTON_SEP = '\n',
+  DLG_HOTKEY_CHAR = '&',
+};
 
 static int confirm_msg_used = false;            // displaying confirm_msg
 #ifdef INCLUDE_GENERATED_DECLARATIONS
@@ -661,6 +663,13 @@ static bool emsg_multiline(const char *s, bool multiline)
         did_emsg++;
       }
       return true;
+    }
+
+    if (emsg_assert_fails_used && emsg_assert_fails_msg == NULL) {
+      emsg_assert_fails_msg = xstrdup(s);
+      emsg_assert_fails_lnum = SOURCING_LNUM;
+      xfree(emsg_assert_fails_context);
+      emsg_assert_fails_context = xstrdup(SOURCING_NAME == NULL ? "" : SOURCING_NAME);
     }
 
     // set "v:errmsg", also when using ":silent! cmd"

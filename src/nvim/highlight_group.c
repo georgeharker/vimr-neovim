@@ -23,9 +23,11 @@
 
 /// \addtogroup SG_SET
 /// @{
-#define SG_CTERM        2       // cterm has been set
-#define SG_GUI          4       // gui has been set
-#define SG_LINK         8       // link has been set
+enum {
+  SG_CTERM = 2,  // cterm has been set
+  SG_GUI = 4,    // gui has been set
+  SG_LINK = 8,   // link has been set
+};
 /// @}
 
 #define MAX_SYN_NAME 200
@@ -131,6 +133,7 @@ static const char *highlight_init_both[] = {
   "default link MsgSeparator StatusLine",
   "default link NormalFloat Pmenu",
   "default link FloatBorder WinSeparator",
+  "default link FloatTitle Title",
   "default FloatShadow blend=80 guibg=Black",
   "default FloatShadowThrough blend=100 guibg=Black",
   "RedrawDebugNormal cterm=reverse gui=reverse",
@@ -851,7 +854,7 @@ void do_highlight(const char *line, const bool forceit, const bool init)
   bool did_highlight_changed = false;
 
   // If no argument, list current highlighting.
-  if (ends_excmd((uint8_t)(*line))) {
+  if (!init && ends_excmd((uint8_t)(*line))) {
     for (int i = 1; i <= highlight_ga.ga_len && !got_int; i++) {
       // TODO(brammool): only call when the group has attributes set
       highlight_list_one(i);
@@ -1729,9 +1732,8 @@ int syn_name2id(const char *name)
   if (name[0] == '@') {
     // if we look up @aaa.bbb, we have to consider @aaa as well
     return syn_check_group(name, strlen(name));
-  } else {
-    return syn_name2id_len(name, strlen(name));
   }
+  return syn_name2id_len(name, strlen(name));
 }
 
 /// Lookup a highlight group name and return its ID.

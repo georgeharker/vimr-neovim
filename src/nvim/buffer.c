@@ -1971,8 +1971,11 @@ void free_buf_options(buf_T *buf, int free_p_ff)
   clear_string_option(&buf->b_p_cinw);
   clear_string_option(&buf->b_p_cpt);
   clear_string_option(&buf->b_p_cfu);
+  callback_free(&buf->b_cfu_cb);
   clear_string_option(&buf->b_p_ofu);
+  callback_free(&buf->b_ofu_cb);
   clear_string_option(&buf->b_p_tsrfu);
+  callback_free(&buf->b_tsrfu_cb);
   clear_string_option(&buf->b_p_gp);
   clear_string_option(&buf->b_p_mp);
   clear_string_option(&buf->b_p_efm);
@@ -1981,6 +1984,7 @@ void free_buf_options(buf_T *buf, int free_p_ff)
   clear_string_option(&buf->b_p_tags);
   clear_string_option(&buf->b_p_tc);
   clear_string_option(&buf->b_p_tfu);
+  callback_free(&buf->b_tfu_cb);
   clear_string_option(&buf->b_p_dict);
   clear_string_option(&buf->b_p_tsr);
   clear_string_option(&buf->b_p_qe);
@@ -3199,17 +3203,9 @@ void maketitle(void)
 
     if (*p_titlestring != NUL) {
       if (stl_syntax & STL_IN_TITLE) {
-        int use_sandbox = false;
-        const int called_emsg_before = called_emsg;
-
-        use_sandbox = was_set_insecurely(curwin, "titlestring", 0);
-        build_stl_str_hl(curwin, buf, sizeof(buf),
-                         p_titlestring, use_sandbox,
-                         0, maxlen, NULL, NULL);
+        build_stl_str_hl(curwin, buf, sizeof(buf), p_titlestring,
+                         "titlestring", 0, 0, maxlen, NULL, NULL);
         title_str = buf;
-        if (called_emsg > called_emsg_before) {
-          set_string_option_direct("titlestring", -1, "", OPT_FREE, SID_ERROR);
-        }
       } else {
         title_str = p_titlestring;
       }
@@ -3313,16 +3309,8 @@ void maketitle(void)
     icon_str = buf;
     if (*p_iconstring != NUL) {
       if (stl_syntax & STL_IN_ICON) {
-        int use_sandbox = false;
-        const int called_emsg_before = called_emsg;
-
-        use_sandbox = was_set_insecurely(curwin, "iconstring", 0);
-        build_stl_str_hl(curwin, icon_str, sizeof(buf),
-                         p_iconstring, use_sandbox,
-                         0, 0, NULL, NULL);
-        if (called_emsg > called_emsg_before) {
-          set_string_option_direct("iconstring", -1, "", OPT_FREE, SID_ERROR);
-        }
+        build_stl_str_hl(curwin, icon_str, sizeof(buf), p_iconstring,
+                         "iconstring", 0, 0, 0, NULL, NULL);
       } else {
         icon_str = p_iconstring;
       }

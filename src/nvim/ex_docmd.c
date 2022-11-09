@@ -726,7 +726,7 @@ int do_cmdline(char *cmdline, LineGetter fgetline, void *cookie, int flags)
   if (cstack.cs_idx >= 0) {
     // If a sourced file or executed function ran to its end, report the
     // unclosed conditional.
-    if (!got_int && !did_throw
+    if (!got_int && !did_throw && !aborting()
         && ((getline_equal(fgetline, cookie, getsourceline)
              && !source_finished(fgetline, cookie))
             || (getline_equal(fgetline, cookie, get_func_line)
@@ -807,6 +807,7 @@ int do_cmdline(char *cmdline, LineGetter fgetline, void *cookie, int flags)
           next = messages->next;
           emsg(messages->msg);
           xfree(messages->msg);
+          xfree(messages->sfile);
           xfree(messages);
           messages = next;
         } while (messages != NULL);
@@ -3351,7 +3352,7 @@ static linenr_T get_address(exarg_T *eap, char **ptr, cmd_addr_T addr_type, int 
         goto error;
       }
       if (skip) {                       // skip "/pat/"
-        cmd = skip_regexp(cmd, c, p_magic, NULL);
+        cmd = skip_regexp(cmd, c, p_magic);
         if (*cmd == c) {
           cmd++;
         }
@@ -4073,6 +4074,13 @@ static int getargopt(exarg_T *eap)
     return OK;
   }
 
+  // ":write ++p foo/bar/file
+  if (strncmp(arg, "p", 1) == 0) {
+    eap->mkdir_p = true;
+    eap->arg = skipwhite(arg + 1);
+    return OK;
+  }
+
   if (STRNCMP(arg, "ff", 2) == 0) {
     arg += 2;
     pp = &eap->force_ff;
@@ -4223,7 +4231,7 @@ static void ex_autocmd(exarg_T *eap)
     secure = 2;
     eap->errmsg = _(e_curdir);
   } else if (eap->cmdidx == CMD_autocmd) {
-    do_autocmd(eap->arg, eap->forceit);
+    do_autocmd(eap, eap->arg, eap->forceit);
   } else {
     do_augroup(eap->arg, eap->forceit);
   }
@@ -4356,9 +4364,8 @@ char *check_nextcmd(char *p)
 
   if (*s == '|' || *s == '\n') {
     return s + 1;
-  } else {
-    return NULL;
   }
+  return NULL;
 }
 
 /// - if there are more files to edit
@@ -4757,9 +4764,8 @@ static void ex_only(exarg_T *eap)
     for (wp = firstwin; --wnr > 0;) {
       if (wp->w_next == NULL) {
         break;
-      } else {
-        wp = wp->w_next;
       }
+      wp = wp->w_next;
     }
   } else {
     wp = curwin;
@@ -6500,7 +6506,7 @@ static void ex_findpat(exarg_T *eap)
   if (*eap->arg == '/') {   // Match regexp, not just whole words
     whole = false;
     eap->arg++;
-    char *p = skip_regexp(eap->arg, '/', p_magic, NULL);
+    char *p = skip_regexp(eap->arg, '/', p_magic);
     if (*p) {
       *p++ = NUL;
       p = skipwhite(p);

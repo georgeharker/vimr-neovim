@@ -72,15 +72,17 @@
 #endif
 
 #define HAS_BW_FLAGS
-#define FIO_LATIN1     0x01    // convert Latin1
-#define FIO_UTF8       0x02    // convert UTF-8
-#define FIO_UCS2       0x04    // convert UCS-2
-#define FIO_UCS4       0x08    // convert UCS-4
-#define FIO_UTF16      0x10    // convert UTF-16
-#define FIO_ENDIAN_L   0x80    // little endian
-#define FIO_NOCONVERT  0x2000  // skip encoding conversion
-#define FIO_UCSBOM     0x4000  // check for BOM at start of file
-#define FIO_ALL        (-1)    // allow all formats
+enum {
+  FIO_LATIN1 = 0x01,       // convert Latin1
+  FIO_UTF8 = 0x02,         // convert UTF-8
+  FIO_UCS2 = 0x04,         // convert UCS-2
+  FIO_UCS4 = 0x08,         // convert UCS-4
+  FIO_UTF16 = 0x10,        // convert UTF-16
+  FIO_ENDIAN_L = 0x80,     // little endian
+  FIO_NOCONVERT = 0x2000,  // skip encoding conversion
+  FIO_UCSBOM = 0x4000,     // check for BOM at start of file
+  FIO_ALL = -1,            // allow all formats
+};
 
 // When converting, a read() or write() may leave some bytes to be converted
 // for the next call.  The value is guessed...
@@ -498,18 +500,17 @@ int readfile(char *fname, char *sfname, linenr_T from, linenr_T lines_to_skip,
         return FAIL;
       }
       return OK;                  // a new file is not an error
-    } else {
-      filemess(curbuf, sfname, ((fd == UV_EFBIG) ? _("[File too big]") :
-#if defined(UNIX) && defined(EOVERFLOW)
-                                // libuv only returns -errno
-                                // in Unix and in Windows
-                                // open() does not set
-                                // EOVERFLOW
-                                (fd == -EOVERFLOW) ? _("[File too big]") :
-#endif
-                                _("[Permission Denied]")), 0);
-      curbuf->b_p_ro = true;                  // must use "w!" now
     }
+    filemess(curbuf, sfname, ((fd == UV_EFBIG) ? _("[File too big]") :
+#if defined(UNIX) && defined(EOVERFLOW)
+                              // libuv only returns -errno
+                              // in Unix and in Windows
+                              // open() does not set
+                              // EOVERFLOW
+                              (fd == -EOVERFLOW) ? _("[File too big]") :
+#endif
+                              _("[Permission Denied]")), 0);
+    curbuf->b_p_ro = true;                  // must use "w!" now
 
     return FAIL;
   }
@@ -2781,10 +2782,11 @@ int buf_write(buf_T *buf, char *fname, char *sfname, linenr_T start, linenr_T en
 #endif
 
           // copy the file
-          if (os_copy(fname, backup, UV_FS_COPYFILE_FICLONE)
-              != 0) {
-            SET_ERRMSG(_("E506: Can't write to backup file "
-                         "(add ! to override)"));
+          if (os_copy(fname, backup, UV_FS_COPYFILE_FICLONE) != 0) {
+            SET_ERRMSG(_("E509: Cannot create backup file (add ! to override)"));
+            XFREE_CLEAR(backup);
+            backup = NULL;
+            continue;
           }
 
 #ifdef UNIX
@@ -2795,6 +2797,7 @@ int buf_write(buf_T *buf, char *fname, char *sfname, linenr_T start, linenr_T en
 #ifdef HAVE_ACL
           mch_set_acl((char_u *)backup, acl);
 #endif
+          SET_ERRMSG(NULL);
           break;
         }
       }
@@ -5230,10 +5233,9 @@ static void vim_mktempdir(void)
     if (vim_settempdir(path)) {
       // Successfully created and set temporary directory so stop trying.
       break;
-    } else {
-      // Couldn't set `vim_tempdir` to `path` so remove created directory.
-      os_rmdir(path);
     }
+    // Couldn't set `vim_tempdir` to `path` so remove created directory.
+    os_rmdir(path);
   }
   (void)umask(umask_save);
 }
