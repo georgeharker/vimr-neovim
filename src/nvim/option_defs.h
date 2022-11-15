@@ -1,8 +1,8 @@
 #ifndef NVIM_OPTION_DEFS_H
 #define NVIM_OPTION_DEFS_H
 
-#include "eval/typval.h"  // For scid_T
-#include "nvim/macros.h"  // For EXTERN
+#include "nvim/eval/typval.h"
+#include "nvim/macros.h"
 #include "nvim/types.h"
 
 // option_defs.h: definition of global variables for settable options
@@ -596,8 +596,6 @@ EXTERN char *p_menc;            // 'makeencoding'
 EXTERN char *p_mef;             // 'makeef'
 EXTERN char_u *p_mp;            // 'makeprg'
 EXTERN char *p_mps;             ///< 'matchpairs'
-EXTERN char_u *p_cc;            // 'colorcolumn'
-EXTERN int p_cc_cols[256];      // array for 'colorcolumn' columns
 EXTERN long p_mat;              // 'matchtime'
 EXTERN long p_mco;              // 'maxcombine'
 EXTERN long p_mfd;              // 'maxfuncdepth'
