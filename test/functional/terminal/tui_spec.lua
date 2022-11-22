@@ -5,7 +5,6 @@
 -- http://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-Bracketed-Paste-Mode
 
 local helpers = require('test.functional.helpers')(after_each)
-local uname = helpers.uname
 local thelpers = require('test.functional.terminal.helpers')
 local Screen = require('test.functional.ui.screen')
 local assert_alive = helpers.assert_alive
@@ -22,12 +21,15 @@ local ok = helpers.ok
 local read_file = helpers.read_file
 local funcs = helpers.funcs
 local meths = helpers.meths
+local is_ci = helpers.is_ci
+local is_os = helpers.is_os
 
-if helpers.skip(helpers.iswin()) then return end
+if helpers.skip(helpers.is_os('win')) then return end
 
 describe('TUI', function()
   local screen
   local child_session
+  local child_exec_lua
 
   before_each(function()
     clear()
@@ -45,6 +47,7 @@ describe('TUI', function()
       {3:-- TERMINAL --}                                    |
     ]])
     child_session = helpers.connect(child_server)
+    child_exec_lua = thelpers.make_lua_executor(child_session)
   end)
 
   -- Wait for mode in the child Nvim (avoid "typeahead race" #10826).
@@ -819,12 +822,11 @@ describe('TUI', function()
   end)
 
   it('paste: terminal mode', function()
-    if os.getenv('GITHUB_ACTIONS') ~= nil then
+    if is_ci('github') then
         pending("tty-test complains about not owning the terminal -- actions/runner#241")
-        return
     end
-    feed_data(':set statusline=^^^^^^^\n')
-    feed_data(':terminal '..testprg('tty-test')..'\n')
+    child_exec_lua('vim.o.statusline="^^^^^^^"')
+    child_exec_lua('vim.cmd.terminal(...)', testprg('tty-test'))
     feed_data('i')
     screen:expect{grid=[[
       tty ready                                         |
@@ -1087,7 +1089,7 @@ describe('TUI', function()
     -- "bracketed paste"
     feed_data('\027[200~'..expected..'\027[201~')
     -- FIXME: Data race between the two feeds
-    if uname() == 'freebsd' then screen:sleep(1) end
+    if is_os('freebsd') then screen:sleep(1) end
     feed_data(' end')
     expected = expected..' end'
     screen:expect([[
@@ -1327,9 +1329,8 @@ describe('TUI', function()
   end)
 
   it('forwards :term palette colors with termguicolors', function()
-    if os.getenv('GITHUB_ACTIONS') ~= nil then
+    if is_ci('github') then
         pending("tty-test complains about not owning the terminal -- actions/runner#241")
-        return
     end
     screen:set_rgb_cterm(true)
     screen:set_default_attr_ids({
@@ -1340,12 +1341,9 @@ describe('TUI', function()
       [5] = {{foreground = tonumber('0xff8000')}, {}},
     })
 
-    feed_data(':set statusline=^^^^^^^\n')
-    feed_data(':set termguicolors\n')
-    feed_data(':terminal '..testprg('tty-test')..'\n')
-    -- Depending on platform the above might or might not fit in the cmdline
-    -- so clear it for consistent behavior.
-    feed_data(':\027')
+    child_exec_lua('vim.o.statusline="^^^^^^^"')
+    child_exec_lua('vim.o.termguicolors=true')
+    child_exec_lua('vim.cmd.terminal(...)', testprg('tty-test'))
     screen:expect{grid=[[
       {1:t}ty ready                                         |
                                                         |
@@ -1670,7 +1668,6 @@ end)
 -- does not initialize the TUI.
 describe("TUI 't_Co' (terminal colors)", function()
   local screen
-  local is_freebsd = (uname() == 'freebsd')
 
   local function assert_term_colors(term, colorterm, maxcolors)
     helpers.clear({env={TERM=term}, args={}})
@@ -1773,7 +1770,7 @@ describe("TUI 't_Co' (terminal colors)", function()
   -- which is raised to 16 by COLORTERM.
 
   it("TERM=screen no COLORTERM uses 8/256 colors", function()
-    if is_freebsd then
+    if is_os('freebsd') then
       assert_term_colors("screen", nil, 256)
     else
       assert_term_colors("screen", nil, 8)
@@ -1781,7 +1778,7 @@ describe("TUI 't_Co' (terminal colors)", function()
   end)
 
   it("TERM=screen COLORTERM=screen uses 16/256 colors", function()
-    if is_freebsd then
+    if is_os('freebsd') then
       assert_term_colors("screen", "screen", 256)
     else
       assert_term_colors("screen", "screen", 16)
@@ -1944,8 +1941,6 @@ end)
 -- does not initialize the TUI.
 describe("TUI 'term' option", function()
   local screen
-  local is_bsd = not not string.find(uname(), 'bsd')
-  local is_macos = not not string.find(uname(), 'darwin')
 
   local function assert_term(term_envvar, term_expected)
     clear()
@@ -1971,11 +1966,11 @@ describe("TUI 'term' option", function()
   end)
 
   it('gets system-provided term if $TERM is valid', function()
-    if uname() == "openbsd" then
+    if is_os('openbsd') then
       assert_term("xterm", "xterm")
-    elseif is_bsd then  -- BSD lacks terminfo, builtin is always used.
+    elseif is_os('bsd') then  -- BSD lacks terminfo, builtin is always used.
       assert_term("xterm", "builtin_xterm")
-    elseif is_macos then
+    elseif is_os('mac') then
       local status, _ = pcall(assert_term, "xterm", "xterm")
       if not status then
         pending("macOS: unibilium could not find terminfo")

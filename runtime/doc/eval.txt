@@ -229,13 +229,13 @@ is not available it returns zero or the default value you specify: >
 
 
 List concatenation ~
-
+							*list-concatenation*
 Two lists can be concatenated with the "+" operator: >
 	:let longlist = mylist + [5, 6]
 	:let mylist += [7, 8]
 
-To prepend or append an item turn the item into a list by putting [] around
-it.  To change a list in-place see |list-modification| below.
+To prepend or append an item, turn the item into a list by putting [] around
+it.  To change a list in-place, refer to |list-modification| below.
 
 
 Sublist ~
@@ -2697,6 +2697,8 @@ text...
 :unlo[ckvar][!] [depth] {name} ...			*:unlockvar* *:unlo*
 			Unlock the internal variable {name}.  Does the
 			opposite of |:lockvar|.
+
+			No error is given if {name} does not exist.
 
 :if {expr1}			*:if* *:end* *:endif* *:en* *E171* *E579* *E580*
 :en[dif]		Execute the commands until the next matching `:else`

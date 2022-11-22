@@ -1652,6 +1652,11 @@ theend:
   return ret;
 }
 
+char_u *printable_func_name(ufunc_T *fp)
+{
+  return fp->uf_name_exp != NULL ? fp->uf_name_exp : fp->uf_name;
+}
+
 /// List the head of the function: "name(arg1, arg2)".
 ///
 /// @param[in]  fp      Function pointer.
@@ -2954,8 +2959,6 @@ void ex_return(exarg_T *eap)
     emsg_skip--;
   }
 }
-
-// TODO(ZyX-I): move to eval/ex_cmds
 
 /// ":1,25call func(arg1, arg2)" function call.
 void ex_call(exarg_T *eap)

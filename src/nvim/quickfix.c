@@ -1338,9 +1338,9 @@ static int qf_parse_fmt_t(regmatch_T *rmp, int midx, qffields_T *fields)
   return QF_OK;
 }
 
-/// Parse the match for '%+' format pattern. The whole matching line is included
-/// in the error string.  Return the matched line in "fields->errmsg".
-static void qf_parse_fmt_plus(const char *linebuf, size_t linelen, qffields_T *fields)
+/// Copy a non-error line into the error string.  Return the matched line in
+/// "fields->errmsg".
+static int copy_nonerror_line(const char *linebuf, size_t linelen, qffields_T *fields)
   FUNC_ATTR_NONNULL_ALL
 {
   if (linelen >= fields->errmsglen) {
@@ -1348,7 +1348,10 @@ static void qf_parse_fmt_plus(const char *linebuf, size_t linelen, qffields_T *f
     fields->errmsg = xrealloc(fields->errmsg, linelen + 1);
     fields->errmsglen = linelen + 1;
   }
+  // copy whole line to error message
   STRLCPY(fields->errmsg, linebuf, linelen + 1);
+
+  return QF_OK;
 }
 
 /// Parse the match for error message ('%m') pattern in regmatch.
@@ -1495,7 +1498,7 @@ static int qf_parse_match(char *linebuf, size_t linelen, efm_T *fmt_ptr, regmatc
       status = qf_parse_fmt_f(regmatch, midx, fields, idx);
     } else if (i == FMT_PATTERN_M) {
       if (fmt_ptr->flags == '+' && !qf_multiscan) {  // %+
-        qf_parse_fmt_plus(linebuf, linelen, fields);
+        status = copy_nonerror_line(linebuf, linelen, fields);
       } else if (midx > 0) {  // %m
         status = qf_parse_fmt_m(regmatch, midx, fields);
       }
@@ -1603,15 +1606,8 @@ static int qf_parse_line_nomatch(char *linebuf, size_t linelen, qffields_T *fiel
   fields->namebuf[0] = NUL;   // no match found, remove file name
   fields->lnum = 0;           // don't jump to this line
   fields->valid = false;
-  if (linelen >= fields->errmsglen) {
-    // linelen + null terminator
-    fields->errmsg = xrealloc(fields->errmsg, linelen + 1);
-    fields->errmsglen = linelen + 1;
-  }
-  // copy whole line to error message
-  STRLCPY(fields->errmsg, linebuf, linelen + 1);
 
-  return QF_OK;
+  return copy_nonerror_line(linebuf, linelen, fields);
 }
 
 /// Parse multi-line error format prefixes (%C and %Z)
@@ -2788,7 +2784,7 @@ static void qf_jump_goto_line(linenr_T qf_lnum, int qf_col, char qf_viscol, char
     // Move the cursor to the first line in the buffer
     pos_T save_cursor = curwin->w_cursor;
     curwin->w_cursor.lnum = 0;
-    if (!do_search(NULL, '/', '/', (char_u *)qf_pattern, (long)1, SEARCH_KEEP, NULL)) {
+    if (!do_search(NULL, '/', '/', qf_pattern, (long)1, SEARCH_KEEP, NULL)) {
       curwin->w_cursor = save_cursor;
     }
   }
@@ -6715,7 +6711,7 @@ static bool mark_quickfix_ctx(qf_info_T *qi, int copyID)
     typval_T *ctx = qi->qf_lists[i].qf_ctx;
     if (ctx != NULL && ctx->v_type != VAR_NUMBER
         && ctx->v_type != VAR_STRING && ctx->v_type != VAR_FLOAT) {
-      abort = abort || set_ref_in_item(ctx, copyID, NULL, NULL);
+      abort = set_ref_in_item(ctx, copyID, NULL, NULL);
     }
 
     Callback *cb = &qi->qf_lists[i].qf_qftf_cb;
@@ -6997,7 +6993,7 @@ static void hgr_search_file(qf_list_T *qfl, char *fname, regmatch_T *p_regmatch)
   }
 
   linenr_T lnum = 1;
-  while (!vim_fgets((char_u *)IObuff, IOSIZE, fd) && !got_int) {
+  while (!vim_fgets(IObuff, IOSIZE, fd) && !got_int) {
     char *line = (char *)IObuff;
 
     if (vim_regexec(p_regmatch, line, (colnr_T)0)) {

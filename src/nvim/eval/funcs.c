@@ -2343,13 +2343,13 @@ static void findfilendir(typval_T *argvars, typval_T *rettv, int find_what)
       if (rettv->v_type == VAR_STRING || rettv->v_type == VAR_LIST) {
         xfree(fresult);
       }
-      fresult = find_file_in_path_option(first ? (char_u *)fname : NULL,
-                                         first ? strlen(fname) : 0,
-                                         0, first, path,
-                                         find_what, (char_u *)curbuf->b_ffname,
-                                         (find_what == FINDFILE_DIR
-                                          ? (char_u *)""
-                                          : (char_u *)curbuf->b_p_sua));
+      fresult = (char_u *)find_file_in_path_option(first ? (char *)fname : NULL,
+                                                   first ? strlen(fname) : 0,
+                                                   0, first, (char *)path,
+                                                   find_what, curbuf->b_ffname,
+                                                   (find_what == FINDFILE_DIR
+                                                    ? ""
+                                                    : curbuf->b_p_sua));
       first = false;
 
       if (fresult != NULL && rettv->v_type == VAR_LIST) {
@@ -2528,13 +2528,17 @@ static void f_get(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
       const char *const what = tv_get_string(&argvars[1]);
 
       if (strcmp(what, "func") == 0 || strcmp(what, "name") == 0) {
+        const char *name = (const char *)partial_name(pt);
         rettv->v_type = (*what == 'f' ? VAR_FUNC : VAR_STRING);
-        const char *const n = (const char *)partial_name(pt);
-        assert(n != NULL);
-        rettv->vval.v_string = xstrdup(n);
+        assert(name != NULL);
         if (rettv->v_type == VAR_FUNC) {
-          func_ref((char_u *)rettv->vval.v_string);
+          func_ref((char_u *)name);
         }
+        if (*what == 'n' && pt->pt_name == NULL && pt->pt_func != NULL) {
+          // use <SNR> instead of the byte code
+          name = (const char *)printable_func_name(pt->pt_func);
+        }
+        rettv->vval.v_string = xstrdup(name);
       } else if (strcmp(what, "dict") == 0) {
         what_is_dict = true;
         if (pt->pt_dict != NULL) {
@@ -2667,8 +2671,9 @@ static void get_buffer_lines(buf_T *buf, linenr_T start, linenr_T end, int retli
   }
 }
 
-/// "getbufline()" function
-static void f_getbufline(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
+/// @param retlist  true: "getbufline()" function
+///                 false: "getbufoneline()" function
+static void getbufline(typval_T *argvars, typval_T *rettv, bool retlist)
 {
   const int did_emsg_before = did_emsg;
   buf_T *const buf = tv_get_buf_from_arg(&argvars[0]);
@@ -2680,7 +2685,19 @@ static void f_getbufline(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
                         ? lnum
                         : tv_get_lnum_buf(&argvars[2], buf));
 
-  get_buffer_lines(buf, lnum, end, true, rettv);
+  get_buffer_lines(buf, lnum, end, retlist, rettv);
+}
+
+/// "getbufline()" function
+static void f_getbufline(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
+{
+  getbufline(argvars, rettv, true);
+}
+
+/// "getbufoneline()" function
+static void f_getbufoneline(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
+{
+  getbufline(argvars, rettv, false);
 }
 
 /// "getchangelist()" function
