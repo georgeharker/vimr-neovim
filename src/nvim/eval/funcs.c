@@ -5249,7 +5249,7 @@ static void max_min(const typval_T *const tv, typval_T *const rettv, const bool 
     TV_LIST_ITER_CONST(tv->vval.v_list, li, {
       const varnumber_T i = tv_get_number_chk(TV_LIST_ITEM_TV(li), &error);
       if (error) {
-        return;
+        return;  // type error; errmsg already given
       }
       if (domax ? i > n : i < n) {
         n = i;
@@ -5262,7 +5262,7 @@ static void max_min(const typval_T *const tv, typval_T *const rettv, const bool 
     TV_DICT_ITER(tv->vval.v_dict, di, {
       const varnumber_T i = tv_get_number_chk(&di->di_tv, &error);
       if (error) {
-        return;
+        return;  // type error; errmsg already given
       }
       if (domax ? i > n : i < n) {
         n = i;
@@ -5272,6 +5272,7 @@ static void max_min(const typval_T *const tv, typval_T *const rettv, const bool 
     semsg(_(e_listdictarg), domax ? "max()" : "min()");
     return;
   }
+
   rettv->vval.v_number = n;
 }
 
