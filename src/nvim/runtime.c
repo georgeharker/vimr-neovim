@@ -105,8 +105,7 @@ estack_T *estack_push(etype_T type, char *name, linenr_T lnum)
 void estack_push_ufunc(ufunc_T *ufunc, linenr_T lnum)
 {
   estack_T *entry = estack_push(ETYPE_UFUNC,
-                                (char *)(ufunc->uf_name_exp != NULL
-                                         ? ufunc->uf_name_exp : ufunc->uf_name),
+                                ufunc->uf_name_exp != NULL ? (char *)ufunc->uf_name_exp : ufunc->uf_name,
                                 lnum);
   if (entry != NULL) {
     entry->es_info.ufunc = ufunc;
@@ -215,19 +214,19 @@ void ex_runtime(exarg_T *eap)
 {
   char *arg = eap->arg;
   char *p = skiptowhite(arg);
-  ptrdiff_t len = p - arg;
+  size_t len = (size_t)(p - arg);
   int flags = eap->forceit ? DIP_ALL : 0;
 
-  if (STRNCMP(arg, "START", len) == 0) {
+  if (strncmp(arg, "START", len) == 0) {
     flags += DIP_START + DIP_NORTP;
     arg = skipwhite(arg + len);
-  } else if (STRNCMP(arg, "OPT", len) == 0) {
+  } else if (strncmp(arg, "OPT", len) == 0) {
     flags += DIP_OPT + DIP_NORTP;
     arg = skipwhite(arg + len);
-  } else if (STRNCMP(arg, "PACK", len) == 0) {
+  } else if (strncmp(arg, "PACK", len) == 0) {
     flags += DIP_START + DIP_OPT + DIP_NORTP;
     arg = skipwhite(arg + len);
-  } else if (STRNCMP(arg, "ALL", len) == 0) {
+  } else if (strncmp(arg, "ALL", len) == 0) {
     flags += DIP_START + DIP_OPT;
     arg = skipwhite(arg + len);
   }
@@ -1720,7 +1719,7 @@ static bool concat_continued_line(garray_T *const ga, const int init_growsize, c
   const char *const line = skipwhite_len((char *)p, len);
   len -= (size_t)(line - p);
   // Skip lines starting with '\" ', concat lines starting with '\'
-  if (len >= 3 && STRNCMP(line, "\"\\ ", 3) == 0) {
+  if (len >= 3 && strncmp(line, "\"\\ ", 3) == 0) {
     return true;
   } else if (len == 0 || line[0] != '\\') {
     return false;

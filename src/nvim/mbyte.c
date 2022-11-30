@@ -367,15 +367,15 @@ static int enc_canon_search(const char *name)
 
 // Find canonical encoding "name" in the list and return its properties.
 // Returns 0 if not found.
-int enc_canon_props(const char_u *name)
+int enc_canon_props(const char *name)
   FUNC_ATTR_PURE
 {
   int i = enc_canon_search((char *)name);
   if (i >= 0) {
     return enc_canon_table[i].prop;
-  } else if (STRNCMP(name, "2byte-", 6) == 0) {
+  } else if (strncmp(name, "2byte-", 6) == 0) {
     return ENC_DBCS;
-  } else if (STRNCMP(name, "8bit-", 5) == 0 || STRNCMP(name, "iso-8859-", 9) == 0) {
+  } else if (strncmp(name, "8bit-", 5) == 0 || strncmp(name, "iso-8859-", 9) == 0) {
     return ENC_8BIT;
   }
   return 0;
@@ -395,10 +395,10 @@ int bomb_size(void)
     if (*curbuf->b_p_fenc == NUL
         || strcmp(curbuf->b_p_fenc, "utf-8") == 0) {
       n = 3;
-    } else if (STRNCMP(curbuf->b_p_fenc, "ucs-2", 5) == 0
-               || STRNCMP(curbuf->b_p_fenc, "utf-16", 6) == 0) {
+    } else if (strncmp(curbuf->b_p_fenc, "ucs-2", 5) == 0
+               || strncmp(curbuf->b_p_fenc, "utf-16", 6) == 0) {
       n = 2;
-    } else if (STRNCMP(curbuf->b_p_fenc, "ucs-4", 5) == 0) {
+    } else if (strncmp(curbuf->b_p_fenc, "ucs-4", 5) == 0) {
       n = 4;
     }
   }
@@ -1888,7 +1888,7 @@ void utf_find_illegal(void)
   char_u *tofree = NULL;
 
   vimconv.vc_type = CONV_NONE;
-  if (enc_canon_props((char_u *)curbuf->b_p_fenc) & ENC_8BIT) {
+  if (enc_canon_props(curbuf->b_p_fenc) & ENC_8BIT) {
     // 'encoding' is "utf-8" but we are editing a 8-bit encoded file,
     // possibly a utf-8 file with illegal bytes.  Setup for conversion
     // from utf-8 to 'fileencoding'.
@@ -1987,7 +1987,7 @@ void mb_check_adjust_col(void *win_)
   // Column 0 is always valid.
   if (oldcol != 0) {
     char *p = ml_get_buf(win->w_buffer, win->w_cursor.lnum, false);
-    colnr_T len = (colnr_T)STRLEN(p);
+    colnr_T len = (colnr_T)strlen(p);
 
     // Empty line or invalid column?
     if (len == 0 || oldcol < 0) {
@@ -2103,10 +2103,10 @@ const char *mb_unescape(const char **const pp)
 /// Skip the Vim specific head of a 'encoding' name.
 char *enc_skip(char *p)
 {
-  if (STRNCMP(p, "2byte-", 6) == 0) {
+  if (strncmp(p, "2byte-", 6) == 0) {
     return p + 6;
   }
-  if (STRNCMP(p, "8bit-", 5) == 0) {
+  if (strncmp(p, "8bit-", 5) == 0) {
     return p + 5;
   }
   return p;
@@ -2127,7 +2127,7 @@ char *enc_canonize(char *enc)
   }
 
   // copy "enc" to allocated memory, with room for two '-'
-  char *r = xmalloc(STRLEN(enc) + 3);
+  char *r = xmalloc(strlen(enc) + 3);
   // Make it all lower case and replace '_' with '-'.
   p = r;
   for (s = enc; *s != NUL; s++) {
@@ -2143,24 +2143,24 @@ char *enc_canonize(char *enc)
   p = enc_skip(r);
 
   // Change "microsoft-cp" to "cp".  Used in some spell files.
-  if (STRNCMP(p, "microsoft-cp", 12) == 0) {
+  if (strncmp(p, "microsoft-cp", 12) == 0) {
     STRMOVE(p, p + 10);
   }
 
   // "iso8859" -> "iso-8859"
-  if (STRNCMP(p, "iso8859", 7) == 0) {
+  if (strncmp(p, "iso8859", 7) == 0) {
     STRMOVE(p + 4, p + 3);
     p[3] = '-';
   }
 
   // "iso-8859n" -> "iso-8859-n"
-  if (STRNCMP(p, "iso-8859", 8) == 0 && p[8] != '-') {
+  if (strncmp(p, "iso-8859", 8) == 0 && p[8] != '-') {
     STRMOVE(p + 9, p + 8);
     p[8] = '-';
   }
 
   // "latin-N" -> "latinN"
-  if (STRNCMP(p, "latin-", 6) == 0) {
+  if (strncmp(p, "latin-", 6) == 0) {
     STRMOVE(p + 5, p + 6);
   }
 
@@ -2423,8 +2423,8 @@ int convert_setup_ext(vimconv_T *vcp, char *from, bool from_unicode_is_utf8, cha
     return OK;
   }
 
-  from_prop = enc_canon_props((char_u *)from);
-  to_prop = enc_canon_props((char_u *)to);
+  from_prop = enc_canon_props(from);
+  to_prop = enc_canon_props(to);
   if (from_unicode_is_utf8) {
     from_is_utf8 = from_prop & ENC_UNICODE;
   } else {
@@ -2492,7 +2492,7 @@ char_u *string_convert_ext(const vimconv_T *const vcp, char_u *ptr, size_t *lenp
 
   size_t len;
   if (lenp == NULL) {
-    len = STRLEN(ptr);
+    len = strlen((char *)ptr);
   } else {
     len = *lenp;
   }

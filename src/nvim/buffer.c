@@ -175,6 +175,22 @@ static int read_buffer(int read_stdin, exarg_T *eap, int flags)
   return retval;
 }
 
+/// Ensure buffer "buf" is loaded.  Does not trigger the swap-exists action.
+void buffer_ensure_loaded(buf_T *buf)
+{
+  if (buf->b_ml.ml_mfp == NULL) {
+    aco_save_T aco;
+
+    // Make sure the buffer is in a window.  If not then skip it.
+    aucmd_prepbuf(&aco, buf);
+    if (curbuf == buf) {
+      swap_exists_action = SEA_NONE;
+      open_buffer(false, NULL, 0);
+      aucmd_restbuf(&aco);
+    }
+  }
+}
+
 /// Open current buffer, that is: open the memfile and read the file into
 /// memory.
 ///
@@ -352,18 +368,21 @@ int open_buffer(int read_stdin, exarg_T *eap, int flags_arg)
   if (bufref_valid(&old_curbuf) && old_curbuf.br_buf->b_ml.ml_mfp != NULL) {
     aco_save_T aco;
 
-    // Go to the buffer that was opened.
+    // Go to the buffer that was opened, make sure it is in a window.
+    // If not then skip it.
     aucmd_prepbuf(&aco, old_curbuf.br_buf);
-    do_modelines(0);
-    curbuf->b_flags &= ~(BF_CHECK_RO | BF_NEVERLOADED);
+    if (curbuf == old_curbuf.br_buf) {
+      do_modelines(0);
+      curbuf->b_flags &= ~(BF_CHECK_RO | BF_NEVERLOADED);
 
-    if ((flags & READ_NOWINENTER) == 0) {
-      apply_autocmds_retval(EVENT_BUFWINENTER, NULL, NULL, false, curbuf,
-                            &retval);
+      if ((flags & READ_NOWINENTER) == 0) {
+        apply_autocmds_retval(EVENT_BUFWINENTER, NULL, NULL, false, curbuf,
+                              &retval);
+      }
+
+      // restore curwin/curbuf and a few other things
+      aucmd_restbuf(&aco);
     }
-
-    // restore curwin/curbuf and a few other things
-    aucmd_restbuf(&aco);
   }
 
   return retval;
@@ -1316,7 +1335,7 @@ int do_buffer(int action, int start, int dir, int count, int forceit)
     // Repeat this so long as we end up in a window with this buffer.
     while (buf == curbuf
            && !(curwin->w_closing || curwin->w_buffer->b_locked > 0)
-           && (lastwin == aucmd_win || !last_window(curwin))) {
+           && (is_aucmd_win(lastwin) || !last_window(curwin))) {
       if (win_close(curwin, false, false) == FAIL) {
         break;
       }
@@ -3735,8 +3754,8 @@ static int chk_modeline(linenr_T lnum, int flags)
   prev = -1;
   for (s = ml_get(lnum); *s != NUL; s++) {
     if (prev == -1 || ascii_isspace(prev)) {
-      if ((prev != -1 && STRNCMP(s, "ex:", (size_t)3) == 0)
-          || STRNCMP(s, "vi:", (size_t)3) == 0) {
+      if ((prev != -1 && strncmp(s, "ex:", (size_t)3) == 0)
+          || strncmp(s, "vi:", (size_t)3) == 0) {
         break;
       }
       // Accept both "vim" and "Vim".
@@ -3752,7 +3771,7 @@ static int chk_modeline(linenr_T lnum, int flags)
 
         if (*e == ':'
             && (s[0] != 'V'
-                || STRNCMP(skipwhite((char *)e + 1), "set", 3) == 0)
+                || strncmp(skipwhite(e + 1), "set", 3) == 0)
             && (s[3] == ':'
                 || (VIM_VERSION_100 >= vers && isdigit(s[3]))
                 || (VIM_VERSION_100 < vers && s[3] == '<')
@@ -3801,8 +3820,8 @@ static int chk_modeline(linenr_T lnum, int flags)
     // "vi:set opt opt opt: foo" -- foo not interpreted
     // "vi:opt opt opt: foo" -- foo interpreted
     // Accept "se" for compatibility with Elvis.
-    if (STRNCMP(s, "set ", (size_t)4) == 0
-        || STRNCMP(s, "se ", (size_t)3) == 0) {
+    if (strncmp(s, "set ", (size_t)4) == 0
+        || strncmp(s, "se ", (size_t)3) == 0) {
       if (*e != ':') {                // no terminating ':'?
         break;
       }
@@ -3959,30 +3978,6 @@ char *buf_spname(buf_T *buf)
     return buf_get_fname(buf);
   }
   return NULL;
-}
-
-/// Find a window for buffer "buf".
-/// If found true is returned and "wp" and "tp" are set to
-/// the window and tabpage.
-/// If not found, false is returned.
-///
-/// @param       buf  buffer to find a window for
-/// @param[out]  wp   stores the found window
-/// @param[out]  tp   stores the found tabpage
-///
-/// @return  true if a window was found for the buffer.
-bool find_win_for_buf(buf_T *buf, win_T **wp, tabpage_T **tp)
-{
-  *wp = NULL;
-  *tp = NULL;
-  FOR_ALL_TAB_WINDOWS(tp2, wp2) {
-    if (wp2->w_buffer == buf) {
-      *tp = tp2;
-      *wp = wp2;
-      return true;
-    }
-  }
-  return false;
 }
 
 static int buf_signcols_inner(buf_T *buf, int maximum)
@@ -4179,9 +4174,14 @@ bool buf_contents_changed(buf_T *buf)
   exarg_T ea;
   prep_exarg(&ea, buf);
 
-  // set curwin/curbuf to buf and save a few things
+  // Set curwin/curbuf to buf and save a few things.
   aco_save_T aco;
   aucmd_prepbuf(&aco, newbuf);
+  if (curbuf != newbuf) {
+    // Failed to find a window for "newbuf".
+    wipe_buffer(newbuf, false);
+    return true;
+  }
 
   if (ml_open(curbuf) == OK
       && readfile(buf->b_ffname, buf->b_fname,

@@ -539,7 +539,7 @@ static char *find_dup_item(char *origval, const char *newval, uint32_t flags)
   const size_t newlen = strlen(newval);
   for (char *s = origval; *s != NUL; s++) {
     if ((!(flags & P_COMMA) || s == origval || (s[-1] == ',' && !(bs & 1)))
-        && STRNCMP(s, newval, newlen) == 0
+        && strncmp(s, newval, newlen) == 0
         && (!(flags & P_COMMA) || s[newlen] == ',' || s[newlen] == NUL)) {
       return s;
     }
@@ -771,7 +771,7 @@ static int do_set_string(int opt_idx, int opt_flags, char **argp, int nextchar, 
   char *s = NULL;
   char_u *oldval = NULL;  // previous value if *varp
   char *newval;
-  char_u *origval = NULL;
+  char *origval = NULL;
   char_u *origval_l = NULL;
   char_u *origval_g = NULL;
   char *saved_origval = NULL;
@@ -807,9 +807,9 @@ static int do_set_string(int opt_idx, int opt_flags, char **argp, int nextchar, 
   // When setting the local value of a global option, the old value may be
   // the global value.
   if (((int)options[opt_idx].indir & PV_BOTH) && (opt_flags & OPT_LOCAL)) {
-    origval = *(char_u **)get_varp(&options[opt_idx]);
+    origval = *(char **)get_varp(&options[opt_idx]);
   } else {
-    origval = oldval;
+    origval = (char *)oldval;
   }
 
   if (nextchar == '&') {  // set to default val
@@ -857,8 +857,8 @@ static int do_set_string(int opt_idx, int opt_flags, char **argp, int nextchar, 
         break;
       }
       xfree(oldval);
-      if (origval == oldval) {
-        origval = *(char_u **)varp;
+      if ((char_u *)origval == oldval) {
+        origval = *(char **)varp;
       }
       if (origval_l == oldval) {
         origval_l = *(char_u **)varp;
@@ -905,7 +905,7 @@ static int do_set_string(int opt_idx, int opt_flags, char **argp, int nextchar, 
     // get a bit too much
     newlen = (unsigned)strlen(arg) + 1;
     if (op != OP_NONE) {
-      newlen += (unsigned)STRLEN(origval) + 1;
+      newlen += (unsigned)strlen(origval) + 1;
     }
     newval = xmalloc(newlen);
     s = newval;
@@ -947,7 +947,7 @@ static int do_set_string(int opt_idx, int opt_flags, char **argp, int nextchar, 
         xfree(newval);
         newlen = (unsigned)strlen(s) + 1;
         if (op != OP_NONE) {
-          newlen += (unsigned)STRLEN(origval) + 1;
+          newlen += (unsigned)strlen(origval) + 1;
         }
         newval = xmalloc(newlen);
         STRCPY(newval, s);
@@ -958,8 +958,8 @@ static int do_set_string(int opt_idx, int opt_flags, char **argp, int nextchar, 
     // and when adding to avoid duplicates
     int len = 0;
     if (op == OP_REMOVING || (flags & P_NODUP)) {
-      len = (int)STRLEN(newval);
-      s = find_dup_item((char *)origval, newval, flags);
+      len = (int)strlen(newval);
+      s = find_dup_item(origval, newval, flags);
 
       // do not add if already there
       if ((op == OP_ADDING || op == OP_PREPENDING) && s != NULL) {
@@ -969,7 +969,7 @@ static int do_set_string(int opt_idx, int opt_flags, char **argp, int nextchar, 
 
       // if no duplicate, move pointer to end of original value
       if (s == NULL) {
-        s = (char *)origval + (int)STRLEN(origval);
+        s = origval + (int)strlen(origval);
       }
     }
 
@@ -977,7 +977,7 @@ static int do_set_string(int opt_idx, int opt_flags, char **argp, int nextchar, 
     if (op == OP_ADDING || op == OP_PREPENDING) {
       comma = ((flags & P_COMMA) && *origval != NUL && *newval != NUL);
       if (op == OP_ADDING) {
-        len = (int)STRLEN(origval);
+        len = (int)strlen(origval);
         // Strip a trailing comma, would get 2.
         if (comma && len > 1
             && (flags & P_ONECOMMA) == P_ONECOMMA
@@ -1003,7 +1003,7 @@ static int do_set_string(int opt_idx, int opt_flags, char **argp, int nextchar, 
       if (*s) {
         // may need to remove a comma
         if (flags & P_COMMA) {
-          if (s == (char *)origval) {
+          if (s == origval) {
             // include comma after string
             if (s[len] == ',') {
               len++;
@@ -1014,7 +1014,7 @@ static int do_set_string(int opt_idx, int opt_flags, char **argp, int nextchar, 
             len++;
           }
         }
-        STRMOVE(newval + (s - (char *)origval), s + len);
+        STRMOVE(newval + (s - origval), s + len);
       }
     }
 
@@ -1050,7 +1050,7 @@ static int do_set_string(int opt_idx, int opt_flags, char **argp, int nextchar, 
   *(char_u **)(varp) = (char_u *)newval;
 
   // origval may be freed by did_set_string_option(), make a copy.
-  saved_origval = (origval != NULL) ? xstrdup((char *)origval) : NULL;
+  saved_origval = (origval != NULL) ? xstrdup(origval) : NULL;
   saved_origval_l = (origval_l != NULL) ? xstrdup((char *)origval_l) : NULL;
   saved_origval_g = (origval_g != NULL) ? xstrdup((char *)origval_g) : NULL;
 
@@ -1084,8 +1084,8 @@ static int do_set_string(int opt_idx, int opt_flags, char **argp, int nextchar, 
 
   if (*errmsg == NULL) {
     if (!starting) {
-      trigger_optionsset_string(opt_idx, opt_flags, saved_origval, saved_origval_l,
-                                saved_origval_g, saved_newval);
+      trigger_optionset_string(opt_idx, opt_flags, saved_origval, saved_origval_l,
+                               saved_origval_g, saved_newval);
     }
     if (options[opt_idx].flags & P_UI_OPTION) {
       ui_call_option_set(cstr_as_string(options[opt_idx].fullname),
@@ -1144,7 +1144,7 @@ int do_set(char *arg, int opt_flags)
     errmsg = NULL;
     startarg = arg;             // remember for error message
 
-    if (STRNCMP(arg, "all", 3) == 0 && !isalpha(arg[3])
+    if (strncmp(arg, "all", 3) == 0 && !isalpha(arg[3])
         && !(opt_flags & OPT_MODELINE)) {
       // ":set all"  show all options.
       // ":set all&" set all options to their default value.
@@ -1163,10 +1163,10 @@ int do_set(char *arg, int opt_flags)
       }
     } else {
       prefix = 1;
-      if (STRNCMP(arg, "no", 2) == 0) {
+      if (strncmp(arg, "no", 2) == 0) {
         prefix = 0;
         arg += 2;
-      } else if (STRNCMP(arg, "inv", 3) == 0) {
+      } else if (strncmp(arg, "inv", 3) == 0) {
         prefix = 2;
         arg += 3;
       }
@@ -2714,7 +2714,7 @@ int findoption_len(const char *const arg, const size_t len)
     opt_idx = -1;
   } else {
     // Nvim: handle option aliases.
-    if (STRNCMP(options[opt_idx].fullname, "viminfo", 7) == 0) {
+    if (strncmp(options[opt_idx].fullname, "viminfo", 7) == 0) {
       if (strlen(options[opt_idx].fullname) == 7) {
         return findoption_len("shada", 5);
       }
@@ -4602,11 +4602,11 @@ void set_context_in_set_cmd(expand_T *xp, char *arg, int opt_flags)
     }
     p--;
   }
-  if (STRNCMP(p, "no", 2) == 0) {
+  if (strncmp(p, "no", 2) == 0) {
     xp->xp_context = EXPAND_BOOL_SETTINGS;
     p += 2;
   }
-  if (STRNCMP(p, "inv", 3) == 0) {
+  if (strncmp(p, "inv", 3) == 0) {
     xp->xp_context = EXPAND_BOOL_SETTINGS;
     p += 3;
   }
@@ -4734,7 +4734,7 @@ void set_context_in_set_cmd(expand_T *xp, char *arg, int opt_flags)
 
     // for 'spellsuggest' start at "file:"
     if (options[opt_idx].var == (char_u *)&p_sps
-        && STRNCMP(p, "file:", 5) == 0) {
+        && strncmp(p, "file:", 5) == 0) {
       xp->xp_pattern = p + 5;
       break;
     }
@@ -5116,16 +5116,16 @@ int fill_culopt_flags(char *val, win_T *wp)
     p = val;
   }
   while (*p != NUL) {
-    if (STRNCMP(p, "line", 4) == 0) {
+    if (strncmp(p, "line", 4) == 0) {
       p += 4;
       culopt_flags_new |= CULOPT_LINE;
-    } else if (STRNCMP(p, "both", 4) == 0) {
+    } else if (strncmp(p, "both", 4) == 0) {
       p += 4;
       culopt_flags_new |= CULOPT_LINE | CULOPT_NBR;
-    } else if (STRNCMP(p, "number", 6) == 0) {
+    } else if (strncmp(p, "number", 6) == 0) {
       p += 6;
       culopt_flags_new |= CULOPT_NBR;
-    } else if (STRNCMP(p, "screenline", 10) == 0) {
+    } else if (strncmp(p, "screenline", 10) == 0) {
       p += 10;
       culopt_flags_new |= CULOPT_SCRLINE;
     }
@@ -5159,8 +5159,8 @@ int option_set_callback_func(char *optval, Callback *optcb)
 
   typval_T *tv;
   if (*optval == '{'
-      || (STRNCMP(optval, "function(", 9) == 0)
-      || (STRNCMP(optval, "funcref(", 8) == 0)) {
+      || (strncmp(optval, "function(", 9) == 0)
+      || (strncmp(optval, "funcref(", 8) == 0)) {
     // Lambda expression or a funcref
     tv = eval_expr(optval);
     if (tv == NULL) {

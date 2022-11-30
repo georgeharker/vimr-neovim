@@ -1939,7 +1939,7 @@ failed:
 bool is_dev_fd_file(char *fname)
   FUNC_ATTR_NONNULL_ALL FUNC_ATTR_WARN_UNUSED_RESULT
 {
-  return STRNCMP(fname, "/dev/fd/", 8) == 0
+  return strncmp(fname, "/dev/fd/", 8) == 0
          && ascii_isdigit((uint8_t)fname[8])
          && *skipdigits(fname + 9) == NUL
          && (fname[9] != NUL
@@ -2310,6 +2310,12 @@ int buf_write(buf_T *buf, char *fname, char *sfname, linenr_T start, linenr_T en
 
     // Set curwin/curbuf to buf and save a few things.
     aucmd_prepbuf(&aco, buf);
+    if (curbuf != buf) {
+      // Could not find a window for "buf".  Doing more might cause
+      // problems, better bail out.
+      return FAIL;
+    }
+
     set_bufref(&bufref, buf);
 
     if (append) {
@@ -3612,24 +3618,26 @@ nofail:
 
     // Apply POST autocommands.
     // Careful: The autocommands may call buf_write() recursively!
+    // Only do this when a window was found for "buf".
     aucmd_prepbuf(&aco, buf);
+    if (curbuf == buf) {
+      if (append) {
+        apply_autocmds_exarg(EVENT_FILEAPPENDPOST, fname, fname,
+                             false, curbuf, eap);
+      } else if (filtering) {
+        apply_autocmds_exarg(EVENT_FILTERWRITEPOST, NULL, fname,
+                             false, curbuf, eap);
+      } else if (reset_changed && whole) {
+        apply_autocmds_exarg(EVENT_BUFWRITEPOST, fname, fname,
+                             false, curbuf, eap);
+      } else {
+        apply_autocmds_exarg(EVENT_FILEWRITEPOST, fname, fname,
+                             false, curbuf, eap);
+      }
 
-    if (append) {
-      apply_autocmds_exarg(EVENT_FILEAPPENDPOST, fname, fname,
-                           false, curbuf, eap);
-    } else if (filtering) {
-      apply_autocmds_exarg(EVENT_FILTERWRITEPOST, NULL, fname,
-                           false, curbuf, eap);
-    } else if (reset_changed && whole) {
-      apply_autocmds_exarg(EVENT_BUFWRITEPOST, fname, fname,
-                           false, curbuf, eap);
-    } else {
-      apply_autocmds_exarg(EVENT_FILEWRITEPOST, fname, fname,
-                           false, curbuf, eap);
+      // restore curwin/curbuf and a few other things
+      aucmd_restbuf(&aco);
     }
-
-    // restore curwin/curbuf and a few other things
-    aucmd_restbuf(&aco);
 
     if (aborting()) {       // autocmds may abort script processing
       retval = false;
@@ -4090,7 +4098,7 @@ static int get_fio_flags(const char_u *name)
   if (*name == NUL) {
     name = (char_u *)p_enc;
   }
-  prop = enc_canon_props(name);
+  prop = enc_canon_props((char *)name);
   if (prop & ENC_UNICODE) {
     if (prop & ENC_2BYTE) {
       if (prop & ENC_ENDIAN_L) {
@@ -5003,8 +5011,13 @@ void buf_reload(buf_T *buf, int orig_mode, bool reload_options)
   aco_save_T aco;
   int flags = READ_NEW;
 
-  // set curwin/curbuf for "buf" and save some things
+  // Set curwin/curbuf for "buf" and save some things.
   aucmd_prepbuf(&aco, buf);
+  if (curbuf != buf) {
+    // Failed to find a window for "buf", it is dangerous to continue,
+    // better bail out.
+    return;
+  }
 
   // Unless reload_options is set, we only want to read the text from the
   // file, not reset the syntax highlighting, clear marks, diff status, etc.

@@ -13,9 +13,9 @@
 #include "nvim/ascii.h"
 #include "nvim/buffer.h"
 #include "nvim/charset.h"
-#include "nvim/eval.h"
 #include "nvim/eval/typval.h"
 #include "nvim/eval/typval_defs.h"
+#include "nvim/eval/window.h"
 #include "nvim/ex_cmds.h"
 #include "nvim/ex_cmds2.h"
 #include "nvim/ex_cmds_defs.h"
@@ -1092,7 +1092,7 @@ static void do_arg_all(int count, int forceit, int keep_tabs)
   last_curtab = curtab;
   win_enter(lastwin, false);
 
-  // Open upto "count" windows.
+  // Open up to "count" windows.
   arg_all_open_windows(&aall, count);
 
   // Remove the "lock" on the argument list.

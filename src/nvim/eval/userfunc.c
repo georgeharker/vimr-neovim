@@ -118,8 +118,8 @@ static int get_function_args(char **argp, char_u endchar, garray_T *newargs, int
         p++;
       }
       if (arg == p || isdigit(*arg)
-          || (p - arg == 9 && STRNCMP(arg, "firstline", 9) == 0)
-          || (p - arg == 8 && STRNCMP(arg, "lastline", 8) == 0)) {
+          || (p - arg == 9 && strncmp(arg, "firstline", 9) == 0)
+          || (p - arg == 8 && strncmp(arg, "lastline", 8) == 0)) {
         if (!skip) {
           semsg(_("E125: Illegal argument: %s"), arg);
         }
@@ -595,7 +595,7 @@ ufunc_T *find_func(const char_u *name)
 /// Takes care of script-local function names.
 static void cat_func_name(char_u *buf, ufunc_T *fp)
 {
-  if (fp->uf_name[0] == K_SPECIAL) {
+  if ((uint8_t)fp->uf_name[0] == K_SPECIAL) {
     STRCPY(buf, "<SNR>");
     STRCAT(buf, fp->uf_name + 3);
   } else {
@@ -610,7 +610,7 @@ static void add_nr_var(dict_T *dp, dictitem_T *v, char *name, varnumber_T nr)
   STRCPY(v->di_key, name);
 #endif
   v->di_flags = DI_FLAGS_RO | DI_FLAGS_FIX;
-  hash_add(&dp->dv_hashtab, v->di_key);
+  hash_add(&dp->dv_hashtab, (char *)v->di_key);
   v->di_tv.v_type = VAR_NUMBER;
   v->di_tv.v_lock = VAR_FIXED;
   v->di_tv.vval.v_number = nr;
@@ -887,7 +887,7 @@ void call_user_func(ufunc_T *fp, int argcount, typval_T *argvars, typval_T *rett
   ga_init(&fc->fc_funcs, sizeof(ufunc_T *), 1);
   func_ptr_ref(fp);
 
-  if (STRNCMP(fp->uf_name, "<lambda>", 8) == 0) {
+  if (strncmp(fp->uf_name, "<lambda>", 8) == 0) {
     islambda = true;
   }
 
@@ -906,7 +906,7 @@ void call_user_func(ufunc_T *fp, int argcount, typval_T *argvars, typval_T *rett
     STRCPY(name, "self");
 #endif
     v->di_flags = DI_FLAGS_RO | DI_FLAGS_FIX;
-    hash_add(&fc->l_vars.dv_hashtab, v->di_key);
+    hash_add(&fc->l_vars.dv_hashtab, (char *)v->di_key);
     v->di_tv.v_type = VAR_DICT;
     v->di_tv.v_lock = VAR_UNLOCKED;
     v->di_tv.vval.v_dict = selfdict;
@@ -932,7 +932,7 @@ void call_user_func(ufunc_T *fp, int argcount, typval_T *argvars, typval_T *rett
     STRCPY(name, "000");
 #endif
     v->di_flags = DI_FLAGS_RO | DI_FLAGS_FIX;
-    hash_add(&fc->l_avars.dv_hashtab, v->di_key);
+    hash_add(&fc->l_avars.dv_hashtab, (char *)v->di_key);
     v->di_tv.v_type = VAR_LIST;
     v->di_tv.v_lock = VAR_FIXED;
     v->di_tv.vval.v_list = &fc->l_varlist;
@@ -1010,9 +1010,9 @@ void call_user_func(ufunc_T *fp, int argcount, typval_T *argvars, typval_T *rett
       // Named arguments can be accessed without the "a:" prefix in lambda
       // expressions. Add to the l: dict.
       tv_copy(&v->di_tv, &v->di_tv);
-      hash_add(&fc->l_vars.dv_hashtab, v->di_key);
+      hash_add(&fc->l_vars.dv_hashtab, (char *)v->di_key);
     } else {
-      hash_add(&fc->l_avars.dv_hashtab, v->di_key);
+      hash_add(&fc->l_avars.dv_hashtab, (char *)v->di_key);
     }
 
     if (ai >= 0 && ai < MAX_FUNC_ARGS) {
@@ -1318,7 +1318,7 @@ void free_all_functions(void)
         // Only free functions that are not refcounted, those are
         // supposed to be freed when no longer referenced.
         fp = HI2UF(hi);
-        if (func_name_refcount(fp->uf_name)) {
+        if (func_name_refcount((char_u *)fp->uf_name)) {
           skipped++;
         } else {
           used = func_hashtab.ht_used;
@@ -1344,7 +1344,7 @@ void free_all_functions(void)
         // Only free functions that are not refcounted, those are
         // supposed to be freed when no longer referenced.
         fp = HI2UF(hi);
-        if (func_name_refcount(fp->uf_name)) {
+        if (func_name_refcount((char_u *)fp->uf_name)) {
           skipped++;
         } else {
           func_free(fp);
@@ -1654,7 +1654,7 @@ theend:
 
 char_u *printable_func_name(ufunc_T *fp)
 {
-  return fp->uf_name_exp != NULL ? fp->uf_name_exp : fp->uf_name;
+  return fp->uf_name_exp != NULL ? fp->uf_name_exp : (char_u *)fp->uf_name;
 }
 
 /// List the head of the function: "name(arg1, arg2)".
@@ -1846,7 +1846,7 @@ char_u *trans_function_name(char **pp, bool skip, int flags, funcdict_T *fdp, pa
   if (name != NULL) {
     name = xstrdup(name);
     *pp = (char *)end;
-    if (STRNCMP(name, "<SNR>", 5) == 0) {
+    if (strncmp(name, "<SNR>", 5) == 0) {
       // Change "<SNR>" to the byte sequence.
       name[0] = (char)K_SPECIAL;
       name[1] = (char)KS_EXTRA;
@@ -1970,7 +1970,7 @@ static void list_functions(regmatch_T *regmatch)
       if ((fp->uf_flags & FC_DEAD) == 0
           && (regmatch == NULL
               ? (!message_filtered((char *)fp->uf_name)
-                 && !func_name_refcount(fp->uf_name))
+                 && !func_name_refcount((char_u *)fp->uf_name))
               : (!isdigit(*fp->uf_name)
                  && vim_regexec(regmatch, (char *)fp->uf_name, 0)))) {
         list_func_head(fp, false, false);
@@ -2187,16 +2187,16 @@ void ex_function(exarg_T *eap)
   // find extra arguments "range", "dict", "abort" and "closure"
   for (;;) {
     p = skipwhite(p);
-    if (STRNCMP(p, "range", 5) == 0) {
+    if (strncmp(p, "range", 5) == 0) {
       flags |= FC_RANGE;
       p += 5;
-    } else if (STRNCMP(p, "dict", 4) == 0) {
+    } else if (strncmp(p, "dict", 4) == 0) {
       flags |= FC_DICT;
       p += 4;
-    } else if (STRNCMP(p, "abort", 5) == 0) {
+    } else if (strncmp(p, "abort", 5) == 0) {
       flags |= FC_ABORT;
       p += 5;
-    } else if (STRNCMP(p, "closure", 7) == 0) {
+    } else if (strncmp(p, "closure", 7) == 0) {
       flags |= FC_CLOSURE;
       p += 7;
       if (current_funccal == NULL) {
@@ -2298,7 +2298,7 @@ void ex_function(exarg_T *eap)
       // * ":let {var-name} =<< [trim] {marker}" and "{marker}"
       if (heredoc_trimmed == NULL
           || (is_heredoc && skipwhite(theline) == theline)
-          || STRNCMP(theline, heredoc_trimmed,
+          || strncmp(theline, heredoc_trimmed,
                      strlen(heredoc_trimmed)) == 0) {
         if (heredoc_trimmed == NULL) {
           p = theline;
@@ -2348,12 +2348,12 @@ void ex_function(exarg_T *eap)
 
       // Increase indent inside "if", "while", "for" and "try", decrease
       // at "end".
-      if (indent > 2 && STRNCMP(p, "end", 3) == 0) {
+      if (indent > 2 && strncmp(p, "end", 3) == 0) {
         indent -= 2;
-      } else if (STRNCMP(p, "if", 2) == 0
-                 || STRNCMP(p, "wh", 2) == 0
-                 || STRNCMP(p, "for", 3) == 0
-                 || STRNCMP(p, "try", 3) == 0) {
+      } else if (strncmp(p, "if", 2) == 0
+                 || strncmp(p, "wh", 2) == 0
+                 || strncmp(p, "for", 3) == 0
+                 || strncmp(p, "try", 3) == 0) {
         indent += 2;
       }
 
@@ -2381,7 +2381,7 @@ void ex_function(exarg_T *eap)
               && (!ASCII_ISALPHA(p[1])
                   || (p[1] == 'h' && (!ASCII_ISALPHA(p[2])
                                       || (p[2] == 'a'
-                                          && (STRNCMP(&p[3], "nge", 3) != 0
+                                          && (strncmp(&p[3], "nge", 3) != 0
                                               || !ASCII_ISALPHA(p[6])))))))
           || (p[0] == 'i'
               && (!ASCII_ISALPHA(p[1]) || (p[1] == 'n'
@@ -2432,7 +2432,7 @@ void ex_function(exarg_T *eap)
                 && (!ASCII_ISALNUM(p[2])
                     || (p[2] == 't' && !ASCII_ISALNUM(p[3]))))) {
           p = skipwhite(arg + 3);
-          if (STRNCMP(p, "trim", 4) == 0) {
+          if (strncmp(p, "trim", 4) == 0) {
             // Ignore leading white space.
             p = skipwhite(p + 4);
             heredoc_trimmed = xstrnsave(theline, (size_t)(skipwhite(theline) - theline));
@@ -2590,7 +2590,7 @@ void ex_function(exarg_T *eap)
     set_ufunc_name(fp, name);
     if (overwrite) {
       hi = hash_find(&func_hashtab, name);
-      hi->hi_key = UF2HIKEY(fp);
+      hi->hi_key = (char *)UF2HIKEY(fp);
     } else if (hash_add(&func_hashtab, UF2HIKEY(fp)) == FAIL) {
       xfree(fp);
       goto erret;
@@ -2714,11 +2714,11 @@ char *get_user_func_name(expand_T *xp, int idx)
     fp = HI2UF(hi);
 
     if ((fp->uf_flags & FC_DICT)
-        || STRNCMP(fp->uf_name, "<lambda>", 8) == 0) {
+        || strncmp(fp->uf_name, "<lambda>", 8) == 0) {
       return "";       // don't show dict and lambda functions
     }
 
-    if (STRLEN(fp->uf_name) + 4 >= IOSIZE) {
+    if (strlen(fp->uf_name) + 4 >= IOSIZE) {
       return (char *)fp->uf_name;  // Prevent overflow.
     }
 
@@ -2802,7 +2802,7 @@ void ex_delfunction(exarg_T *eap)
       // it and the refcount is more than one, it should be kept.
       // A numbered function or lambda should be kept if the refcount is
       // one or more.
-      if (fp->uf_refcount > (func_name_refcount(fp->uf_name) ? 0 : 1)) {
+      if (fp->uf_refcount > (func_name_refcount((char_u *)fp->uf_name) ? 0 : 1)) {
         // Function is still referenced somewhere. Don't free it but
         // do remove it from the hashtable.
         if (func_remove(fp)) {
@@ -3320,7 +3320,7 @@ void make_partial(dict_T *const selfdict, typval_T *const rettv)
 /// @return  the name of the executed function.
 char_u *func_name(void *cookie)
 {
-  return ((funccall_T *)cookie)->func->uf_name;
+  return (char_u *)((funccall_T *)cookie)->func->uf_name;
 }
 
 /// @return  the address holding the next breakpoint line for a funccall cookie.
@@ -3579,7 +3579,7 @@ bool set_ref_in_functions(int copyID)
     if (!HASHITEM_EMPTY(hi)) {
       todo--;
       fp = HI2UF(hi);
-      if (!func_name_refcount(fp->uf_name)
+      if (!func_name_refcount((char_u *)fp->uf_name)
           && set_ref_in_func(NULL, fp, copyID)) {
         return true;
       }
@@ -3648,5 +3648,5 @@ char_u *register_luafunc(LuaRef ref)
   hash_add(&func_hashtab, UF2HIKEY(fp));
 
   // coverity[leaked_storage]
-  return fp->uf_name;
+  return (char_u *)fp->uf_name;
 }

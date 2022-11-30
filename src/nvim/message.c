@@ -923,7 +923,7 @@ char *msg_may_trunc(bool force, char *s)
 
   room = (Rows - cmdline_row - 1) * Columns + sc_col - 1;
   if ((force || (shortmess(SHM_TRUNC) && !exmode_active))
-      && (int)STRLEN(s) - room > 0) {
+      && (int)strlen(s) - room > 0) {
     int size = vim_strsize(s);
 
     // There may be room anyway when there are multibyte chars.
@@ -2150,7 +2150,7 @@ static void msg_puts_display(const char *str, int maxlen, int attr, int recurse)
       msg_ext_last_attr = attr;
     }
     // Concat pieces with the same highlight
-    size_t len = STRNLEN(str, maxlen);             // -V781
+    size_t len = strnlen(str, (size_t)maxlen);  // -V781
     ga_concat_len(&msg_ext_last_chunk, (char *)str, len);
     msg_ext_cur_len += len;
     return;

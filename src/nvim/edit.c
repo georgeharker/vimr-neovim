@@ -1471,7 +1471,7 @@ static void init_prompt(int cmdchar_todo)
 
   curwin->w_cursor.lnum = curbuf->b_ml.ml_line_count;
   text = get_cursor_line_ptr();
-  if (STRNCMP(text, prompt, strlen(prompt)) != 0) {
+  if (strncmp(text, prompt, strlen(prompt)) != 0) {
     // prompt is missing, insert it or append a line with it
     if (*text == NUL) {
       ml_replace(curbuf->b_ml.ml_line_count, prompt, true);
@@ -4604,7 +4604,7 @@ static bool ins_tab(void)
       // Delete following spaces.
       i = cursor->col - fpos.col;
       if (i > 0) {
-        STRMOVE(ptr, ptr + i);
+        STRMOVE(ptr, (char *)ptr + i);
         // correct replace stack.
         if ((State & REPLACE_FLAG)
             && !(State & VREPLACE_FLAG)) {

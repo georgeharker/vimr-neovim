@@ -22,6 +22,7 @@
 #include "nvim/eval/typval_defs.h"
 #include "nvim/eval/userfunc.h"
 #include "nvim/eval/vars.h"
+#include "nvim/eval/window.h"
 #include "nvim/ex_cmds.h"
 #include "nvim/ex_cmds_defs.h"
 #include "nvim/ex_docmd.h"
@@ -80,7 +81,7 @@ static list_T *heredoc_get(exarg_T *eap, char *cmd)
 
   // Check for the optional 'trim' word before the marker
   cmd = skipwhite(cmd);
-  if (STRNCMP(cmd, "trim", 4) == 0
+  if (strncmp(cmd, "trim", 4) == 0
       && (cmd[4] == NUL || ascii_iswhite(cmd[4]))) {
     cmd = skipwhite(cmd + 4);
 
@@ -128,7 +129,7 @@ static list_T *heredoc_get(exarg_T *eap, char *cmd)
     // with "trim": skip the indent matching the :let line to find the
     // marker
     if (marker_indent_len > 0
-        && STRNCMP(theline, *eap->cmdlinep, marker_indent_len) == 0) {
+        && strncmp(theline, *eap->cmdlinep, (size_t)marker_indent_len) == 0) {
       mi = marker_indent_len;
     }
     if (strcmp(marker, theline + mi) == 0) {
@@ -208,7 +209,7 @@ static void ex_let_const(exarg_T *eap, const bool is_const)
   }
   expr = skipwhite(argend);
   if (*expr != '=' && !((vim_strchr("+-*/%.", *expr) != NULL
-                         && expr[1] == '=') || STRNCMP(expr, "..=", 3) == 0)) {
+                         && expr[1] == '=') || strncmp(expr, "..=", 3) == 0)) {
     // ":let" without "=": list variables
     if (*arg == '[') {
       emsg(_(e_invarg));
@@ -1174,7 +1175,7 @@ void delete_var(hashtab_T *ht, hashitem_T *hi)
 static void list_one_var(dictitem_T *v, const char *prefix, int *first)
 {
   char *const s = encode_tv2echo(&v->di_tv, NULL);
-  list_one_var_a(prefix, (const char *)v->di_key, (ptrdiff_t)STRLEN(v->di_key),
+  list_one_var_a(prefix, (const char *)v->di_key, (ptrdiff_t)strlen((char *)v->di_key),
                  v->di_tv.v_type, (s == NULL ? "" : s), first);
   xfree(s);
 }
@@ -1342,7 +1343,7 @@ void set_var_const(const char *name, const size_t name_len, typval_T *const tv, 
 
     v = xmalloc(sizeof(dictitem_T) + strlen(varname));
     STRCPY(v->di_key, varname);
-    if (hash_add(ht, v->di_key) == FAIL) {
+    if (hash_add(ht, (char *)v->di_key) == FAIL) {
       xfree(v);
       return;
     }
@@ -1799,13 +1800,15 @@ void f_setbufvar(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
     if (*varname == '&') {
       aco_save_T aco;
 
-      // set curbuf to be our buf, temporarily
+      // Set curbuf to be our buf, temporarily.
       aucmd_prepbuf(&aco, buf);
+      if (curbuf == buf) {
+        // Only when it worked to set "curbuf".
+        set_option_from_tv(varname + 1, varp);
 
-      set_option_from_tv(varname + 1, varp);
-
-      // reset notion of buffer
-      aucmd_restbuf(&aco);
+        // reset notion of buffer
+        aucmd_restbuf(&aco);
+      }
     } else {
       const size_t varname_len = strlen(varname);
       char *const bufvarname = xmalloc(varname_len + 3);

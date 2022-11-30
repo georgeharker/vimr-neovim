@@ -766,53 +766,7 @@ int do_cmdline(char *cmdline, LineGetter fgetline, void *cookie, int flags)
     // of interrupts or errors to exceptions, and ensure that no more
     // commands are executed.
     if (did_throw) {
-      assert(current_exception != NULL);
-      char *p = NULL;
-      msglist_T *messages = NULL;
-      msglist_T *next;
-
-      // If the uncaught exception is a user exception, report it as an
-      // error.  If it is an error exception, display the saved error
-      // message now.  For an interrupt exception, do nothing; the
-      // interrupt message is given elsewhere.
-      switch (current_exception->type) {
-      case ET_USER:
-        vim_snprintf((char *)IObuff, IOSIZE,
-                     _("E605: Exception not caught: %s"),
-                     current_exception->value);
-        p = xstrdup((char *)IObuff);
-        break;
-      case ET_ERROR:
-        messages = current_exception->messages;
-        current_exception->messages = NULL;
-        break;
-      case ET_INTERRUPT:
-        break;
-      }
-
-      estack_push(ETYPE_EXCEPT, current_exception->throw_name, current_exception->throw_lnum);
-      current_exception->throw_name = NULL;
-
-      discard_current_exception();              // uses IObuff if 'verbose'
-      suppress_errthrow = true;
-      force_abort = true;
-      msg_ext_set_kind("emsg");  // kind=emsg for :throw, exceptions. #9993
-
-      if (messages != NULL) {
-        do {
-          next = messages->next;
-          emsg(messages->msg);
-          xfree(messages->msg);
-          xfree(messages->sfile);
-          xfree(messages);
-          messages = next;
-        } while (messages != NULL);
-      } else if (p != NULL) {
-        emsg(p);
-        xfree(p);
-      }
-      xfree(SOURCING_NAME);
-      estack_pop();
+      handle_did_throw();
     } else if (got_int || (did_emsg && force_abort)) {
       // On an interrupt or an aborting error not converted to an exception,
       // disable the conversion of errors to exceptions.  (Interrupts are not
@@ -900,6 +854,57 @@ int do_cmdline(char *cmdline, LineGetter fgetline, void *cookie, int flags)
   call_depth--;
   end_batch_changes();
   return retval;
+}
+
+/// Handle when "did_throw" is set after executing commands.
+void handle_did_throw(void)
+{
+  assert(current_exception != NULL);
+  char *p = NULL;
+  msglist_T *messages = NULL;
+
+  // If the uncaught exception is a user exception, report it as an
+  // error.  If it is an error exception, display the saved error
+  // message now.  For an interrupt exception, do nothing; the
+  // interrupt message is given elsewhere.
+  switch (current_exception->type) {
+  case ET_USER:
+    vim_snprintf((char *)IObuff, IOSIZE,
+                 _("E605: Exception not caught: %s"),
+                 current_exception->value);
+    p = xstrdup((char *)IObuff);
+    break;
+  case ET_ERROR:
+    messages = current_exception->messages;
+    current_exception->messages = NULL;
+    break;
+  case ET_INTERRUPT:
+    break;
+  }
+
+  estack_push(ETYPE_EXCEPT, current_exception->throw_name, current_exception->throw_lnum);
+  current_exception->throw_name = NULL;
+
+  discard_current_exception();              // uses IObuff if 'verbose'
+  suppress_errthrow = true;
+  force_abort = true;
+  msg_ext_set_kind("emsg");  // kind=emsg for :throw, exceptions. #9993
+
+  if (messages != NULL) {
+    do {
+      msglist_T *next = messages->next;
+      emsg(messages->msg);
+      xfree(messages->msg);
+      xfree(messages->sfile);
+      xfree(messages);
+      messages = next;
+    } while (messages != NULL);
+  } else if (p != NULL) {
+    emsg(p);
+    xfree(p);
+  }
+  xfree(SOURCING_NAME);
+  estack_pop();
 }
 
 /// Obtain a line when inside a ":while" or ":for" loop.
@@ -1827,6 +1832,7 @@ static bool skip_cmd(const exarg_T *eap)
     case CMD_throw:
     case CMD_tilde:
     case CMD_topleft:
+    case CMD_trust:
     case CMD_unlet:
     case CMD_unlockvar:
     case CMD_verbose:
@@ -2973,7 +2979,7 @@ char *find_ex_command(exarg_T *eap, int *full)
 
     for (; (int)eap->cmdidx < CMD_SIZE;
          eap->cmdidx = (cmdidx_T)((int)eap->cmdidx + 1)) {
-      if (STRNCMP(cmdnames[(int)eap->cmdidx].cmd_name, eap->cmd,
+      if (strncmp(cmdnames[(int)eap->cmdidx].cmd_name, eap->cmd,
                   (size_t)len) == 0) {
         if (full != NULL
             && cmdnames[(int)eap->cmdidx].cmd_name[len] == NUL) {
@@ -3980,7 +3986,7 @@ void separate_nextcmd(exarg_T *eap)
   }
 
   if (!(eap->argt & EX_NOTRLCOM)) {  // remove trailing spaces
-    del_trailing_spaces((char_u *)eap->arg);
+    del_trailing_spaces(eap->arg);
   }
 }
 
@@ -4051,7 +4057,7 @@ static int getargopt(exarg_T *eap)
   int bad_char_idx;
 
   // ":edit ++[no]bin[ary] file"
-  if (STRNCMP(arg, "bin", 3) == 0 || STRNCMP(arg, "nobin", 5) == 0) {
+  if (strncmp(arg, "bin", 3) == 0 || strncmp(arg, "nobin", 5) == 0) {
     if (*arg == 'n') {
       arg += 2;
       eap->force_bin = FORCE_NOBIN;
@@ -4066,7 +4072,7 @@ static int getargopt(exarg_T *eap)
   }
 
   // ":read ++edit file"
-  if (STRNCMP(arg, "edit", 4) == 0) {
+  if (strncmp(arg, "edit", 4) == 0) {
     eap->read_edit = true;
     eap->arg = skipwhite(arg + 4);
     return OK;
@@ -4079,20 +4085,20 @@ static int getargopt(exarg_T *eap)
     return OK;
   }
 
-  if (STRNCMP(arg, "ff", 2) == 0) {
+  if (strncmp(arg, "ff", 2) == 0) {
     arg += 2;
     pp = &eap->force_ff;
-  } else if (STRNCMP(arg, "fileformat", 10) == 0) {
+  } else if (strncmp(arg, "fileformat", 10) == 0) {
     arg += 10;
     pp = &eap->force_ff;
-  } else if (STRNCMP(arg, "enc", 3) == 0) {
-    if (STRNCMP(arg, "encoding", 8) == 0) {
+  } else if (strncmp(arg, "enc", 3) == 0) {
+    if (strncmp(arg, "encoding", 8) == 0) {
       arg += 8;
     } else {
       arg += 3;
     }
     pp = &eap->force_enc;
-  } else if (STRNCMP(arg, "bad", 3) == 0) {
+  } else if (strncmp(arg, "bad", 3) == 0) {
     arg += 3;
     pp = &bad_char_idx;
   }
@@ -4425,7 +4431,7 @@ static void ex_colorscheme(exarg_T *eap)
     } else {
       msg("default");
     }
-  } else if (load_colors((char_u *)eap->arg) == FAIL) {
+  } else if (load_colors(eap->arg) == FAIL) {
     semsg(_("E185: Cannot find color scheme '%s'"), eap->arg);
   }
 }
@@ -4620,7 +4626,7 @@ static void ex_pclose(exarg_T *eap)
 void ex_win_close(int forceit, win_T *win, tabpage_T *tp)
 {
   // Never close the autocommand window.
-  if (win == aucmd_win) {
+  if (is_aucmd_win(win)) {
     emsg(_(e_autocmd_close));
     return;
   }
@@ -6517,7 +6523,7 @@ static void ex_findpat(exarg_T *eap)
     }
   }
   if (!eap->skip) {
-    find_pattern_in_path((char_u *)eap->arg, 0, strlen(eap->arg), whole, !eap->forceit,
+    find_pattern_in_path(eap->arg, 0, strlen(eap->arg), whole, !eap->forceit,
                          *eap->cmd == 'd' ?  FIND_DEFINE : FIND_ANY,
                          n, action, eap->line1, eap->line2);
   }
@@ -6721,7 +6727,7 @@ char_u *eval_vars(char_u *src, const char_u *srcstart, size_t *usedlen, linenr_T
   // Note: In "\\%" the % is also not recognized!
   if (src > srcstart && src[-1] == '\\') {
     *usedlen = 0;
-    STRMOVE(src - 1, src);      // remove backslash
+    STRMOVE(src - 1, (char *)src);      // remove backslash
     return NULL;
   }
 
@@ -6965,7 +6971,7 @@ char *expand_sfile(char *arg)
   char *result = xstrdup(arg);
 
   for (char *p = result; *p;) {
-    if (STRNCMP(p, "<sfile>", 7) != 0) {
+    if (strncmp(p, "<sfile>", 7) != 0) {
       p++;
     } else {
       // replace "<sfile>" with the sourced file name, and do ":" stuff
@@ -7071,12 +7077,12 @@ static void ex_filetype(exarg_T *eap)
 
   // Accept "plugin" and "indent" in any order.
   for (;;) {
-    if (STRNCMP(arg, "plugin", 6) == 0) {
+    if (strncmp(arg, "plugin", 6) == 0) {
       plugin = true;
       arg = skipwhite(arg + 6);
       continue;
     }
-    if (STRNCMP(arg, "indent", 6) == 0) {
+    if (strncmp(arg, "indent", 6) == 0) {
       indent = true;
       arg = skipwhite(arg + 6);
       continue;
@@ -7153,7 +7159,7 @@ static void ex_setfiletype(exarg_T *eap)
   if (!did_filetype) {
     char *arg = eap->arg;
 
-    if (STRNCMP(arg, "FALLBACK ", 9) == 0) {
+    if (strncmp(arg, "FALLBACK ", 9) == 0) {
       arg += 9;
     }
 

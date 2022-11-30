@@ -251,6 +251,8 @@ int main(int argc, char **argv)
   // `argc` and `argv` are also copied, so that they can be changed.
   init_params(&params, argc, argv);
 
+  autocmd_init();
+
   // Since os_open is called during the init_startuptime, we need to call
   // fs_init before it.
   fs_init();
@@ -1935,7 +1937,8 @@ static bool do_user_initialization(void)
 
     xfree(user_vimrc);
     xfree(init_lua_path);
-    return false;
+    do_exrc = p_exrc;
+    return do_exrc;
   }
   xfree(init_lua_path);
 
