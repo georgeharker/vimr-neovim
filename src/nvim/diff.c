@@ -1890,7 +1890,7 @@ static void count_filler_lines_and_topline(int *curlinenum_to, int *linesfiller,
   const diff_T *curdif = thistopdiff;
   int ch_virtual_lines = 0;
   int isfiller = 0;
-  while (virtual_lines_passed) {
+  while (virtual_lines_passed > 0) {
     if (ch_virtual_lines) {
       virtual_lines_passed--;
       ch_virtual_lines--;
@@ -1946,7 +1946,6 @@ static void calculate_topfill_and_topline(const int fromidx, const int toidx, co
   virtual_lines_passed -= from_topfill;
 
   // count the same amount of virtual lines in the toidx buffer
-  curdif = thistopdiff;
   int curlinenum_to = thistopdiff->df_lnum[toidx];
   int linesfiller = 0;
   count_filler_lines_and_topline(&curlinenum_to, &linesfiller,
@@ -2628,7 +2627,7 @@ bool diff_find_change(win_T *wp, linenr_T lnum, int *startp, int *endp)
       break;
     }
   }
-  if (dp->is_linematched) {
+  if (dp != NULL && dp->is_linematched) {
     while (dp && dp->df_next
            && lnum == dp->df_count[idx] + dp->df_lnum[idx]
            && dp->df_next->df_lnum[idx] == lnum) {
@@ -2945,11 +2944,6 @@ void ex_diffgetput(exarg_T *eap)
 
     // Set curwin/curbuf to buf and save a few things.
     aucmd_prepbuf(&aco, curtab->tp_diffbuf[idx_other]);
-    if (curbuf != curtab->tp_diffbuf[idx_other]) {
-      // Could not find a window for this buffer, the rest is likely to
-      // fail.
-      goto theend;
-    }
   }
 
   const int idx_from = eap->cmdidx == CMD_diffget ? idx_other : idx_cur;
