@@ -47,6 +47,65 @@ local function clear_notrace()
 end
 
 
+local create_server_definition = [[
+  function _create_server(opts)
+    opts = opts or {}
+    local server = {}
+    server.messages = {}
+
+    function server.cmd(dispatchers)
+      local closing = false
+      local handlers = opts.handlers or {}
+      local srv = {}
+
+      function srv.request(method, params, callback)
+        table.insert(server.messages, {
+          method = method,
+          params = params,
+        })
+        local handler = handlers[method]
+        if handler then
+          local response, err = handler(params)
+          if response then
+            callback(err, response)
+          end
+        elseif method == 'initialize' then
+          callback(nil, {
+            capabilities = opts.capabilities or {}
+          })
+        elseif method == 'shutdown' then
+          callback(nil, nil)
+        end
+        local request_id = #server.messages
+        return true, request_id
+      end
+
+      function srv.notify(method, params)
+        table.insert(server.messages, {
+          method = method,
+          params = params
+        })
+        if method == 'exit' then
+          dispatchers.on_exit(0, 15)
+        end
+      end
+
+      function srv.is_closing()
+        return closing
+      end
+
+      function srv.terminate()
+        closing = true
+      end
+
+      return srv
+    end
+
+    return server
+  end
+]]
+
+
 local function fake_lsp_server_setup(test_name, timeout_ms, options, settings)
   exec_lua([=[
     lsp = require('vim.lsp')
@@ -422,24 +481,12 @@ describe('LSP', function()
 
     it('should detach buffer on bufwipe', function()
       clear()
+      exec_lua(create_server_definition)
       local result = exec_lua([[
-        local server = function(dispatchers)
-          local closing = false
-          return {
-            request = function(method, params, callback)
-              if method == 'initialize' then
-                callback(nil, { capabilities = {} })
-              end
-            end,
-            notify = function(...)
-            end,
-            is_closing = function() return closing end,
-            terminate = function() closing = true end
-          }
-        end
+        local server = _create_server()
         local bufnr = vim.api.nvim_create_buf(false, true)
         vim.api.nvim_set_current_buf(bufnr)
-        local client_id = vim.lsp.start({ name = 'detach-dummy', cmd = server })
+        local client_id = vim.lsp.start({ name = 'detach-dummy', cmd = server.cmd })
         assert(client_id, "lsp.start must return client_id")
         local client = vim.lsp.get_client_by_id(client_id)
         local num_attached_before = vim.tbl_count(client.attached_buffers)
@@ -572,6 +619,70 @@ describe('LSP', function()
           end
         end;
       }
+    end)
+
+    it('BufWritePre does not send notifications if server lacks willSave capabilities', function()
+      clear()
+      exec_lua(create_server_definition)
+      local messages = exec_lua([[
+        local server = _create_server({
+          capabilities = {
+            textDocumentSync = {
+              willSave = false,
+              willSaveWaitUntil = false,
+            }
+          },
+        })
+        local client_id = vim.lsp.start({ name = 'dummy', cmd = server.cmd })
+        local buf = vim.api.nvim_get_current_buf()
+        vim.api.nvim_exec_autocmds('BufWritePre', { buffer = buf, modeline = false })
+        vim.lsp.stop_client(client_id)
+        return server.messages
+      ]])
+      eq(#messages, 4)
+      eq(messages[1].method, 'initialize')
+      eq(messages[2].method, 'initialized')
+      eq(messages[3].method, 'shutdown')
+      eq(messages[4].method, 'exit')
+    end)
+
+    it('BufWritePre sends willSave / willSaveWaitUntil, applies textEdits', function()
+      clear()
+      exec_lua(create_server_definition)
+      local result = exec_lua([[
+        local server = _create_server({
+          capabilities = {
+            textDocumentSync = {
+              willSave = true,
+              willSaveWaitUntil = true,
+            }
+          },
+          handlers = {
+            ['textDocument/willSaveWaitUntil'] = function()
+              local text_edit = {
+                range = {
+                  start = { line = 0, character = 0 },
+                  ['end'] = { line = 0, character = 0 },
+                },
+                newText = 'Hello'
+              }
+              return { text_edit, }
+            end
+          },
+        })
+        local buf = vim.api.nvim_get_current_buf()
+        local client_id = vim.lsp.start({ name = 'dummy', cmd = server.cmd })
+        vim.api.nvim_exec_autocmds('BufWritePre', { buffer = buf, modeline = false })
+        vim.lsp.stop_client(client_id)
+        return {
+          messages = server.messages,
+          lines = vim.api.nvim_buf_get_lines(buf, 0, -1, true)
+        }
+      ]])
+      local messages = result.messages
+      eq('textDocument/willSave', messages[3].method)
+      eq('textDocument/willSaveWaitUntil', messages[4].method)
+      eq({'Hello'}, result.lines)
     end)
 
     it('saveas sends didOpen if filename changed', function()
@@ -2651,6 +2762,33 @@ describe('LSP', function()
       eq(10, pos.col)
     end)
 
+    it('jumps to a Location if focus is true via handler', function()
+      exec_lua(create_server_definition)
+      local result = exec_lua([[
+        local server = _create_server()
+        local client_id = vim.lsp.start({ name = 'dummy', cmd = server.cmd })
+        local result = {
+          uri = 'file:///fake/uri',
+          selection = {
+            start = { line = 0, character = 9 },
+            ['end'] = { line = 0, character = 9 }
+          },
+          takeFocus = true,
+        }
+        local ctx = {
+          client_id = client_id,
+          method = 'window/showDocument',
+        }
+        vim.lsp.handlers['window/showDocument'](nil, result, ctx)
+        vim.lsp.stop_client(client_id)
+        return {
+          cursor = vim.api.nvim_win_get_cursor(0)
+        }
+      ]])
+      eq(1, result.cursor[1])
+      eq(9, result.cursor[2])
+    end)
+
     it('jumps to a Location if focus not set', function()
       local pos = show_document(location(0, 9, 0, 9), nil, true)
       eq(1, pos.line)
@@ -3436,51 +3574,28 @@ describe('LSP', function()
       }
     end)
     it('format formats range in visual mode', function()
+      exec_lua(create_server_definition)
       local result = exec_lua([[
-        local messages = {}
-        local server = function(dispatchers)
-          local closing = false
-          return {
-            request = function(method, params, callback)
-              table.insert(messages, {
-                method = method,
-                params = params,
-              })
-              if method == 'initialize' then
-                callback(nil, {
-                  capabilities = {
-                    documentFormattingProvider = true,
-                    documentRangeFormattingProvider = true,
-                  }
-                })
-              end
-            end,
-            notify = function(...)
-            end,
-            is_closing = function()
-              return closing
-            end,
-            terminate = function()
-              closing = true
-            end
-          }
-        end
+        local server = _create_server({ capabilities = {
+          documentFormattingProvider = true,
+          documentRangeFormattingProvider = true,
+        }})
         local bufnr = vim.api.nvim_get_current_buf()
-        local client_id = vim.lsp.start({ name = 'dummy', cmd = server })
+        local client_id = vim.lsp.start({ name = 'dummy', cmd = server.cmd })
         vim.api.nvim_win_set_buf(0, bufnr)
         vim.api.nvim_buf_set_lines(bufnr, 0, -1, true, {'foo', 'bar'})
         vim.api.nvim_win_set_cursor(0, { 1, 0 })
         vim.cmd.normal('v')
         vim.api.nvim_win_set_cursor(0, { 2, 3 })
         vim.lsp.buf.format({ bufnr = bufnr, false })
-        return messages
+        return server.messages
       ]])
-      eq("textDocument/rangeFormatting", result[2].method)
+      eq("textDocument/rangeFormatting", result[3].method)
       local expected_range = {
         start = { line = 0, character = 0 },
         ['end'] = { line = 1, character = 4 },
       }
-      eq(expected_range, result[2].params.range)
+      eq(expected_range, result[3].params.range)
     end)
   end)
   describe('cmd', function()

@@ -1023,6 +1023,8 @@ EXTERN char e_highlight_group_name_invalid_char[] INIT(= N_("E5248: Invalid char
 
 EXTERN char e_highlight_group_name_too_long[] INIT(= N_("E1249: Highlight group name too long"));
 
+EXTERN char e_invalid_line_number_nr[] INIT(= N_("E966: Invalid line number: %ld"));
+
 EXTERN char e_undobang_cannot_redo_or_move_branch[]
 INIT(= N_("E5767: Cannot use :undo! to redo or move to a different undo branch"));
 
@@ -1086,6 +1088,10 @@ typedef enum {
 EXTERN char windowsVersion[20] INIT(= { 0 });
 
 EXTERN int exit_need_delay INIT(= 0);
+
+/// While executing a regexp and set to OPTION_MAGIC_ON or OPTION_MAGIC_OFF this
+/// overrules p_magic.  Otherwise set to OPTION_MAGIC_NOT_SET.
+EXTERN optmagic_T magic_overruled INIT(= OPTION_MAGIC_NOT_SET);
 
 /// Skip win_fix_cursor() call for 'splitkeep' when cmdwin is closed.
 EXTERN bool skip_win_fix_cursor INIT(= false);
