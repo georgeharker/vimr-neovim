@@ -1,5 +1,6 @@
 #!/bin/bash
 set -Eeuo pipefail
+shopt -s extglob
 
 main() {
   # This script is located in /NvimServer/bin and we have to go to /
@@ -29,12 +30,12 @@ main() {
       pushd "${temp_dir}" >/dev/null
         mkdir "${arm64_bottle}"
         pushd "${arm64_bottle}" >/dev/null
-          tar xf "$(brew --cache)"/**/*gettext*${arm64_bottle}*.tar.gz
+          tar xf "$(brew --cache)"/**/*gettext--+([0-9.])${arm64_bottle}*.tar.gz
         popd >/dev/null
 
         mkdir "${x86_64_bottle}"
         pushd "${x86_64_bottle}" >/dev/null
-          tar xf "$(brew --cache)"/**/*gettext*${x86_64_bottle}*.tar.gz
+          tar xf "$(brew --cache)"/**/*gettext--+([0-9.])${x86_64_bottle}*.tar.gz
         popd >/dev/null
 
         mkdir universal

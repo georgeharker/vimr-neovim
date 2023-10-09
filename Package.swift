@@ -11,9 +11,23 @@ let package = Package(
   dependencies: [],
   targets: [
     .target(name: "NvimServerTypes", dependencies: [], path: "NvimServerTypes/Sources"),
+    .systemLibrary(
+            name: "LibUV",
+            pkgConfig: "libuv",
+            providers: [
+                .brew(["libuv"]),
+            ]
+        ),
+     .systemLibrary(
+            name: "LibMsgPack",
+            pkgConfig: "msgpack-c",
+            providers: [
+                .brew(["msgpack"]),
+            ]
+        ),
     .executableTarget(
       name: "NvimServer",
-      dependencies: [],
+      dependencies: ["LibUV", "LibMsgPack"],
       path: "NvimServer/Sources",
       cSettings: [
         // Otherwise we get typedef redefinition error due to double definition of Boolean

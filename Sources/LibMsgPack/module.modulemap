@@ -1,0 +1,5 @@
+module LibMsgPack [system] {
+  header "/opt/homebrew/include/msgpack.h"
+  link "msgpack"
+  export *
+}
